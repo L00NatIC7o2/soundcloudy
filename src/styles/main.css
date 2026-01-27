@@ -66,18 +66,14 @@ html,
   color: #fff;
 }
 
-/* Sidebar - Fixed position */
+/* Sidebar - Fixed position with white blur effect */
 .sidebar {
   position: fixed;
   top: 0;
   left: 0;
   height: 100vh;
-  background: linear-gradient(
-    180deg,
-    rgba(245, 124, 60, 0.95) 0%,
-    rgba(61, 63, 69, 0.95) 100%
-  );
-  backdrop-filter: blur(10px);
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(16px);
   transition: width 0.3s;
   z-index: 101;
   display: flex;
@@ -100,7 +96,7 @@ html,
   width: 40px;
   height: 40px;
   border: 0;
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.2);
   color: white;
   border-radius: 8px;
   cursor: pointer;
@@ -108,21 +104,21 @@ html,
 }
 
 .sidebar-toggle:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.3);
 }
 
 .sidebar-nav {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 16px;
   padding: 10px;
 }
 
 .nav-item {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 12px;
+  gap: 16px;
+  padding: 16px;
   border: 0;
   background: transparent;
   color: white;
@@ -134,12 +130,12 @@ html,
 }
 
 .nav-item:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.2);
 }
 
 .nav-icon {
-  font-size: 24px;
-  min-width: 24px;
+  font-size: 32px;
+  min-width: 32px;
 }
 
 .nav-label {
@@ -266,11 +262,11 @@ html,
   transform: scale(1.05);
 }
 
-/* Main Area */
+/* Main Area - Remove white bar at top */
 .main-area {
   margin-left: var(--sidebar-collapsed);
-  margin-top: 80px;
   padding: 24px;
+  padding-top: 96px;
   padding-bottom: 140px;
   min-height: 100vh;
   transition: margin-left 0.3s;
@@ -335,6 +331,7 @@ html,
 /* Playlist view */
 .playlist-view {
   width: 100%;
+  margin-top: -24px;
 }
 
 .playlist-header-sticky {
@@ -348,7 +345,6 @@ html,
   backdrop-filter: blur(10px);
   z-index: 10;
   padding: 24px;
-  margin: -24px -24px 24px -24px;
   display: flex;
   align-items: center;
   gap: 24px;
@@ -357,6 +353,7 @@ html,
   transition:
     padding 0.3s,
     height 0.3s;
+  margin-bottom: 24px;
 }
 
 .playlist-header-sticky.scrolled {
