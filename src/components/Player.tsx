@@ -3,6 +3,7 @@ import { useEffect, useRef } from "react";
 type Track = {
   id: number;
   title: string;
+  stream_url?: string;
   media?: { transcodings?: { url: string; format?: { protocol?: string } }[] };
 };
 type Props = { currentTrack?: Track | null; token: string; clientId: string };
@@ -16,6 +17,7 @@ function Player({ currentTrack, token }: Props) {
 
     (async () => {
       try {
+        // fetch full track to get media/stream_url
         const tResp = await fetch(
           `https://api.soundcloud.com/tracks/${currentTrack.id}`,
           { headers: { Authorization: `OAuth ${token}` } },
@@ -23,21 +25,29 @@ function Player({ currentTrack, token }: Props) {
         if (!tResp.ok) throw new Error(`track ${tResp.status}`);
         const track = await tResp.json();
 
+        // try progressive first
         const prog = track.media?.transcodings?.find(
           (t: any) => t.format?.protocol === "progressive",
         );
-        if (!prog) {
-          console.warn("No progressive stream", track);
-          return;
+        if (prog) {
+          const sResp = await fetch(`${prog.url}?oauth_token=${token}`);
+          if (sResp.ok) {
+            const stream = await sResp.json();
+            if (!canceled) {
+              audioRef.current!.src = stream.url;
+              await audioRef.current!.play().catch(() => {});
+              return;
+            }
+          }
         }
 
-        const sResp = await fetch(`${prog.url}?oauth_token=${token}`);
-        if (!sResp.ok) throw new Error(`stream ${sResp.status}`);
-        const stream = await sResp.json();
-
-        if (canceled) return;
-        audioRef.current!.src = stream.url;
-        await audioRef.current!.play().catch(() => {});
+        // fallback to stream_url with oauth_token
+        if (track.stream_url && !canceled) {
+          audioRef.current!.src = `${track.stream_url}?oauth_token=${token}`;
+          await audioRef.current!.play().catch(() => {});
+        } else {
+          console.warn("No playable stream for track", track.id);
+        }
       } catch (e) {
         console.error("Player stream error:", e);
       }
