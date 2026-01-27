@@ -19,6 +19,8 @@ export default async function handler(
     );
     const streams = streamsResp.data;
 
+    console.log("Available streams:", streams);
+
     // Prefer http_mp3_128_url, fallback to hls variants
     const streamUrl =
       streams.http_mp3_128_url ||
@@ -31,11 +33,17 @@ export default async function handler(
         .json({ error: "No stream URL available for this track" });
     }
 
+    console.log("Streaming from:", streamUrl);
+
     // Fetch and pipe the audio
     const audioResp = await axios.get(streamUrl, {
       responseType: "stream",
-      headers: { Range: req.headers.range },
+      headers: req.headers.range ? { Range: req.headers.range } : {},
     });
+
+    // Set CORS headers
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET");
 
     res.status(audioResp.status);
     [
@@ -47,6 +55,7 @@ export default async function handler(
       const v = audioResp.headers[h];
       if (v) res.setHeader(h, v);
     });
+
     audioResp.data.pipe(res);
   } catch (err: any) {
     console.error(
@@ -54,6 +63,8 @@ export default async function handler(
       err.response?.status,
       err.response?.data || err.message,
     );
-    res.status(err.response?.status || 500);
+    res
+      .status(err.response?.status || 500)
+      .json({ error: err.response?.data || err.message });
   }
 }
