@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import "@/styles/main.css";
-import Player from "@/components/Player";
+import "../src/styles/main.css";
+import Player from "../src/components/Player";
 
 export default function Home() {
   const [token, setToken] = useState<string | null>(null);
