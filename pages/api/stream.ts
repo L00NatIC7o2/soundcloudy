@@ -8,40 +8,22 @@ export default async function handler(
   res: NextApiResponse,
 ) {
   const { trackId } = req.query as { trackId?: string };
-
-  if (!trackId) {
-    return res.status(400).json({ error: "Missing trackId" });
-  }
-
   const token = req.cookies.soundcloud_token;
-
-  if (!token) {
-    return res
-      .status(401)
-      .json({ error: "Not authenticated - no token cookie found" });
-  }
+  if (!trackId) return res.status(400).json({ error: "Missing trackId" });
+  if (!token) return res.status(401).json({ error: "Not authenticated" });
 
   try {
-    console.log("Getting streams for track:", trackId);
-
     const streamsResp = await axios.get(
       `https://api.soundcloud.com/tracks/soundcloud:tracks:${trackId}/streams`,
       {
-        headers: {
-          Authorization: `OAuth ${token}`,
-          "User-Agent": "Mozilla/5.0",
-        },
+        headers: { Authorization: `OAuth ${token}` },
         validateStatus: () => true,
       },
     );
-
-    console.log("Streams response status:", streamsResp.status);
-
     if (streamsResp.status !== 200) {
-      console.error("Stream API error:", streamsResp.data);
-      return res.status(streamsResp.status).json({
-        error: streamsResp.data?.error || "Failed to get streams",
-      });
+      return res
+        .status(streamsResp.status)
+        .json({ error: "Failed to get streams" });
     }
 
     const streams = streamsResp.data;
@@ -49,29 +31,29 @@ export default async function handler(
       streams.http_mp3_128_url ||
       streams.hls_mp3_128_url ||
       streams.preview_mp3_128_url;
-
-    if (!streamUrl) {
+    if (!streamUrl)
       return res.status(404).json({ error: "No stream URL available" });
-    }
 
-    console.log("Got stream URL:", streamUrl);
-
-    // Fetch the actual audio stream WITH the token in the URL
-    const audioResp = await axios.get(streamUrl, {
-      params: { client_id: process.env.SOUNDCLOUD_CLIENT_ID },
-      headers: {
-        Authorization: `OAuth ${token}`,
-        "User-Agent": "Mozilla/5.0",
-      },
+    // Fetch audio without auth; these URLs are pre-signed
+    let audioResp = await axios.get(streamUrl, {
       responseType: "stream",
-      timeout: 30000,
+      headers: { "User-Agent": "Mozilla/5.0" },
       validateStatus: () => true,
     });
 
-    console.log("Audio response status:", audioResp.status);
+    // Fallback: retry with OAuth header if first attempt failed
+    if (audioResp.status === 401) {
+      audioResp = await axios.get(streamUrl, {
+        responseType: "stream",
+        headers: {
+          "User-Agent": "Mozilla/5.0",
+          Authorization: `OAuth ${token}`,
+        },
+        validateStatus: () => true,
+      });
+    }
 
     if (audioResp.status !== 200) {
-      console.error("Audio fetch failed:", audioResp.status, audioResp.data);
       return res
         .status(audioResp.status)
         .json({ error: "Failed to fetch audio" });
@@ -85,10 +67,8 @@ export default async function handler(
     if (audioResp.headers["content-length"]) {
       res.setHeader("Content-Length", audioResp.headers["content-length"]);
     }
-
     audioResp.data.pipe(res);
   } catch (err: any) {
-    console.error("Stream error:", err.message);
     res.status(500).json({ error: err.message });
   }
 }
