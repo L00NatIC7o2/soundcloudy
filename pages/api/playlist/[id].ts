@@ -13,30 +13,17 @@ export default async function handler(
   }
 
   try {
-    // Try to get playlist with track metadata including timestamps
     const playlistResp = await axios.get(
-      `https://api-v2.soundcloud.com/playlists/${id}`,
+      `https://api.soundcloud.com/playlists/${id}`,
       {
         headers: { Authorization: `OAuth ${token}` },
-        params: { representation: "full" },
       },
     );
 
-    // Check if tracks have added_at property
-    const tracksWithMeta = (playlistResp.data.tracks || []).map(
-      (track: any, idx: number) => ({
-        ...track,
-        // Use track.added_at if available, otherwise playlist last_modified as fallback
-        added_at:
-          track.added_at ||
-          track.added_to_playlist_at ||
-          playlistResp.data.last_modified,
-        playlist_position: idx,
-      }),
-    );
+    const tracks = playlistResp.data.tracks || [];
 
     res.json({
-      tracks: tracksWithMeta,
+      tracks: tracks,
       playlist: playlistResp.data,
     });
   } catch (error: any) {

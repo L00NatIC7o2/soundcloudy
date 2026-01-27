@@ -12,22 +12,23 @@ export default async function handler(
   }
 
   try {
-    // Try V2 API which may include liked_at timestamps
+    // Get current user info first
+    const meResp = await axios.get("https://api.soundcloud.com/me", {
+      headers: { Authorization: `OAuth ${token}` },
+    });
+
+    const userId = meResp.data.id;
+
+    // Get user's likes/favorites
     const likesResp = await axios.get(
-      "https://api-v2.soundcloud.com/me/track_likes",
+      `https://api.soundcloud.com/users/${userId}/favorites`,
       {
         headers: { Authorization: `OAuth ${token}` },
         params: { limit: 200 },
       },
     );
 
-    // Extract tracks with liked_at metadata
-    const tracks = (likesResp.data.collection || []).map((item: any) => ({
-      ...item.track,
-      added_at: item.created_at || item.liked_at, // When user liked it
-    }));
-
-    res.json({ tracks });
+    res.json({ tracks: likesResp.data });
   } catch (error: any) {
     console.error("Likes error:", error.response?.data || error.message);
     res.status(error.response?.status || 500).json({
