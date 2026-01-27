@@ -17,7 +17,7 @@ export default function Home() {
 
   const handleLogin = () => {
     const CLIENT_ID = "uhlkXHnXoaAxIjoziy18peYV5eSwuMLz";
-    const REDIRECT_URI = "https://notyourniche.com/api/callback";
+    const REDIRECT_URI = "https://soundcloudy.vercel.app/api/callback"; // Vercel domain
     const authUrl = `https://secure.soundcloud.com/authorize?client_id=${CLIENT_ID}&redirect_uri=${REDIRECT_URI}&response_type=code&scope=non-expiring`;
     window.location.href = authUrl;
   };
