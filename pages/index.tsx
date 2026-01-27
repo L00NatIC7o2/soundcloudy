@@ -13,6 +13,7 @@ export default function Home() {
   const [currentTrack, setCurrentTrack] = useState<any>(null);
   const [sidebarExpanded, setSidebarExpanded] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [viewingLikes, setViewingLikes] = useState(false);
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -44,6 +45,7 @@ export default function Home() {
 
   const handlePlaylistClick = async (playlist: any) => {
     setSelectedPlaylist(playlist);
+    setViewingLikes(false);
     setTracks([]);
     try {
       const response = await fetch(`/api/playlist/${playlist.id}`);
@@ -54,10 +56,24 @@ export default function Home() {
     }
   };
 
+  const handleLikesClick = async () => {
+    setViewingLikes(true);
+    setSelectedPlaylist(null);
+    setTracks([]);
+    try {
+      const response = await fetch("/api/likes");
+      const data = await response.json();
+      setPlaylistTracks(data.tracks || []);
+    } catch (error) {
+      console.error("Failed to fetch liked songs:", error);
+    }
+  };
+
   const handleSearch = async () => {
     if (!query.trim()) return;
     setLoading(true);
     setSelectedPlaylist(null);
+    setViewingLikes(false);
     try {
       const response = await fetch(
         `/api/search?q=${encodeURIComponent(query)}`,
@@ -92,9 +108,42 @@ export default function Home() {
     return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
 
+  const getPlaylistCover = (playlist: any) => {
+    if (playlist.artwork_url) {
+      return playlist.artwork_url.replace("-large", "-t500x500");
+    }
+    // Use first track's artwork
+    if (
+      playlist.tracks &&
+      playlist.tracks.length > 0 &&
+      playlist.tracks[0].artwork_url
+    ) {
+      return playlist.tracks[0].artwork_url.replace("-large", "-t500x500");
+    }
+    return "/placeholder.png";
+  };
+
+  const getLikedSongsCover = () => {
+    if (playlistTracks.length > 0 && playlistTracks[0].artwork_url) {
+      return playlistTracks[0].artwork_url.replace("-large", "-t500x500");
+    }
+    return "/placeholder.png";
+  };
+
+  const getYear = (dateString: string) => {
+    return new Date(dateString).getFullYear();
+  };
+
   if (!isAuthenticated) {
     return <div>Loading...</div>;
   }
+
+  const displayTitle = viewingLikes ? "Liked Songs" : selectedPlaylist?.title;
+  const displayCover = viewingLikes
+    ? getLikedSongsCover()
+    : selectedPlaylist
+      ? getPlaylistCover(selectedPlaylist)
+      : null;
 
   return (
     <div className="app-shell">
@@ -111,13 +160,16 @@ export default function Home() {
         <nav className="sidebar-nav">
           <button
             className="nav-item"
-            onClick={() => setSelectedPlaylist(null)}
+            onClick={() => {
+              setSelectedPlaylist(null);
+              setViewingLikes(false);
+            }}
           >
             <span className="nav-icon">🏠</span>
             {sidebarExpanded && <span className="nav-label">Home</span>}
           </button>
 
-          <button className="nav-item">
+          <button className="nav-item" onClick={handleLikesClick}>
             <span className="nav-icon">❤️</span>
             {sidebarExpanded && <span className="nav-label">Liked Songs</span>}
           </button>
@@ -143,10 +195,7 @@ export default function Home() {
                   onClick={() => handlePlaylistClick(playlist)}
                 >
                   <img
-                    src={
-                      playlist.artwork_url?.replace("-large", "-t300x300") ||
-                      "/placeholder.png"
-                    }
+                    src={getPlaylistCover(playlist)}
                     alt={playlist.title}
                     className="playlist-thumb"
                   />
@@ -182,9 +231,16 @@ export default function Home() {
       </div>
 
       <main className="main-area">
-        {selectedPlaylist ? (
+        {selectedPlaylist || viewingLikes ? (
           <div className="playlist-view">
-            <h2 className="playlist-header">{selectedPlaylist.title}</h2>
+            <div className="playlist-header-sticky">
+              <img
+                src={displayCover}
+                alt={displayTitle}
+                className="playlist-header-cover"
+              />
+              <h2 className="playlist-header-title">{displayTitle}</h2>
+            </div>
             <div className="track-list">
               {playlistTracks.map((track: any, index: number) => (
                 <div
@@ -209,8 +265,15 @@ export default function Home() {
                   <div className="track-row-duration">
                     {formatDuration(track.duration)}
                   </div>
+                  <div className="track-row-year">
+                    {track.created_at ? getYear(track.created_at) : "—"}
+                  </div>
                   <div className="track-row-added">
-                    {track.created_at ? formatTimeAgo(track.created_at) : "—"}
+                    {track.added_at
+                      ? formatTimeAgo(track.added_at)
+                      : track.created_at
+                        ? formatTimeAgo(track.created_at)
+                        : "—"}
                   </div>
                 </div>
               ))}
