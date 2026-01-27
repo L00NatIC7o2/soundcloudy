@@ -14,14 +14,14 @@ export default async function handler(
 
   try {
     if (like) {
-      // Add to likes
+      // Add to likes/favorites
       await axios.put(
         `https://api.soundcloud.com/me/favorites/${trackId}`,
         {},
         { headers: { Authorization: `OAuth ${token}` } },
       );
     } else {
-      // Remove from likes
+      // Remove from likes/favorites
       await axios.delete(`https://api.soundcloud.com/me/favorites/${trackId}`, {
         headers: { Authorization: `OAuth ${token}` },
       });
@@ -29,6 +29,7 @@ export default async function handler(
 
     res.json({ success: true });
   } catch (error: any) {
+    console.error("Like error:", error.response?.data || error.message);
     res.status(error.response?.status || 500).json({
       error: error.response?.data?.message || error.message,
     });

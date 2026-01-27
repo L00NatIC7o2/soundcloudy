@@ -45,20 +45,40 @@ export default function Player({ currentTrack }: PlayerProps) {
       setIsLiked(data.isLiked);
     } catch (error) {
       console.error("Failed to check like status:", error);
+      setIsLiked(false);
     }
   };
 
   const toggleLike = async () => {
     if (!currentTrack?.id) return;
+
+    const newLikeState = !isLiked;
+
+    // Optimistic UI update
+    setIsLiked(newLikeState);
+
     try {
-      await fetch("/api/like", {
+      const response = await fetch("/api/like", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ trackId: currentTrack.id, like: !isLiked }),
+        body: JSON.stringify({
+          trackId: currentTrack.id,
+          like: newLikeState,
+        }),
       });
-      setIsLiked(!isLiked);
+
+      if (!response.ok) {
+        throw new Error("Failed to update like status");
+      }
+
+      console.log(
+        `Track ${currentTrack.id} ${newLikeState ? "liked" : "unliked"} successfully`,
+      );
     } catch (error) {
       console.error("Like failed:", error);
+      // Revert on error
+      setIsLiked(!newLikeState);
+      alert("Failed to update like status. Please try again.");
     }
   };
 
@@ -132,7 +152,6 @@ export default function Player({ currentTrack }: PlayerProps) {
       />
 
       <div className="player-content">
-        {/* Left: Track Info */}
         <div className="player-left">
           <img
             src={
@@ -158,12 +177,12 @@ export default function Player({ currentTrack }: PlayerProps) {
             className={`player-like ${isLiked ? "liked" : ""}`}
             onClick={toggleLike}
             title={isLiked ? "Unlike" : "Like"}
+            disabled={!currentTrack}
           >
             {isLiked ? "❤️" : "🤍"}
           </button>
         </div>
 
-        {/* Center: Controls */}
         <div className="player-center">
           <div className="player-controls">
             <button className="player-btn" title="Previous">
@@ -191,7 +210,6 @@ export default function Player({ currentTrack }: PlayerProps) {
           </div>
         </div>
 
-        {/* Right: Volume */}
         <div className="player-right">
           <button className="player-volume-btn" onClick={toggleMute}>
             {getVolumeIcon()}
