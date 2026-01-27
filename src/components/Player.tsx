@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 
 type Track = { id: number; title: string; user?: { username: string } };
-type Props = { currentTrack?: Track | null; token: string };
+type Props = { currentTrack?: Track | null };
 
-function Player({ currentTrack, token }: Props) {
+function Player({ currentTrack }: Props) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -31,7 +31,7 @@ function Player({ currentTrack, token }: Props) {
         setError(err.message);
         setIsLoading(false);
       });
-  }, [currentTrack, token]);
+  }, [currentTrack]);
 
   const handlePlay = () => setIsPlaying(true);
   const handlePause = () => setIsPlaying(false);

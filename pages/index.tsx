@@ -2,38 +2,19 @@ import { useEffect, useState } from "react";
 import Player from "../src/components/Player";
 
 export default function Home() {
-  const [token, setToken] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [tracks, setTracks] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
-  const clientId =
-    process.env.NEXT_PUBLIC_SOUNDCLOUD_CLIENT_ID ||
-    process.env.VITE_SOUNDCLOUD_CLIENT_ID ||
-    "uhlkXHnXoaAxIjoziy18peYV5eSwuMLz";
-
-  useEffect(() => {
-    // Get token from URL
-    const params = new URLSearchParams(window.location.search);
-    const urlToken = params.get("token");
-    if (urlToken) {
-      setToken(urlToken);
-    }
-  }, []);
+  const [currentTrack, setCurrentTrack] = useState<any>(null);
 
   const handleLogin = () => {
-    const authUrl = `https://secure.soundcloud.com/authorize?client_id=${clientId}&redirect_uri=https://soundcloudy.vercel.app/api/callback&response_type=code&scope=non-expiring`;
-    window.location.href = authUrl;
+    window.location.href = "/api/auth/login";
   };
 
   const handleSearch = async () => {
-    if (!token) {
-      alert("Please login first");
-      return;
-    }
-
     setLoading(true);
     try {
-      const response = await fetch(`/api/search?q=${query}&token=${token}`);
+      const response = await fetch(`/api/search?q=${query}`);
       const data = await response.json();
       setTracks(data.collection || []);
     } catch (error) {
@@ -43,45 +24,33 @@ export default function Home() {
     }
   };
 
-  const [currentTrack, setCurrentTrack] = useState<any>(null);
-
   return (
     <div id="app">
       <h1>SoundCloudy</h1>
 
-      {!token ? (
-        <button onClick={handleLogin}>Login with SoundCloud</button>
-      ) : (
-        <>
-          <div className="search-container">
-            <input
-              type="text"
-              id="searchInput"
-              placeholder="Search tracks..."
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-            />
-            <button id="searchBtn" onClick={handleSearch} disabled={loading}>
-              {loading ? "Searching..." : "Search"}
-            </button>
-          </div>
+      <button onClick={handleLogin}>Login with SoundCloud</button>
 
-          <Player
-            currentTrack={currentTrack}
-            token={token}
-            clientId={clientId}
-          />
+      <div className="search-container">
+        <input
+          type="text"
+          placeholder="Search tracks..."
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        <button onClick={handleSearch} disabled={loading}>
+          {loading ? "Searching..." : "Search"}
+        </button>
+      </div>
 
-          <ul className="tracks-list">
-            {tracks.map((t: any) => (
-              <li key={t.id}>
-                {t.title}{" "}
-                <button onClick={() => setCurrentTrack(t)}>Play</button>
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
+      <Player currentTrack={currentTrack} />
+
+      <ul className="tracks-list">
+        {tracks.map((t: any) => (
+          <li key={t.id}>
+            {t.title} <button onClick={() => setCurrentTrack(t)}>Play</button>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
