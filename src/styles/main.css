@@ -361,3 +361,137 @@ html,
   font-size: 12px;
   padding: 20px 0;
 }
+
+/* Playlist sidebar items */
+.playlist-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  cursor: pointer;
+  transition: transform 0.2s;
+  padding: 4px;
+  border-radius: 8px;
+}
+
+.playlist-item:hover {
+  transform: scale(1.05);
+}
+
+.sidebar.collapsed .playlist-item {
+  gap: 0;
+}
+
+.playlist-thumb {
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 6px;
+  object-fit: cover;
+}
+
+.sidebar.collapsed .playlist-thumb {
+  width: 48px;
+  height: 48px;
+}
+
+.playlist-title-sidebar {
+  font-size: 12px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: center;
+  padding: 0 4px;
+}
+
+.sidebar.collapsed .playlist-title-sidebar {
+  display: none;
+}
+
+/* Playlist view */
+.playlist-view {
+  width: 100%;
+}
+
+.playlist-header {
+  font-size: 32px;
+  font-weight: 700;
+  margin: 0 0 24px;
+  color: white;
+}
+
+.track-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.track-row {
+  display: grid;
+  grid-template-columns: 60px 1fr 80px 120px;
+  gap: 16px;
+  align-items: center;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.track-row:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.track-row-cover {
+  width: 60px;
+  height: 60px;
+  border-radius: 6px;
+  object-fit: cover;
+}
+
+.track-row-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.track-row-title {
+  font-weight: 600;
+  font-size: 15px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: white;
+}
+
+.track-row-artist {
+  font-size: 13px;
+  opacity: 0.7;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.track-row-duration {
+  font-size: 14px;
+  opacity: 0.8;
+  text-align: right;
+}
+
+.track-row-added {
+  font-size: 13px;
+  opacity: 0.7;
+  text-align: right;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .track-row {
+    grid-template-columns: 50px 1fr;
+  }
+
+  .track-row-duration,
+  .track-row-added {
+    display: none;
+  }
+}

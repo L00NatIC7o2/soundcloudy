@@ -7,13 +7,14 @@ export default function Home() {
   const [query, setQuery] = useState("");
   const [tracks, setTracks] = useState<any[]>([]);
   const [playlists, setPlaylists] = useState<any[]>([]);
+  const [selectedPlaylist, setSelectedPlaylist] = useState<any>(null);
+  const [playlistTracks, setPlaylistTracks] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [currentTrack, setCurrentTrack] = useState<any>(null);
   const [sidebarExpanded, setSidebarExpanded] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   useEffect(() => {
-    // Check authentication
     const checkAuth = async () => {
       const res = await fetch("/api/auth/check");
       if (!res.ok) {
@@ -30,7 +31,6 @@ export default function Home() {
     try {
       const response = await fetch("/api/playlists");
       const data = await response.json();
-      // Sort by play count if available, otherwise take first 5
       const sorted = (data.playlists || [])
         .sort(
           (a: any, b: any) => (b.playback_count || 0) - (a.playback_count || 0),
@@ -42,9 +42,22 @@ export default function Home() {
     }
   };
 
+  const handlePlaylistClick = async (playlist: any) => {
+    setSelectedPlaylist(playlist);
+    setTracks([]);
+    try {
+      const response = await fetch(`/api/playlist/${playlist.id}`);
+      const data = await response.json();
+      setPlaylistTracks(data.tracks || []);
+    } catch (error) {
+      console.error("Failed to fetch playlist tracks:", error);
+    }
+  };
+
   const handleSearch = async () => {
     if (!query.trim()) return;
     setLoading(true);
+    setSelectedPlaylist(null);
     try {
       const response = await fetch(
         `/api/search?q=${encodeURIComponent(query)}`,
@@ -56,6 +69,27 @@ export default function Home() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const formatTimeAgo = (dateString: string) => {
+    const now = new Date();
+    const date = new Date(dateString);
+    const diffMs = now.getTime() - date.getTime();
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+    if (diffDays === 0) return "Today";
+    if (diffDays === 1) return "Yesterday";
+    if (diffDays < 7) return `${diffDays} days ago`;
+    if (diffDays < 30) return `${Math.floor(diffDays / 7)} weeks ago`;
+    if (diffDays < 365) return `${Math.floor(diffDays / 30)} months ago`;
+    return `${Math.floor(diffDays / 365)} years ago`;
+  };
+
+  const formatDuration = (ms: number) => {
+    const seconds = Math.floor(ms / 1000);
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
 
   if (!isAuthenticated) {
@@ -75,7 +109,10 @@ export default function Home() {
         </button>
 
         <nav className="sidebar-nav">
-          <button className="nav-item">
+          <button
+            className="nav-item"
+            onClick={() => setSelectedPlaylist(null)}
+          >
             <span className="nav-icon">🏠</span>
             {sidebarExpanded && <span className="nav-label">Home</span>}
           </button>
@@ -103,7 +140,7 @@ export default function Home() {
                 <div
                   key={playlist.id}
                   className="playlist-item"
-                  title={playlist.title}
+                  onClick={() => handlePlaylistClick(playlist)}
                 >
                   <img
                     src={
@@ -114,11 +151,8 @@ export default function Home() {
                     className="playlist-thumb"
                   />
                   {sidebarExpanded && (
-                    <div className="playlist-info">
-                      <div className="playlist-title">{playlist.title}</div>
-                      <div className="playlist-count">
-                        {playlist.track_count} tracks
-                      </div>
+                    <div className="playlist-title-sidebar">
+                      {playlist.title}
                     </div>
                   )}
                 </div>
@@ -148,30 +182,66 @@ export default function Home() {
       </div>
 
       <main className="main-area">
-        <div className="tracks-grid">
-          {tracks.map((t: any) => (
-            <div
-              key={t.id}
-              className="track-card"
-              onClick={() => setCurrentTrack(t)}
-            >
-              <img
-                src={
-                  t.artwork_url?.replace("-large", "-t500x500") ||
-                  "/placeholder.png"
-                }
-                alt={t.title}
-                className="track-cover"
-              />
-              <div className="track-info">
-                <div className="track-title">{t.title}</div>
-                <div className="track-artist">
-                  {t.user?.username || "Unknown"}
+        {selectedPlaylist ? (
+          <div className="playlist-view">
+            <h2 className="playlist-header">{selectedPlaylist.title}</h2>
+            <div className="track-list">
+              {playlistTracks.map((track: any, index: number) => (
+                <div
+                  key={track.id || index}
+                  className="track-row"
+                  onClick={() => setCurrentTrack(track)}
+                >
+                  <img
+                    src={
+                      track.artwork_url?.replace("-large", "-t200x200") ||
+                      "/placeholder.png"
+                    }
+                    alt={track.title}
+                    className="track-row-cover"
+                  />
+                  <div className="track-row-info">
+                    <div className="track-row-title">{track.title}</div>
+                    <div className="track-row-artist">
+                      {track.user?.username || "Unknown"}
+                    </div>
+                  </div>
+                  <div className="track-row-duration">
+                    {formatDuration(track.duration)}
+                  </div>
+                  <div className="track-row-added">
+                    {track.created_at ? formatTimeAgo(track.created_at) : "—"}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="tracks-grid">
+            {tracks.map((t: any) => (
+              <div
+                key={t.id}
+                className="track-card"
+                onClick={() => setCurrentTrack(t)}
+              >
+                <img
+                  src={
+                    t.artwork_url?.replace("-large", "-t500x500") ||
+                    "/placeholder.png"
+                  }
+                  alt={t.title}
+                  className="track-cover"
+                />
+                <div className="track-info">
+                  <div className="track-title">{t.title}</div>
+                  <div className="track-artist">
+                    {t.user?.username || "Unknown"}
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </main>
 
       <div className="player-bar">
