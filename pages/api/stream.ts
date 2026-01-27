@@ -15,11 +15,16 @@ export default async function handler(
     // Use /tracks/:urn/streams endpoint to get streamable URLs
     const streamsResp = await axios.get(
       `https://api.soundcloud.com/tracks/soundcloud:tracks:${trackId}/streams`,
-      { headers: { Authorization: `OAuth ${token}` } },
+      {
+        headers: {
+          Authorization: `OAuth ${token}`,
+          Accept: "application/json; charset=utf-8",
+        },
+      },
     );
     const streams = streamsResp.data;
 
-    console.log("Available streams:", streams);
+    console.log("Available streams:", Object.keys(streams));
 
     // Prefer http_mp3_128_url, fallback to hls variants
     const streamUrl =
@@ -30,41 +35,24 @@ export default async function handler(
     if (!streamUrl) {
       return res
         .status(404)
-        .json({ error: "No stream URL available for this track" });
+        .json({ error: "No stream URL available", streams });
     }
 
-    console.log("Streaming from:", streamUrl);
+    console.log(
+      "Streaming URL obtained, redirecting to:",
+      streamUrl.substring(0, 50),
+    );
 
-    // Fetch and pipe the audio
-    const audioResp = await axios.get(streamUrl, {
-      responseType: "stream",
-      headers: req.headers.range ? { Range: req.headers.range } : {},
-    });
-
-    // Set CORS headers
-    res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Access-Control-Allow-Methods", "GET");
-
-    res.status(audioResp.status);
-    [
-      "content-type",
-      "content-length",
-      "accept-ranges",
-      "content-range",
-    ].forEach((h) => {
-      const v = audioResp.headers[h];
-      if (v) res.setHeader(h, v);
-    });
-
-    audioResp.data.pipe(res);
+    // Redirect to the stream URL instead of proxying (simpler & avoids token issues)
+    res.redirect(302, streamUrl);
   } catch (err: any) {
     console.error(
       "Stream error:",
       err.response?.status,
       err.response?.data || err.message,
     );
-    res
-      .status(err.response?.status || 500)
-      .json({ error: err.response?.data || err.message });
+    res.status(err.response?.status || 500).json({
+      error: err.response?.data?.message || err.message,
+    });
   }
 }
