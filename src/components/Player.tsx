@@ -16,7 +16,7 @@ function Player({ currentTrack, token }: Props) {
     setIsLoading(true);
 
     // Use proxied stream endpoint
-    const streamUrl = `/api/stream?trackId=${currentTrack.id}&token=${encodeURIComponent(token)}`;
+    const streamUrl = `/api/stream?trackId=${currentTrack.id}`;
     audioRef.current.src = streamUrl;
     audioRef.current.load();
 
