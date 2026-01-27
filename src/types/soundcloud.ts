@@ -1,12 +1,18 @@
 export interface Track {
   id: number;
   title: string;
-  user: User;
+  description?: string;
   duration: number;
-  artwork_url: string;
-  stream_url: string;
-  playback_count: number;
-  likes_count: number;
+  permalink_url: string;
+  artwork_url?: string;
+  waveform_url?: string;
+  stream_url?: string;
+  preview_url?: string; // Add this
+  user: {
+    id: number;
+    username: string;
+    avatar_url?: string;
+  };
 }
 
 export interface User {
