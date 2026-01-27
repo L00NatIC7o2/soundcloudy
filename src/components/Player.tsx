@@ -3,14 +3,17 @@ import { useEffect, useRef } from "react";
 type Track = { id: number; title: string };
 type Props = { currentTrack?: Track | null; token: string; clientId: string };
 
-function Player({ currentTrack, token }: Props) {
+function Player({ currentTrack, token, clientId }: Props) {
   const audioRef = useRef<HTMLAudioElement>(null);
 
   useEffect(() => {
     if (!currentTrack || !audioRef.current) return;
-    audioRef.current.src = `/api/stream?trackId=${currentTrack.id}&token=${encodeURIComponent(token)}`;
+    const url = `/api/stream?trackId=${currentTrack.id}&token=${encodeURIComponent(
+      token,
+    )}&clientId=${encodeURIComponent(clientId)}`;
+    audioRef.current.src = url;
     audioRef.current.play().catch(() => {});
-  }, [currentTrack, token]);
+  }, [currentTrack, token, clientId]);
 
   return (
     <div>

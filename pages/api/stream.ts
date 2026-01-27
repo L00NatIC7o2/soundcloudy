@@ -7,16 +7,20 @@ export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
-  const { trackId, token } = req.query as { trackId?: string; token?: string };
+  const { trackId, token, clientId } = req.query as {
+    trackId?: string;
+    token?: string;
+    clientId?: string;
+  };
   if (!trackId || !token)
     return res.status(400).json({ error: "Missing trackId or token" });
 
   try {
     const trackResp = await axios.get(
-      `https://api.soundcloud.com/tracks/${trackId}`,
-      {
-        headers: { Authorization: `OAuth ${token}` },
-      },
+      `https://api.soundcloud.com/tracks/${trackId}${
+        clientId ? `?client_id=${clientId}` : ""
+      }`,
+      { headers: { Authorization: `OAuth ${token}` } },
     );
     const track = trackResp.data;
 
@@ -26,13 +30,19 @@ export default async function handler(
 
     let streamUrl: string | undefined;
     if (prog) {
-      const streamResp = await axios.get(`${prog.url}?oauth_token=${token}`, {
-        headers: { Authorization: `OAuth ${token}` },
-      });
+      const streamResp = await axios.get(
+        `${prog.url}${prog.url.includes("?") ? "&" : "?"}oauth_token=${token}${
+          clientId ? `&client_id=${clientId}` : ""
+        }`,
+        { headers: { Authorization: `OAuth ${token}` } },
+      );
       streamUrl = streamResp.data?.url;
     } else if (track.stream_url) {
-      streamUrl = `${track.stream_url}?oauth_token=${token}`;
+      streamUrl = `${track.stream_url}?oauth_token=${token}${
+        clientId ? `&client_id=${clientId}` : ""
+      }`;
     }
+
     if (!streamUrl)
       return res.status(404).json({ error: "No stream URL available" });
 
