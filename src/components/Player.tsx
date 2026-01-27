@@ -1,60 +1,51 @@
 import { useEffect, useRef, useState } from "react";
 
-type Track = { id: number; title: string; user?: { username: string } };
-type Props = { currentTrack?: Track | null };
+interface PlayerProps {
+  currentTrack: any;
+}
 
-function Player({ currentTrack }: Props) {
+export default function Player({ currentTrack }: PlayerProps) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [volume, setVolume] = useState(1);
+  const [isMuted, setIsMuted] = useState(false);
   const [isLiked, setIsLiked] = useState(false);
+  const [isHovering, setIsHovering] = useState(false);
 
   useEffect(() => {
-    if (!currentTrack || !audioRef.current) return;
+    if (currentTrack && audioRef.current) {
+      const streamUrl = `/api/stream?trackId=${currentTrack.id}`;
+      audioRef.current.src = streamUrl;
+      audioRef.current.load();
 
-    setError(null);
-    setIsLoading(true);
+      // Check if track is liked
+      checkIfLiked();
 
-    // Use proxied stream endpoint
-    const streamUrl = `/api/stream?trackId=${currentTrack.id}`;
-    audioRef.current.src = streamUrl;
-    audioRef.current.load();
-
-    audioRef.current
-      .play()
-      .then(() => {
-        setIsPlaying(true);
-        setIsLoading(false);
-      })
-      .catch((err) => {
-        console.error("Play error:", err);
-        setError(err.message);
-        setIsLoading(false);
-      });
-  }, [currentTrack]);
-
-  useEffect(() => {
-    if (currentTrack?.id) {
-      // Scrobble the play
-      fetch("/api/scrobble", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ trackId: currentTrack.id }),
-      }).catch(() => {}); // Silently fail if unavailable
+      // Auto-play
+      audioRef.current.play().catch(console.error);
+      setIsPlaying(true);
     }
   }, [currentTrack]);
 
-  const handlePlay = () => setIsPlaying(true);
-  const handlePause = () => setIsPlaying(false);
-  const handleError = (e: any) => {
-    console.error("Audio error:", e.target.error);
-    setError("Failed to load audio");
-    setIsLoading(false);
-  };
-  const handleCanPlay = () => {
-    console.log("Audio can play");
-    setIsLoading(false);
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.volume = isMuted ? 0 : volume;
+    }
+  }, [volume, isMuted]);
+
+  const checkIfLiked = async () => {
+    if (!currentTrack?.id) return;
+    try {
+      const response = await fetch(
+        `/api/check-like?trackId=${currentTrack.id}`,
+      );
+      const data = await response.json();
+      setIsLiked(data.isLiked);
+    } catch (error) {
+      console.error("Failed to check like status:", error);
+    }
   };
 
   const toggleLike = async () => {
@@ -71,45 +62,151 @@ function Player({ currentTrack }: Props) {
     }
   };
 
+  const togglePlay = () => {
+    if (!audioRef.current || !currentTrack) return;
+
+    if (isPlaying) {
+      audioRef.current.pause();
+    } else {
+      audioRef.current.play();
+    }
+    setIsPlaying(!isPlaying);
+  };
+
+  const handleTimeUpdate = () => {
+    if (audioRef.current) {
+      setCurrentTime(audioRef.current.currentTime);
+    }
+  };
+
+  const handleLoadedMetadata = () => {
+    if (audioRef.current) {
+      setDuration(audioRef.current.duration);
+    }
+  };
+
+  const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newTime = parseFloat(e.target.value);
+    if (audioRef.current) {
+      audioRef.current.currentTime = newTime;
+      setCurrentTime(newTime);
+    }
+  };
+
+  const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newVolume = parseFloat(e.target.value);
+    setVolume(newVolume);
+    if (isMuted && newVolume > 0) {
+      setIsMuted(false);
+    }
+  };
+
+  const toggleMute = () => {
+    setIsMuted(!isMuted);
+  };
+
+  const formatTime = (seconds: number) => {
+    if (isNaN(seconds)) return "0:00";
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, "0")}`;
+  };
+
+  const getVolumeIcon = () => {
+    if (isMuted || volume === 0) return "🔇";
+    if (volume < 0.5) return "🔉";
+    return "🔊";
+  };
+
   if (!currentTrack) {
-    return <div className="p-4 text-center">No track selected</div>;
+    return <div className="player-loading">Loading last played track...</div>;
   }
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 bg-gray-900 text-white p-4 shadow-lg">
-      <div className="max-w-7xl mx-auto">
-        <div className="flex items-center gap-4">
-          <div className="flex-1">
-            <div className="font-semibold">{currentTrack.title}</div>
-            <div className="text-sm text-gray-400">
-              {currentTrack.user?.username}
+    <div className="player-container">
+      <audio
+        ref={audioRef}
+        onTimeUpdate={handleTimeUpdate}
+        onLoadedMetadata={handleLoadedMetadata}
+        onEnded={() => setIsPlaying(false)}
+      />
+
+      <div className="player-content">
+        {/* Left: Track Info */}
+        <div className="player-left">
+          <img
+            src={
+              currentTrack.artwork_url?.replace("-large", "-t200x200") ||
+              "/placeholder.png"
+            }
+            alt={currentTrack.title}
+            className="player-artwork"
+          />
+          <div className="player-info">
+            <div className="player-artist">
+              {currentTrack.user?.username || "Unknown Artist"}
+            </div>
+            <div
+              className={`player-title ${isHovering ? "scrolling" : ""}`}
+              onMouseEnter={() => setIsHovering(true)}
+              onMouseLeave={() => setIsHovering(false)}
+            >
+              <span>{currentTrack.title}</span>
             </div>
           </div>
-
-          {isLoading && <div className="text-sm">Loading...</div>}
-          {error && <div className="text-sm text-red-500">{error}</div>}
-
-          <audio
-            ref={audioRef}
-            controls
-            crossOrigin="anonymous"
-            onPlay={handlePlay}
-            onPause={handlePause}
-            onError={handleError}
-            onCanPlay={handleCanPlay}
-            className="max-w-md"
-          />
           <button
+            className={`player-like ${isLiked ? "liked" : ""}`}
             onClick={toggleLike}
-            className="ml-4 text-sm bg-gray-700 hover:bg-gray-600 rounded"
+            title={isLiked ? "Unlike" : "Like"}
           >
-            {isLiked ? "Unlike" : "Like"}
+            {isLiked ? "❤️" : "🤍"}
           </button>
+        </div>
+
+        {/* Center: Controls */}
+        <div className="player-center">
+          <div className="player-controls">
+            <button className="player-btn" title="Previous">
+              ⏮
+            </button>
+            <button className="player-btn player-btn-play" onClick={togglePlay}>
+              {isPlaying ? "⏸" : "▶"}
+            </button>
+            <button className="player-btn" title="Next">
+              ⏭
+            </button>
+          </div>
+
+          <div className="player-progress">
+            <span className="player-time">{formatTime(currentTime)}</span>
+            <input
+              type="range"
+              min="0"
+              max={duration || 0}
+              value={currentTime}
+              onChange={handleSeek}
+              className="player-seek"
+            />
+            <span className="player-time">{formatTime(duration)}</span>
+          </div>
+        </div>
+
+        {/* Right: Volume */}
+        <div className="player-right">
+          <button className="player-volume-btn" onClick={toggleMute}>
+            {getVolumeIcon()}
+          </button>
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.01"
+            value={isMuted ? 0 : volume}
+            onChange={handleVolumeChange}
+            className="player-volume-slider"
+          />
         </div>
       </div>
     </div>
   );
 }
-
-export default Player;
-export { Player };

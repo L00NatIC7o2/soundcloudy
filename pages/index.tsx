@@ -11,6 +11,7 @@ export default function Home() {
   const [playlistTracks, setPlaylistTracks] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [currentTrack, setCurrentTrack] = useState<any>(null);
+  const [loadingLastTrack, setLoadingLastTrack] = useState(true);
   const [sidebarExpanded, setSidebarExpanded] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [viewingLikes, setViewingLikes] = useState(false);
@@ -24,6 +25,7 @@ export default function Home() {
       } else {
         setIsAuthenticated(true);
         fetchPlaylists();
+        fetchLastPlayedTrack();
       }
     };
     checkAuth();
@@ -41,6 +43,20 @@ export default function Home() {
       setPlaylists(sorted);
     } catch (error) {
       console.error("Failed to fetch playlists:", error);
+    }
+  };
+
+  const fetchLastPlayedTrack = async () => {
+    try {
+      const response = await fetch("/api/recent-tracks");
+      const data = await response.json();
+      if (data.track) {
+        setCurrentTrack(data.track);
+      }
+    } catch (error) {
+      console.error("Failed to fetch last played track:", error);
+    } finally {
+      setLoadingLastTrack(false);
     }
   };
 
