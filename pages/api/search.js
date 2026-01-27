@@ -1,11 +1,11 @@
+export const config = { runtime: "nodejs" };
+
 import axios from "axios";
 
 export default async (req, res) => {
   const { q, token } = req.query;
 
-  if (!q || !token) {
-    return res.status(400).json({ error: "Missing params" });
-  }
+  if (!q || !token) return res.status(400).json({ error: "Missing params" });
 
   try {
     const response = await axios.get(
@@ -14,12 +14,11 @@ export default async (req, res) => {
         params: {
           q,
           limit: 50,
-          client_id: process.env.VITE_SOUNDCLOUD_CLIENT_ID, // fallback
+          client_id: process.env.VITE_SOUNDCLOUD_CLIENT_ID,
         },
         headers: { Authorization: `OAuth ${token}` },
       },
     );
-
     res.json({ collection: response.data.collection || response.data });
   } catch (error) {
     console.error("Search error:", error.response?.data || error.message);
