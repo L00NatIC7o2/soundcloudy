@@ -1,2 +1,21 @@
 # Local Netlify folder
 .netlify
+
+# Node modules
+node_modules
+
+# Next.js build files
+.next
+
+# Dist files
+dist
+
+# Environment files
+.env
+.env.local
+
+# Logs
+*.log
+
+# System files
+.DS_Store
