@@ -1,19 +1,29 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 
 export default function LoginPage() {
   const router = useRouter();
+  const [checking, setChecking] = useState(true);
 
   useEffect(() => {
-    // Check if already logged in
     const checkAuth = async () => {
-      const res = await fetch("/api/auth/check");
-      if (res.ok) {
-        router.push("/");
+      try {
+        const res = await fetch("/api/auth/check");
+        if (res.ok) {
+          router.push("/");
+        }
+      } catch (error) {
+        console.error("Auth check failed:", error);
+      } finally {
+        setChecking(false);
       }
     };
     checkAuth();
   }, [router]);
+
+  if (checking) {
+    return <div style={{ padding: "20px" }}>Loading...</div>;
+  }
 
   const handleLogin = () => {
     window.location.href = "/api/auth/login";

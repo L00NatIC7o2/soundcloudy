@@ -14,22 +14,41 @@ export default function Home() {
   const [loadingLastTrack, setLoadingLastTrack] = useState(true);
   const [sidebarExpanded, setSidebarExpanded] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [authChecking, setAuthChecking] = useState(true);
   const [viewingLikes, setViewingLikes] = useState(false);
   const [geniusCache, setGeniusCache] = useState<Record<string, any>>({});
 
   useEffect(() => {
     const checkAuth = async () => {
-      const res = await fetch("/api/auth/check");
-      if (!res.ok) {
+      try {
+        const res = await fetch("/api/auth/check");
+        if (!res.ok) {
+          router.push("/login");
+          setIsAuthenticated(false);
+        } else {
+          setIsAuthenticated(true);
+          fetchPlaylists();
+          fetchLastPlayedTrack();
+        }
+      } catch (error) {
+        console.error("Auth check failed:", error);
         router.push("/login");
-      } else {
-        setIsAuthenticated(true);
-        fetchPlaylists();
-        fetchLastPlayedTrack();
+        setIsAuthenticated(false);
+      } finally {
+        setAuthChecking(false);
       }
     };
     checkAuth();
   }, [router]);
+
+  // Show loading while checking auth
+  if (authChecking) {
+    return <div style={{ padding: "20px", color: "white" }}>Loading...</div>;
+  }
+
+  if (!isAuthenticated) {
+    return null; // Will redirect via useEffect
+  }
 
   const fetchPlaylists = async () => {
     try {
@@ -176,10 +195,6 @@ export default function Home() {
 
     return null;
   };
-
-  if (!isAuthenticated) {
-    return <div>Loading...</div>;
-  }
 
   const displayTitle = viewingLikes ? "Liked Songs" : selectedPlaylist?.title;
   const displayCover = viewingLikes
