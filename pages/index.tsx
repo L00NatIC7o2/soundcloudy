@@ -6,6 +6,7 @@ export default function Home() {
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [tracks, setTracks] = useState<any[]>([]);
+  const [playlists, setPlaylists] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [currentTrack, setCurrentTrack] = useState<any>(null);
   const [sidebarExpanded, setSidebarExpanded] = useState(true);
@@ -19,10 +20,27 @@ export default function Home() {
         router.push("/login");
       } else {
         setIsAuthenticated(true);
+        fetchPlaylists();
       }
     };
     checkAuth();
   }, [router]);
+
+  const fetchPlaylists = async () => {
+    try {
+      const response = await fetch("/api/playlists");
+      const data = await response.json();
+      // Sort by play count if available, otherwise take first 5
+      const sorted = (data.playlists || [])
+        .sort(
+          (a: any, b: any) => (b.playback_count || 0) - (a.playback_count || 0),
+        )
+        .slice(0, 5);
+      setPlaylists(sorted);
+    } catch (error) {
+      console.error("Failed to fetch playlists:", error);
+    }
+  };
 
   const handleSearch = async () => {
     if (!query.trim()) return;
@@ -76,34 +94,40 @@ export default function Home() {
         <div className="sidebar-divider" />
 
         <div className="sidebar-playlists">
-          {sidebarExpanded && <div className="section-title">Most Played</div>}
+          {sidebarExpanded && (
+            <div className="section-title">Most Played Playlists</div>
+          )}
           <div className="playlist-thumbs">
-            {/* Placeholder thumbnails */}
-            <img
-              src="/placeholder.png"
-              alt="Playlist"
-              className="playlist-thumb"
-            />
-            <img
-              src="/placeholder.png"
-              alt="Playlist"
-              className="playlist-thumb"
-            />
-            <img
-              src="/placeholder.png"
-              alt="Playlist"
-              className="playlist-thumb"
-            />
-            <img
-              src="/placeholder.png"
-              alt="Playlist"
-              className="playlist-thumb"
-            />
-            <img
-              src="/placeholder.png"
-              alt="Playlist"
-              className="playlist-thumb"
-            />
+            {playlists.length > 0 ? (
+              playlists.map((playlist) => (
+                <div
+                  key={playlist.id}
+                  className="playlist-item"
+                  title={playlist.title}
+                >
+                  <img
+                    src={
+                      playlist.artwork_url?.replace("-large", "-t300x300") ||
+                      "/placeholder.png"
+                    }
+                    alt={playlist.title}
+                    className="playlist-thumb"
+                  />
+                  {sidebarExpanded && (
+                    <div className="playlist-info">
+                      <div className="playlist-title">{playlist.title}</div>
+                      <div className="playlist-count">
+                        {playlist.track_count} tracks
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))
+            ) : (
+              <div className="empty-state">
+                {sidebarExpanded ? "No playlists yet" : "—"}
+              </div>
+            )}
           </div>
         </div>
       </aside>
