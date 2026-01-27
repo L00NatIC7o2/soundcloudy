@@ -1,6 +1,6 @@
 :root {
-  --sidebar-collapsed: 72px;
-  --sidebar-expanded: 240px;
+  --sidebar-collapsed: 100px;
+  --sidebar-expanded: 200px;
   --player-height: 84px;
 }
 
@@ -113,8 +113,8 @@ html,
 .sidebar-nav {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 0 12px;
+  gap: 10px;
+  padding: 10px 10px;
 }
 
 .nav-item {
@@ -137,8 +137,8 @@ html,
 }
 
 .nav-icon {
-  font-size: 20px;
-  min-width: 24px;
+  font-size: 40px;
+  min-width: 50px;
 }
 
 .nav-label {
@@ -149,7 +149,7 @@ html,
 .sidebar-divider {
   height: 1px;
   background: rgba(255, 255, 255, 0.2);
-  margin: 16px 12px;
+  margin: 20px 12px;
 }
 
 .sidebar-playlists {
@@ -169,7 +169,7 @@ html,
 .playlist-thumbs {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 20px;
 }
 
 /* Playlist sidebar items */
@@ -179,7 +179,7 @@ html,
   gap: 8px;
   cursor: pointer;
   transition: transform 0.2s;
-  padding: 4px;
+  padding: 5px;
   border-radius: 8px;
 }
 
@@ -194,13 +194,13 @@ html,
 .playlist-thumb {
   width: 100%;
   aspect-ratio: 1;
-  border-radius: 6px;
+  border-radius: 12px;
   object-fit: cover;
 }
 
 .sidebar.collapsed .playlist-thumb {
-  width: 48px;
-  height: 48px;
+  width: 70px;
+  height: 70px;
 }
 
 .playlist-title-sidebar {
@@ -230,7 +230,7 @@ html,
 .search-box {
   display: flex;
   gap: 10px;
-  width: 520px;
+  width: 700px;
   max-width: 90%;
   position: absolute;
   left: 50%;
@@ -255,7 +255,6 @@ html,
 
 .search-box button {
   height: 40px;
-  padding: 0 24px;
   border-radius: 20px;
   border: 0;
   background: rgba(255, 255, 255, 0.9);
@@ -273,7 +272,7 @@ html,
 /* Top Bar - Fixed to viewport */
 .top-bar {
   position: fixed;
-  top: 12px;
+  top: 25px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 99;
@@ -291,7 +290,7 @@ html,
   padding: 24px;
   overflow-y: auto;
   padding-bottom: 140px;
-  margin-top: 80px;
+  margin-top: 5px;
 }
 
 .tracks-grid {
