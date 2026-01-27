@@ -55,12 +55,17 @@ export default async function handler(
       );
     }
 
-    res.setHeader(
-      "Set-Cookie",
-      `soundcloud_token=${tokenData.access_token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000`,
-    );
-
-    console.log("Token stored successfully");
+    const cookie = [
+      `soundcloud_token=${tokenData.access_token}`,
+      "Path=/",
+      "HttpOnly",
+      "SameSite=Lax",
+      "Max-Age=31536000",
+    ];
+    if (process.env.NEXTAUTH_URL?.startsWith("https://")) {
+      cookie.push("Secure");
+    }
+    res.setHeader("Set-Cookie", cookie.join("; "));
     res.redirect("/");
   } catch (err: any) {
     console.error("Auth callback error:", err);
