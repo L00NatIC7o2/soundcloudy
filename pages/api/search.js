@@ -1,5 +1,9 @@
 import axios from "axios";
 
+export const config = {
+  runtime: "nodejs",
+};
+
 export default async (req, res) => {
   const { q, token } = req.query;
 
