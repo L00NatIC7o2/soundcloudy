@@ -13,11 +13,12 @@ export default async function handler(
     return res.status(400).json({ error: "Missing trackId" });
   }
 
-  // Get token from secure cookie
   const token = req.cookies.soundcloud_token;
 
   if (!token) {
-    return res.status(401).json({ error: "Not authenticated" });
+    return res
+      .status(401)
+      .json({ error: "Not authenticated - no token cookie found" });
   }
 
   try {
@@ -37,6 +38,7 @@ export default async function handler(
     console.log("Streams response status:", streamsResp.status);
 
     if (streamsResp.status !== 200) {
+      console.error("Stream API error:", streamsResp.data);
       return res.status(streamsResp.status).json({
         error: streamsResp.data?.error || "Failed to get streams",
       });
@@ -52,16 +54,24 @@ export default async function handler(
       return res.status(404).json({ error: "No stream URL available" });
     }
 
-    console.log("Got stream URL, proxying audio");
+    console.log("Got stream URL:", streamUrl);
 
+    // Fetch the actual audio stream WITH the token in the URL
     const audioResp = await axios.get(streamUrl, {
+      params: { client_id: process.env.SOUNDCLOUD_CLIENT_ID },
+      headers: {
+        Authorization: `OAuth ${token}`,
+        "User-Agent": "Mozilla/5.0",
+      },
       responseType: "stream",
       timeout: 30000,
       validateStatus: () => true,
     });
 
+    console.log("Audio response status:", audioResp.status);
+
     if (audioResp.status !== 200) {
-      console.error("Audio fetch failed:", audioResp.status);
+      console.error("Audio fetch failed:", audioResp.status, audioResp.data);
       return res
         .status(audioResp.status)
         .json({ error: "Failed to fetch audio" });
