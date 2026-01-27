@@ -43,6 +43,8 @@ export default function Home() {
     }
   };
 
+  const [currentTrack, setCurrentTrack] = useState<any>(null);
+
   return (
     <div id="app">
       <h1>SoundCloudy</h1>
@@ -70,9 +72,12 @@ export default function Home() {
             clientId={clientId}
           />
 
-          <ul id="tracksList" className="tracks-list">
-            {tracks.map((t) => (
-              <li key={t.id}>{t.title}</li>
+          <ul className="tracks-list">
+            {tracks.map((t: any) => (
+              <li key={t.id}>
+                {t.title}{" "}
+                <button onClick={() => setCurrentTrack(t)}>Play</button>
+              </li>
             ))}
           </ul>
         </>
