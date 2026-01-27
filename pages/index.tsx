@@ -14,6 +14,7 @@ export default function Home() {
   const [sidebarExpanded, setSidebarExpanded] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [viewingLikes, setViewingLikes] = useState(false);
+  const [geniusCache, setGeniusCache] = useState<Record<string, any>>({});
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -132,6 +133,32 @@ export default function Home() {
 
   const getYear = (dateString: string) => {
     return new Date(dateString).getFullYear();
+  };
+
+  const fetchGeniusMetadata = async (track: any) => {
+    const cacheKey = `${track.id}`;
+    if (geniusCache[cacheKey]) {
+      return geniusCache[cacheKey];
+    }
+
+    try {
+      const response = await fetch(
+        `/api/genius-metadata?title=${encodeURIComponent(track.title)}&artist=${encodeURIComponent(track.user?.username || "")}`,
+      );
+      const data = await response.json();
+
+      if (data.found && data.releaseDate) {
+        const metadata = {
+          releaseYear: new Date(data.releaseDate).getFullYear(),
+        };
+        setGeniusCache((prev) => ({ ...prev, [cacheKey]: metadata }));
+        return metadata;
+      }
+    } catch (error) {
+      console.error("Genius fetch failed:", error);
+    }
+
+    return null;
   };
 
   if (!isAuthenticated) {
@@ -266,7 +293,8 @@ export default function Home() {
                     {formatDuration(track.duration)}
                   </div>
                   <div className="track-row-year">
-                    {track.created_at ? getYear(track.created_at) : "—"}
+                    {geniusCache[track.id]?.releaseYear ||
+                      (track.created_at ? getYear(track.created_at) : "—")}
                   </div>
                   <div className="track-row-added">
                     {track.added_at
