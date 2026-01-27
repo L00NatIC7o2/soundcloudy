@@ -4,14 +4,19 @@ export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
-  const { code } = req.query as { code?: string };
+  const { code, error } = req.query as { code?: string; error?: string };
+
+  if (error) {
+    return res.redirect(`/?error=${error}`);
+  }
 
   if (!code) {
     return res.status(400).json({ error: "Missing authorization code" });
   }
 
   try {
-    // Exchange code for OAuth token from SoundCloud
+    console.log("Exchanging code for token...");
+
     const tokenResp = await fetch("https://api.soundcloud.com/oauth2/token", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -28,21 +33,21 @@ export default async function handler(
     const tokenData = await tokenResp.json();
     console.log("Token response:", tokenData);
 
-    if (!tokenResp.ok) {
-      return res
-        .status(400)
-        .json({ error: tokenData.error_description || "Auth failed" });
+    if (!tokenResp.ok || !tokenData.access_token) {
+      console.error("Token exchange failed:", tokenData);
+      return res.redirect(`/?error=token_exchange_failed`);
     }
 
-    // Store the oauth_token in a secure cookie or session
+    // Set secure cookie with the OAuth token
     res.setHeader(
       "Set-Cookie",
-      `soundcloud_token=${tokenData.access_token}; Path=/; HttpOnly; Secure; SameSite=Lax`,
+      `soundcloud_token=${tokenData.access_token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000`,
     );
 
+    console.log("Token stored successfully");
     res.redirect("/");
   } catch (err: any) {
     console.error("Auth callback error:", err);
-    res.status(500).json({ error: err.message });
+    res.redirect(`/?error=auth_error`);
   }
 }
