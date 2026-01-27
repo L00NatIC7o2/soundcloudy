@@ -15,6 +15,7 @@ export default function Home() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [authChecking, setAuthChecking] = useState(true);
   const [viewingLikes, setViewingLikes] = useState(false);
+  const [geniusCache, setGeniusCache] = useState<Record<string, any>>({});
 
   // Define all functions BEFORE useEffect
   const fetchPlaylists = async () => {
@@ -130,6 +131,32 @@ export default function Home() {
 
   const getYear = (dateString: string) => {
     return new Date(dateString).getFullYear();
+  };
+
+  const fetchGeniusMetadata = async (track: any) => {
+    const cacheKey = `${track.id}`;
+    if (geniusCache[cacheKey]) {
+      return geniusCache[cacheKey];
+    }
+
+    try {
+      const response = await fetch(
+        `/api/genius-metadata?title=${encodeURIComponent(track.title)}&artist=${encodeURIComponent(track.user?.username || "")}`,
+      );
+      const data = await response.json();
+
+      if (data.found && data.releaseDate) {
+        const metadata = {
+          releaseYear: new Date(data.releaseDate).getFullYear(),
+        };
+        setGeniusCache((prev) => ({ ...prev, [cacheKey]: metadata }));
+        return metadata;
+      }
+    } catch (error) {
+      console.error("Genius fetch failed:", error);
+    }
+
+    return null;
   };
 
   // NOW define useEffect
@@ -268,42 +295,48 @@ export default function Home() {
               <h2 className="playlist-header-title">{displayTitle}</h2>
             </div>
             <div className="track-list">
-              {playlistTracks.map((track: any, index: number) => (
-                <div
-                  key={track.id || index}
-                  className="track-row"
-                  onClick={() => setCurrentTrack(track)}
-                >
-                  <img
-                    src={
-                      track.artwork_url?.replace("-large", "-t200x200") ||
-                      "/placeholder.png"
-                    }
-                    alt={track.title}
-                    className="track-row-cover"
-                  />
-                  <div className="track-row-info">
-                    <div className="track-row-title">{track.title}</div>
-                    <div className="track-row-artist">
-                      {track.user?.username || "Unknown"}
+              {playlistTracks.map((track: any, index: number) => {
+                useEffect(() => {
+                  if (track.id) fetchGeniusMetadata(track);
+                }, [track.id]);
+
+                return (
+                  <div
+                    key={track.id || index}
+                    className="track-row"
+                    onClick={() => setCurrentTrack(track)}
+                  >
+                    <img
+                      src={
+                        track.artwork_url?.replace("-large", "-t200x200") ||
+                        "/placeholder.png"
+                      }
+                      alt={track.title}
+                      className="track-row-cover"
+                    />
+                    <div className="track-row-info">
+                      <div className="track-row-title">{track.title}</div>
+                      <div className="track-row-artist">
+                        {track.user?.username || "Unknown"}
+                      </div>
+                    </div>
+                    <div className="track-row-duration">
+                      {formatDuration(track.duration)}
+                    </div>
+                    <div className="track-row-year">
+                      {geniusCache[track.id]?.releaseYear ||
+                        (track.created_at ? getYear(track.created_at) : "—")}
+                    </div>
+                    <div className="track-row-added">
+                      {track.added_at
+                        ? formatTimeAgo(track.added_at)
+                        : track.created_at
+                          ? formatTimeAgo(track.created_at)
+                          : "—"}
                     </div>
                   </div>
-                  <div className="track-row-duration">
-                    {formatDuration(track.duration)}
-                  </div>
-                  <div className="track-row-year">
-                    {geniusCache[track.id]?.releaseYear ||
-                      (track.created_at ? getYear(track.created_at) : "—")}
-                  </div>
-                  <div className="track-row-added">
-                    {track.added_at
-                      ? formatTimeAgo(track.added_at)
-                      : track.created_at
-                        ? formatTimeAgo(track.created_at)
-                        : "—"}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         ) : (

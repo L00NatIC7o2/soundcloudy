@@ -50,11 +50,12 @@ export default function Player({ currentTrack }: PlayerProps) {
   };
 
   const toggleLike = async () => {
-    if (!currentTrack?.id) return;
+    if (!currentTrack?.id) {
+      alert("No track selected");
+      return;
+    }
 
     const newLikeState = !isLiked;
-
-    // Optimistic UI update
     setIsLiked(newLikeState);
 
     try {
@@ -68,17 +69,15 @@ export default function Player({ currentTrack }: PlayerProps) {
       });
 
       if (!response.ok) {
-        throw new Error("Failed to update like status");
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to update like");
       }
-
-      console.log(
-        `Track ${currentTrack.id} ${newLikeState ? "liked" : "unliked"} successfully`,
-      );
     } catch (error) {
       console.error("Like failed:", error);
-      // Revert on error
-      setIsLiked(!newLikeState);
-      alert("Failed to update like status. Please try again.");
+      setIsLiked(!newLikeState); // Revert
+      alert(
+        `Error: ${error instanceof Error ? error.message : "Unknown error"}`,
+      );
     }
   };
 
