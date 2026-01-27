@@ -21,6 +21,17 @@ export default async function handler(
     );
     const track = trackResp.data;
 
+    // Log track data for debugging
+    console.log("Track access:", track.access);
+    console.log("Track media:", JSON.stringify(track.media, null, 2));
+
+    // Check if track is blocked
+    if (track.access === "blocked") {
+      return res
+        .status(403)
+        .json({ error: "This track is not available for streaming" });
+    }
+
     // Find progressive or HLS transcoding
     const transcodings = track.media?.transcodings || [];
     const prog = transcodings.find(
@@ -30,9 +41,13 @@ export default async function handler(
     const transcoding = prog || hls;
 
     if (!transcoding?.url) {
-      return res
-        .status(404)
-        .json({ error: "No streamable transcoding available for this track" });
+      console.log("Available transcodings:", transcodings);
+      return res.status(404).json({
+        error: "No streamable transcoding available",
+        access: track.access,
+        hasMedia: !!track.media,
+        transcodingsCount: transcodings.length,
+      });
     }
 
     // Resolve the stream URL
