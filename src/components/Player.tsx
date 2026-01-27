@@ -1,9 +1,13 @@
 import { useEffect, useRef } from "react";
 
-type Track = { id: number; title: string };
+type Track = {
+  id: number;
+  title: string;
+  media?: { transcodings?: { url: string; format?: { protocol?: string } }[] };
+};
 type Props = { currentTrack?: Track | null; token: string; clientId: string };
 
-function Player({ currentTrack, token, clientId }: Props) {
+function Player({ currentTrack, token }: Props) {
   const audioRef = useRef<HTMLAudioElement>(null);
 
   useEffect(() => {
@@ -12,29 +16,28 @@ function Player({ currentTrack, token, clientId }: Props) {
 
     (async () => {
       try {
-        // Get stream URLs (progressive mp3)
-        const resp = await fetch(
-          `https://api.soundcloud.com/tracks/${currentTrack.id}/streams?client_id=${clientId}`,
+        const tResp = await fetch(
+          `https://api.soundcloud.com/tracks/${currentTrack.id}`,
           { headers: { Authorization: `OAuth ${token}` } },
         );
-        if (!resp.ok) throw new Error(`streams ${resp.status}`);
-        const streams = await resp.json();
+        if (!tResp.ok) throw new Error(`track ${tResp.status}`);
+        const track = await tResp.json();
 
-        const mp3 = streams.http_mp3_128_url || streams.hls_mp3_128_url;
-        if (!mp3) {
-          console.warn(
-            "No mp3 stream available for track",
-            currentTrack.id,
-            streams,
-          );
+        const prog = track.media?.transcodings?.find(
+          (t: any) => t.format?.protocol === "progressive",
+        );
+        if (!prog) {
+          console.warn("No progressive stream", track);
           return;
         }
 
+        const sResp = await fetch(`${prog.url}?oauth_token=${token}`);
+        if (!sResp.ok) throw new Error(`stream ${sResp.status}`);
+        const stream = await sResp.json();
+
         if (canceled) return;
-        audioRef.current!.src = mp3;
-        await audioRef
-          .current!.play()
-          .catch((e) => console.warn("play error", e));
+        audioRef.current!.src = stream.url;
+        await audioRef.current!.play().catch(() => {});
       } catch (e) {
         console.error("Player stream error:", e);
       }
@@ -43,7 +46,7 @@ function Player({ currentTrack, token, clientId }: Props) {
     return () => {
       canceled = true;
     };
-  }, [currentTrack, clientId, token]);
+  }, [currentTrack, token]);
 
   return (
     <div>
