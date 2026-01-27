@@ -9,7 +9,10 @@ export default async function handler(
   const geniusToken = process.env.GENIUS_API_TOKEN;
 
   if (!geniusToken) {
-    return res.status(500).json({ error: "Genius API token not configured" });
+    console.warn("GENIUS_API_TOKEN not configured");
+    return res
+      .status(200)
+      .json({ found: false, reason: "Token not configured" });
   }
 
   if (!title) {
@@ -22,6 +25,7 @@ export default async function handler(
     const searchResp = await axios.get("https://api.genius.com/search", {
       headers: { Authorization: `Bearer ${geniusToken}` },
       params: { q: searchQuery },
+      timeout: 5000,
     });
 
     const hits = searchResp.data.response.hits;
@@ -29,7 +33,6 @@ export default async function handler(
       return res.json({ found: false });
     }
 
-    // Get first match
     const song = hits[0].result;
     const releaseDate = song.release_date_for_display || song.release_date;
 
@@ -42,6 +45,6 @@ export default async function handler(
     });
   } catch (error: any) {
     console.error("Genius API error:", error.response?.data || error.message);
-    res.status(500).json({ error: "Failed to fetch from Genius" });
+    res.status(200).json({ found: false, reason: error.message });
   }
 }

@@ -140,9 +140,18 @@ export default function Home() {
     }
 
     try {
-      const response = await fetch(
-        `/api/genius-metadata?title=${encodeURIComponent(track.title)}&artist=${encodeURIComponent(track.user?.username || "")}`,
-      );
+      const params = new URLSearchParams({
+        title: track.title || "",
+        artist: track.user?.username || "",
+      });
+
+      const response = await fetch(`/api/genius-metadata?${params.toString()}`);
+
+      if (!response.ok) {
+        console.warn(`Genius API error: ${response.status}`);
+        return null;
+      }
+
       const data = await response.json();
 
       if (data.found && data.releaseDate) {
