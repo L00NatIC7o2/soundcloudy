@@ -18,6 +18,13 @@ export default function Home() {
   const [geniusCache, setGeniusCache] = useState<Record<string, any>>({});
   const [headerScrolled, setHeaderScrolled] = useState(false);
 
+  // Queue management
+  const [queue, setQueue] = useState<any[]>([]);
+  const [currentQueueIndex, setCurrentQueueIndex] = useState(-1);
+  const [queueSource, setQueueSource] = useState<
+    "playlist" | "search" | "related"
+  >("playlist");
+
   // Define all functions BEFORE useEffect
   const fetchPlaylists = async () => {
     try {
@@ -41,6 +48,17 @@ export default function Home() {
       }
     } catch (error) {
       console.error("Failed to fetch last played track:", error);
+    }
+  };
+
+  const fetchRelatedTracks = async (trackId: number) => {
+    try {
+      const response = await fetch(`/api/related-tracks?trackId=${trackId}`);
+      const data = await response.json();
+      return data.collection || [];
+    } catch (error) {
+      console.error("Failed to fetch related tracks:", error);
+      return [];
     }
   };
 
@@ -85,6 +103,46 @@ export default function Home() {
       console.error("Search error:", error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleTrackClick = async (
+    track: any,
+    source: "playlist" | "search",
+    trackList: any[] = [],
+  ) => {
+    setCurrentTrack(track);
+    setQueueSource(source);
+
+    if (source === "playlist") {
+      // Set queue to playlist tracks starting from clicked track
+      const trackIndex = trackList.findIndex((t) => t.id === track.id);
+      if (trackIndex !== -1) {
+        setQueue(trackList);
+        setCurrentQueueIndex(trackIndex);
+      }
+    } else if (source === "search") {
+      // Fetch related tracks for autoplay
+      const related = await fetchRelatedTracks(track.id);
+      setQueue([track, ...related]);
+      setCurrentQueueIndex(0);
+    }
+  };
+
+  const handleTrackEnd = async () => {
+    if (currentQueueIndex < queue.length - 1) {
+      // Play next in queue
+      const nextIndex = currentQueueIndex + 1;
+      setCurrentQueueIndex(nextIndex);
+      setCurrentTrack(queue[nextIndex]);
+    } else if (queueSource === "search" && currentTrack) {
+      // Fetch more related tracks
+      const related = await fetchRelatedTracks(currentTrack.id);
+      if (related.length > 0) {
+        setQueue([...queue, ...related]);
+        setCurrentQueueIndex(queue.length);
+        setCurrentTrack(related[0]);
+      }
     }
   };
 
@@ -169,7 +227,6 @@ export default function Home() {
     return null;
   };
 
-  // NOW define useEffect
   useEffect(() => {
     const checkAuth = async () => {
       try {
@@ -195,7 +252,6 @@ export default function Home() {
 
   useEffect(() => {
     if (playlistTracks.length > 0) {
-      // Fetch metadata for tracks that don't have it cached
       playlistTracks.forEach((track) => {
         if (track.id && !geniusCache[track.id]) {
           fetchGeniusMetadata(track);
@@ -203,6 +259,16 @@ export default function Home() {
       });
     }
   }, [playlistTracks, geniusCache]);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      const scrollY = window.scrollY;
+      setHeaderScrolled(scrollY > 100);
+    };
+
+    window.addEventListener("scroll", handleScroll);
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
 
   if (authChecking) {
     return <div style={{ padding: "20px", color: "white" }}>Loading...</div>;
@@ -241,6 +307,16 @@ export default function Home() {
           >
             <span className="nav-icon">🏠</span>
             {sidebarExpanded && <span className="nav-label">Home</span>}
+          </button>
+
+          <button
+            className="nav-item"
+            onClick={() => {
+              window.open("https://soundcloud.com/you", "_blank");
+            }}
+          >
+            <span className="nav-icon">👤</span>
+            {sidebarExpanded && <span className="nav-label">Profile</span>}
           </button>
 
           <button className="nav-item" onClick={handleLikesClick}>
@@ -293,14 +369,12 @@ export default function Home() {
         <div className="search-box">
           <input
             type="text"
-            placeholder="Search tracks..."
+            placeholder="Search for songs..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleSearch()}
           />
-          <button onClick={handleSearch} disabled={loading}>
-            {loading ? "..." : "Search"}
-          </button>
+          <button onClick={handleSearch}>Search</button>
         </div>
       </div>
 
@@ -322,7 +396,9 @@ export default function Home() {
                 <div
                   key={track.id || index}
                   className="track-row"
-                  onClick={() => setCurrentTrack(track)}
+                  onClick={() =>
+                    handleTrackClick(track, "playlist", playlistTracks)
+                  }
                 >
                   <img
                     src={
@@ -362,7 +438,7 @@ export default function Home() {
               <div
                 key={t.id}
                 className="track-card"
-                onClick={() => setCurrentTrack(t)}
+                onClick={() => handleTrackClick(t, "search")}
               >
                 <img
                   src={
@@ -384,9 +460,7 @@ export default function Home() {
         )}
       </main>
 
-      <div className="player-bar">
-        <Player currentTrack={currentTrack} />
-      </div>
+      <Player currentTrack={currentTrack} onTrackEnd={handleTrackEnd} />
     </div>
   );
 }

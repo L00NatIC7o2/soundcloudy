@@ -2,9 +2,10 @@ import { useEffect, useRef, useState } from "react";
 
 interface PlayerProps {
   currentTrack: any;
+  onTrackEnd?: () => void;
 }
 
-export default function Player({ currentTrack }: PlayerProps) {
+export default function Player({ currentTrack, onTrackEnd }: PlayerProps) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -12,7 +13,57 @@ export default function Player({ currentTrack }: PlayerProps) {
   const [volume, setVolume] = useState(1);
   const [isMuted, setIsMuted] = useState(false);
   const [isLiked, setIsLiked] = useState(false);
-  const [isHovering, setIsHovering] = useState(false);
+
+  // Update Media Session metadata
+  useEffect(() => {
+    if (currentTrack && "mediaSession" in navigator) {
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: currentTrack.title,
+        artist: currentTrack.user?.username || "Unknown Artist",
+        album: currentTrack.publisher_metadata?.album_title || "",
+        artwork: [
+          {
+            src: currentTrack.artwork_url?.replace("-large", "-t500x500") || "",
+            sizes: "500x500",
+            type: "image/jpeg",
+          },
+        ],
+      });
+
+      // Set action handlers
+      navigator.mediaSession.setActionHandler("play", () => {
+        audioRef.current?.play();
+        setIsPlaying(true);
+      });
+
+      navigator.mediaSession.setActionHandler("pause", () => {
+        audioRef.current?.pause();
+        setIsPlaying(false);
+      });
+
+      navigator.mediaSession.setActionHandler("previoustrack", () => {
+        // Will be handled by parent component
+        onTrackEnd?.();
+      });
+
+      navigator.mediaSession.setActionHandler("nexttrack", () => {
+        onTrackEnd?.();
+      });
+
+      navigator.mediaSession.setActionHandler("seekto", (details) => {
+        if (audioRef.current && details.seekTime) {
+          audioRef.current.currentTime = details.seekTime;
+        }
+      });
+    }
+  }, [currentTrack, onTrackEnd]);
+
+  // Update playback state
+  useEffect(() => {
+    if ("mediaSession" in navigator) {
+      navigator.mediaSession.playbackState = isPlaying ? "playing" : "paused";
+    }
+  }, [isPlaying]);
 
   useEffect(() => {
     if (currentTrack && audioRef.current) {
@@ -20,20 +71,12 @@ export default function Player({ currentTrack }: PlayerProps) {
       audioRef.current.src = streamUrl;
       audioRef.current.load();
 
-      // Check if track is liked
       checkIfLiked();
 
-      // Auto-play
       audioRef.current.play().catch(console.error);
       setIsPlaying(true);
     }
   }, [currentTrack]);
-
-  useEffect(() => {
-    if (audioRef.current) {
-      audioRef.current.volume = isMuted ? 0 : volume;
-    }
-  }, [volume, isMuted]);
 
   const checkIfLiked = async () => {
     if (!currentTrack?.id) return;
@@ -74,16 +117,15 @@ export default function Player({ currentTrack }: PlayerProps) {
       }
     } catch (error) {
       console.error("Like failed:", error);
-      setIsLiked(!newLikeState); // Revert
+      setIsLiked(!newLikeState);
       alert(
         `Error: ${error instanceof Error ? error.message : "Unknown error"}`,
       );
     }
   };
 
-  const togglePlay = () => {
-    if (!audioRef.current || !currentTrack) return;
-
+  const togglePlayPause = () => {
+    if (!audioRef.current) return;
     if (isPlaying) {
       audioRef.current.pause();
     } else {
@@ -95,12 +137,19 @@ export default function Player({ currentTrack }: PlayerProps) {
   const handleTimeUpdate = () => {
     if (audioRef.current) {
       setCurrentTime(audioRef.current.currentTime);
-    }
-  };
+      setDuration(audioRef.current.duration || 0);
 
-  const handleLoadedMetadata = () => {
-    if (audioRef.current) {
-      setDuration(audioRef.current.duration);
+      // Update Media Session position
+      if (
+        "mediaSession" in navigator &&
+        navigator.mediaSession.setPositionState
+      ) {
+        navigator.mediaSession.setPositionState({
+          duration: audioRef.current.duration,
+          playbackRate: audioRef.current.playbackRate,
+          position: audioRef.current.currentTime,
+        });
+      }
     }
   };
 
@@ -115,13 +164,26 @@ export default function Player({ currentTrack }: PlayerProps) {
   const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newVolume = parseFloat(e.target.value);
     setVolume(newVolume);
-    if (isMuted && newVolume > 0) {
+    if (audioRef.current) {
+      audioRef.current.volume = newVolume;
+    }
+    if (newVolume === 0) {
+      setIsMuted(true);
+    } else if (isMuted) {
       setIsMuted(false);
     }
   };
 
   const toggleMute = () => {
-    setIsMuted(!isMuted);
+    if (audioRef.current) {
+      if (isMuted) {
+        audioRef.current.volume = volume;
+        setIsMuted(false);
+      } else {
+        audioRef.current.volume = 0;
+        setIsMuted(true);
+      }
+    }
   };
 
   const formatTime = (seconds: number) => {
@@ -131,97 +193,89 @@ export default function Player({ currentTrack }: PlayerProps) {
     return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
 
-  const getVolumeIcon = () => {
-    if (isMuted || volume === 0) return "🔇";
-    if (volume < 0.5) return "🔉";
-    return "🔊";
+  const handleTrackEnd = () => {
+    onTrackEnd?.();
   };
 
   if (!currentTrack) {
-    return <div className="player-loading">Loading last played track...</div>;
+    return null;
   }
 
   return (
-    <div className="player-container">
+    <div className="player-bar">
       <audio
         ref={audioRef}
         onTimeUpdate={handleTimeUpdate}
-        onLoadedMetadata={handleLoadedMetadata}
-        onEnded={() => setIsPlaying(false)}
+        onLoadedMetadata={handleTimeUpdate}
+        onEnded={handleTrackEnd}
       />
-
-      <div className="player-content">
-        <div className="player-left">
-          <img
-            src={
-              currentTrack.artwork_url?.replace("-large", "-t200x200") ||
-              "/placeholder.png"
-            }
-            alt={currentTrack.title}
-            className="player-artwork"
-          />
-          <div className="player-info">
-            <div className="player-artist">
-              {currentTrack.user?.username || "Unknown Artist"}
+      <div className="player-container">
+        <div className="player-content">
+          <div className="player-left">
+            <img
+              src={
+                currentTrack.artwork_url?.replace("-large", "-t200x200") ||
+                "/placeholder.png"
+              }
+              alt={currentTrack.title}
+              className="player-artwork"
+            />
+            <div className="player-info">
+              <div className="player-artist">
+                {currentTrack.user?.username || "Unknown"}
+              </div>
+              <div className="player-title">
+                <span>{currentTrack.title}</span>
+              </div>
             </div>
-            <div
-              className={`player-title ${isHovering ? "scrolling" : ""}`}
-              onMouseEnter={() => setIsHovering(true)}
-              onMouseLeave={() => setIsHovering(false)}
+            <button
+              className={`player-like ${isLiked ? "liked" : ""}`}
+              onClick={toggleLike}
+              title={isLiked ? "Unlike" : "Like"}
             >
-              <span>{currentTrack.title}</span>
+              {isLiked ? "❤️" : "🤍"}
+            </button>
+          </div>
+
+          <div className="player-center">
+            <div className="player-controls">
+              <button className="player-btn">⏮</button>
+              <button
+                className="player-btn player-btn-play"
+                onClick={togglePlayPause}
+              >
+                {isPlaying ? "⏸" : "▶"}
+              </button>
+              <button className="player-btn">⏭</button>
+            </div>
+            <div className="player-progress">
+              <span className="player-time">{formatTime(currentTime)}</span>
+              <input
+                type="range"
+                className="player-seek"
+                min="0"
+                max={duration || 0}
+                value={currentTime}
+                onChange={handleSeek}
+              />
+              <span className="player-time">{formatTime(duration)}</span>
             </div>
           </div>
-          <button
-            className={`player-like ${isLiked ? "liked" : ""}`}
-            onClick={toggleLike}
-            title={isLiked ? "Unlike" : "Like"}
-            disabled={!currentTrack}
-          >
-            {isLiked ? "❤️" : "🤍"}
-          </button>
-        </div>
 
-        <div className="player-center">
-          <div className="player-controls">
-            <button className="player-btn" title="Previous">
-              ⏮
+          <div className="player-right">
+            <button className="player-volume-btn" onClick={toggleMute}>
+              {isMuted || volume === 0 ? "🔇" : volume < 0.5 ? "🔉" : "🔊"}
             </button>
-            <button className="player-btn player-btn-play" onClick={togglePlay}>
-              {isPlaying ? "⏸" : "▶"}
-            </button>
-            <button className="player-btn" title="Next">
-              ⏭
-            </button>
-          </div>
-
-          <div className="player-progress">
-            <span className="player-time">{formatTime(currentTime)}</span>
             <input
               type="range"
+              className="player-volume-slider"
               min="0"
-              max={duration || 0}
-              value={currentTime}
-              onChange={handleSeek}
-              className="player-seek"
+              max="1"
+              step="0.01"
+              value={isMuted ? 0 : volume}
+              onChange={handleVolumeChange}
             />
-            <span className="player-time">{formatTime(duration)}</span>
           </div>
-        </div>
-
-        <div className="player-right">
-          <button className="player-volume-btn" onClick={toggleMute}>
-            {getVolumeIcon()}
-          </button>
-          <input
-            type="range"
-            min="0"
-            max="1"
-            step="0.01"
-            value={isMuted ? 0 : volume}
-            onChange={handleVolumeChange}
-            className="player-volume-slider"
-          />
         </div>
       </div>
     </div>
