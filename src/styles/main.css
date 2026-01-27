@@ -291,3 +291,72 @@ html,
   padding: 12px 18px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
+
+.main-area {
+  grid-column: 2;
+  grid-row: 2;
+  position: relative;
+  padding: 24px;
+  overflow-y: auto;
+  padding-bottom: 140px; /* space for fixed player */
+}
+
+.tracks-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 20px;
+  padding: 20px 0;
+}
+
+.track-card {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  padding: 12px;
+  cursor: pointer;
+  transition:
+    transform 0.2s,
+    background 0.2s;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.track-card:hover {
+  transform: translateY(-4px);
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.track-cover {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 6px;
+  background: #ddd;
+}
+
+.track-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.track-title {
+  font-weight: 600;
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.track-artist {
+  font-size: 12px;
+  opacity: 0.75;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Remove old tracks-list styles */
+.tracks-list {
+  display: none;
+}

@@ -53,14 +53,30 @@ export default function Home() {
       </div>
 
       <main className="main-area">
-        <ul className="tracks-list">
+        <div className="tracks-grid">
           {tracks.map((t: any) => (
-            <li key={t.id}>
-              <span>{t.title}</span>
-              <button onClick={() => setCurrentTrack(t)}>Play</button>
-            </li>
+            <div
+              key={t.id}
+              className="track-card"
+              onClick={() => setCurrentTrack(t)}
+            >
+              <img
+                src={
+                  t.artwork_url?.replace("-large", "-t500x500") ||
+                  "/placeholder.png"
+                }
+                alt={t.title}
+                className="track-cover"
+              />
+              <div className="track-info">
+                <div className="track-title">{t.title}</div>
+                <div className="track-artist">
+                  {t.user?.username || "Unknown"}
+                </div>
+              </div>
+            </div>
           ))}
-        </ul>
+        </div>
       </main>
 
       <div className="player-bar">
