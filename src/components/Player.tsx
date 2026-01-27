@@ -8,13 +8,12 @@ export default function Player({ currentTrack, token, clientId }: Props) {
 
   useEffect(() => {
     if (!currentTrack || !audioRef.current) return;
-
     let canceled = false;
     (async () => {
       try {
         const track = await fetch(
           `https://api.soundcloud.com/tracks/${currentTrack.id}?client_id=${clientId}`,
-          { headers: { Authorization: `OAuth ${token}` } }
+          { headers: { Authorization: `OAuth ${token}` } },
         ).then((r) => r.json());
 
         if (canceled) return;
@@ -25,7 +24,6 @@ export default function Player({ currentTrack, token, clientId }: Props) {
         console.error("Player stream error:", e);
       }
     })();
-
     return () => {
       canceled = true;
     };
