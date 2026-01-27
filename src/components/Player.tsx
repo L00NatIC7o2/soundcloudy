@@ -8,6 +8,7 @@ function Player({ currentTrack }: Props) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isLiked, setIsLiked] = useState(false);
 
   useEffect(() => {
     if (!currentTrack || !audioRef.current) return;
@@ -33,6 +34,17 @@ function Player({ currentTrack }: Props) {
       });
   }, [currentTrack]);
 
+  useEffect(() => {
+    if (currentTrack?.id) {
+      // Scrobble the play
+      fetch("/api/scrobble", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ trackId: currentTrack.id }),
+      }).catch(() => {}); // Silently fail if unavailable
+    }
+  }, [currentTrack]);
+
   const handlePlay = () => setIsPlaying(true);
   const handlePause = () => setIsPlaying(false);
   const handleError = (e: any) => {
@@ -43,6 +55,20 @@ function Player({ currentTrack }: Props) {
   const handleCanPlay = () => {
     console.log("Audio can play");
     setIsLoading(false);
+  };
+
+  const toggleLike = async () => {
+    if (!currentTrack?.id) return;
+    try {
+      await fetch("/api/like", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ trackId: currentTrack.id, like: !isLiked }),
+      });
+      setIsLiked(!isLiked);
+    } catch (error) {
+      console.error("Like failed:", error);
+    }
   };
 
   if (!currentTrack) {
@@ -73,6 +99,12 @@ function Player({ currentTrack }: Props) {
             onCanPlay={handleCanPlay}
             className="max-w-md"
           />
+          <button
+            onClick={toggleLike}
+            className="ml-4 text-sm bg-gray-700 hover:bg-gray-600 rounded"
+          >
+            {isLiked ? "Unlike" : "Like"}
+          </button>
         </div>
       </div>
     </div>
