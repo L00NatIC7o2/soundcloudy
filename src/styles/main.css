@@ -160,19 +160,19 @@ html,
   font-weight: 600;
   text-transform: uppercase;
   opacity: 0.7;
-  margin-bottom: 12px;
+  margin-bottom: 16px;
 }
 
 .playlist-thumbs {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 24px;
 }
 
 .playlist-item {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
   cursor: pointer;
   transition: transform 0.2s;
   padding: 4px;
@@ -190,23 +190,25 @@ html,
 .playlist-thumb {
   width: 100%;
   aspect-ratio: 1;
-  border-radius: 6px;
+  border-radius: 8px;
   object-fit: cover;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
 .sidebar.collapsed .playlist-thumb {
-  width: 48px;
-  height: 48px;
+  width: 64px;
+  height: 64px;
 }
 
 .playlist-title-sidebar {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   text-align: center;
   padding: 0 4px;
+  color: white;
 }
 
 .sidebar.collapsed .playlist-title-sidebar {
