@@ -10,6 +10,7 @@ export default async (req, res) => {
       "https://secure.soundcloud.com/oauth/token",
       new URLSearchParams({
         client_id: process.env.VITE_SOUNDCLOUD_CLIENT_ID,
+        client_secret: process.env.VITE_SOUNDCLOUD_CLIENT_SECRET,
         redirect_uri: "https://notyourniche.com/api/callback",
         grant_type: "authorization_code",
         code: code,
