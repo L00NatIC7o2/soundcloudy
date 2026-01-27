@@ -15,19 +15,37 @@ function Player({ currentTrack, token }: Props) {
     setError(null);
     setIsLoading(true);
 
-    const url = `/api/stream?trackId=${currentTrack.id}&token=${encodeURIComponent(token)}`;
-    audioRef.current.src = url;
-    audioRef.current.load();
+    // Fetch stream URL from our API
+    fetch(
+      `/api/stream?trackId=${currentTrack.id}&token=${encodeURIComponent(token)}`,
+    )
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.error) {
+          setError(data.error);
+          setIsLoading(false);
+          return;
+        }
 
-    audioRef.current
-      .play()
-      .then(() => {
-        setIsPlaying(true);
-        setIsLoading(false);
+        if (audioRef.current) {
+          audioRef.current.src = data.streamUrl;
+          audioRef.current.load();
+          audioRef.current
+            .play()
+            .then(() => {
+              setIsPlaying(true);
+              setIsLoading(false);
+            })
+            .catch((err) => {
+              console.error("Play error:", err);
+              setError(err.message);
+              setIsLoading(false);
+            });
+        }
       })
       .catch((err) => {
-        console.error("Play error:", err);
-        setError(err.message);
+        console.error("Fetch stream error:", err);
+        setError("Failed to get stream URL");
         setIsLoading(false);
       });
   }, [currentTrack, token]);
@@ -49,9 +67,30 @@ function Player({ currentTrack, token }: Props) {
   }
 
   return (
-    <div>
-      <div>{currentTrack.title}</div>
-      <audio ref={audioRef} controls />
+    <div className="fixed bottom-0 left-0 right-0 bg-gray-900 text-white p-4 shadow-lg">
+      <div className="max-w-7xl mx-auto">
+        <div className="flex items-center gap-4">
+          <div className="flex-1">
+            <div className="font-semibold">{currentTrack.title}</div>
+            <div className="text-sm text-gray-400">
+              {currentTrack.user?.username}
+            </div>
+          </div>
+
+          {isLoading && <div className="text-sm">Loading...</div>}
+          {error && <div className="text-sm text-red-500">{error}</div>}
+
+          <audio
+            ref={audioRef}
+            controls
+            onPlay={handlePlay}
+            onPause={handlePause}
+            onError={handleError}
+            onCanPlay={handleCanPlay}
+            className="max-w-md"
+          />
+        </div>
+      </div>
     </div>
   );
 }

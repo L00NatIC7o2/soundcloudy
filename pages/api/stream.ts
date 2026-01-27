@@ -12,7 +12,7 @@ export default async function handler(
     return res.status(400).json({ error: "Missing trackId or token" });
 
   try {
-    // Use /tracks/:urn/streams endpoint to get streamable URLs
+    // Get streamable URLs from SoundCloud
     const streamsResp = await axios.get(
       `https://api.soundcloud.com/tracks/soundcloud:tracks:${trackId}/streams`,
       {
@@ -33,18 +33,11 @@ export default async function handler(
       streams.preview_mp3_128_url;
 
     if (!streamUrl) {
-      return res
-        .status(404)
-        .json({ error: "No stream URL available", streams });
+      return res.status(404).json({ error: "No stream URL available" });
     }
 
-    console.log(
-      "Streaming URL obtained, redirecting to:",
-      streamUrl.substring(0, 50),
-    );
-
-    // Redirect to the stream URL instead of proxying (simpler & avoids token issues)
-    res.redirect(302, streamUrl);
+    // Return the stream URL to client
+    res.status(200).json({ streamUrl });
   } catch (err: any) {
     console.error(
       "Stream error:",
