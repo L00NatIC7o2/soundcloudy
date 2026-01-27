@@ -21,18 +21,22 @@ export default async function handler(
     );
     const track = trackResp.data;
 
-    // Find progressive transcoding
-    const prog = track.media?.transcodings?.find(
+    // Find progressive or HLS transcoding
+    const transcodings = track.media?.transcodings || [];
+    const prog = transcodings.find(
       (t: any) => t.format?.protocol === "progressive",
     );
-    if (!prog?.url) {
+    const hls = transcodings.find((t: any) => t.format?.protocol === "hls");
+    const transcoding = prog || hls;
+
+    if (!transcoding?.url) {
       return res
         .status(404)
-        .json({ error: "No progressive stream available for this track" });
+        .json({ error: "No streamable transcoding available for this track" });
     }
 
-    // Resolve the progressive stream URL
-    const resolveResp = await axios.get(prog.url, {
+    // Resolve the stream URL
+    const resolveResp = await axios.get(transcoding.url, {
       headers: { Authorization: `OAuth ${token}` },
     });
     const streamUrl = resolveResp.data?.url;
