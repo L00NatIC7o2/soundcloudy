@@ -15,37 +15,20 @@ function Player({ currentTrack, token }: Props) {
     setError(null);
     setIsLoading(true);
 
-    // Fetch stream URL from our API
-    fetch(
-      `/api/stream?trackId=${currentTrack.id}&token=${encodeURIComponent(token)}`,
-    )
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.error) {
-          setError(data.error);
-          setIsLoading(false);
-          return;
-        }
+    // Use proxied stream endpoint
+    const streamUrl = `/api/stream?trackId=${currentTrack.id}&token=${encodeURIComponent(token)}`;
+    audioRef.current.src = streamUrl;
+    audioRef.current.load();
 
-        if (audioRef.current) {
-          audioRef.current.src = data.streamUrl;
-          audioRef.current.load();
-          audioRef.current
-            .play()
-            .then(() => {
-              setIsPlaying(true);
-              setIsLoading(false);
-            })
-            .catch((err) => {
-              console.error("Play error:", err);
-              setError(err.message);
-              setIsLoading(false);
-            });
-        }
+    audioRef.current
+      .play()
+      .then(() => {
+        setIsPlaying(true);
+        setIsLoading(false);
       })
       .catch((err) => {
-        console.error("Fetch stream error:", err);
-        setError("Failed to get stream URL");
+        console.error("Play error:", err);
+        setError(err.message);
         setIsLoading(false);
       });
   }, [currentTrack, token]);
@@ -53,7 +36,7 @@ function Player({ currentTrack, token }: Props) {
   const handlePlay = () => setIsPlaying(true);
   const handlePause = () => setIsPlaying(false);
   const handleError = (e: any) => {
-    console.error("Audio error:", e);
+    console.error("Audio error:", e.target.error);
     setError("Failed to load audio");
     setIsLoading(false);
   };
@@ -83,6 +66,7 @@ function Player({ currentTrack, token }: Props) {
           <audio
             ref={audioRef}
             controls
+            crossOrigin="anonymous"
             onPlay={handlePlay}
             onPause={handlePause}
             onError={handleError}

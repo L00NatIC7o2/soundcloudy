@@ -24,7 +24,7 @@ export default async function handler(
     );
     const streams = streamsResp.data;
 
-    console.log("Available streams:", Object.keys(streams));
+    console.log("Available streams:", Object.keys(streams), streams);
 
     // Prefer http_mp3_128_url, fallback to hls variants
     const streamUrl =
@@ -33,11 +33,27 @@ export default async function handler(
       streams.preview_mp3_128_url;
 
     if (!streamUrl) {
-      return res.status(404).json({ error: "No stream URL available" });
+      return res
+        .status(404)
+        .json({ error: "No stream URL available", streams });
     }
 
-    // Return the stream URL to client
-    res.status(200).json({ streamUrl });
+    console.log("Fetching from:", streamUrl);
+
+    // Proxy the audio stream
+    const audioResp = await axios.get(streamUrl, {
+      responseType: "stream",
+      timeout: 10000,
+    });
+
+    res.setHeader(
+      "Content-Type",
+      audioResp.headers["content-type"] || "audio/mpeg",
+    );
+    res.setHeader("Content-Length", audioResp.headers["content-length"] || "");
+    res.setHeader("Accept-Ranges", "bytes");
+
+    audioResp.data.pipe(res);
   } catch (err: any) {
     console.error(
       "Stream error:",
