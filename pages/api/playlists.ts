@@ -5,7 +5,6 @@ export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
-  const { id } = req.query;
   const token = req.cookies.soundcloud_token;
 
   if (!token) {
@@ -13,30 +12,34 @@ export default async function handler(
   }
 
   try {
-    const playlistResp = await axios.get(
-      `https://api.soundcloud.com/playlists/${id}`,
+    // Get current user info
+    const meResp = await axios.get("https://api.soundcloud.com/me", {
+      headers: { Authorization: `OAuth ${token}` },
+    });
+
+    const userId = meResp.data.id;
+
+    // Get user's playlists
+    const playlistsResp = await axios.get(
+      `https://api.soundcloud.com/users/${userId}/playlists`,
       {
         headers: { Authorization: `OAuth ${token}` },
+        params: { limit: 200 },
       },
     );
 
-    // Add the playlist creation date to each track as "added_at"
-    const tracksWithAddedDate = (playlistResp.data.tracks || []).map(
-      (track: any) => ({
-        ...track,
-        added_at: playlistResp.data.created_at, // Use playlist creation as fallback
-      }),
-    );
+    // Sort by most recently modified (most recently played)
+    const sorted = (playlistsResp.data || [])
+      .sort((a: any, b: any) => {
+        const dateA = new Date(a.modified_at || a.created_at || 0).getTime();
+        const dateB = new Date(b.modified_at || b.created_at || 0).getTime();
+        return dateB - dateA;
+      })
+      .slice(0, 5);
 
-    res.json({
-      tracks: tracksWithAddedDate,
-      playlist: playlistResp.data,
-    });
+    res.json({ playlists: sorted });
   } catch (error: any) {
-    console.error(
-      "Playlist detail error:",
-      error.response?.data || error.message,
-    );
+    console.error("Playlists error:", error.response?.data || error.message);
     res.status(error.response?.status || 500).json({
       error: error.response?.data?.message || error.message,
     });
