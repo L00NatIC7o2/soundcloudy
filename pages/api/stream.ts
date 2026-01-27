@@ -7,24 +7,30 @@ export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
-  const { trackId, token } = req.query as { trackId?: string; token?: string };
+  const { trackId, token, clientId } = req.query as {
+    trackId?: string;
+    token?: string;
+    clientId?: string;
+  };
   if (!trackId || !token)
     return res.status(400).json({ error: "Missing trackId or token" });
 
   try {
-    // Fetch track metadata - ensure we're using v2 API with media field
+    // Fetch track metadata with client_id to get media field
     const trackResp = await axios.get(
-      `https://api-v2.soundcloud.com/tracks/${trackId}`,
+      `https://api.soundcloud.com/tracks/${trackId}`,
       {
         headers: {
           Authorization: `OAuth ${token}`,
           Accept: "application/json; charset=utf-8",
         },
+        params: clientId ? { client_id: clientId } : {},
       },
     );
     const track = trackResp.data;
 
     console.log("Track access:", track.access);
+    console.log("Track has media:", !!track.media);
     console.log("Track media:", JSON.stringify(track.media, null, 2));
 
     // Check if track is blocked
