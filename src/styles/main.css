@@ -73,12 +73,14 @@ html,
 }
 
 .search-box {
+  display: flex;
+  gap: 8px;
   width: 520px;
   max-width: 90%;
 }
 
 .search-box input {
-  width: 100%;
+  flex: 1;
   height: 40px;
   border-radius: 6px;
   border: 0;
@@ -86,104 +88,14 @@ html,
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
 }
 
-.main-area {
-  grid-column: 2;
-  grid-row: 2;
-  position: relative;
-  padding: 24px;
-}
-
-.player-bar {
-  grid-column: 2;
-  grid-row: 3;
-  height: var(--player-height);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 12px 24px;
-}
-
-.player-surface {
-  width: 80%;
-  max-width: 960px;
-  min-width: 640px;
-  background: rgba(255, 255, 255, 0.22);
-  border-radius: 10px;
-  backdrop-filter: blur(6px);
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  align-items: center;
-  gap: 16px;
-  padding: 12px 18px;
-}
-
-.player-meta {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-width: 180px;
-}
-
-.player-cover {
-  width: 48px;
-  height: 48px;
-  border-radius: 8px;
-  object-fit: cover;
-}
-
-.player-title {
-  font-weight: 600;
-}
-
-.player-artist {
-  font-size: 12px;
-  opacity: 0.8;
-}
-
-.player-controls {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  justify-content: center;
-}
-
-.player-button {
-  width: 32px;
-  height: 32px;
-  border: 1px solid #222;
-  border-radius: 4px;
-  background: transparent;
-  display: grid;
-  place-items: center;
-}
-
-.player-timeline {
-  grid-column: 1 / span 3;
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  align-items: center;
-  gap: 10px;
-  margin-top: 4px;
-}
-
-.seek {
-  -webkit-appearance: none;
-  width: 100%;
-  height: 4px;
-  border-radius: 2px;
-  background: rgba(255, 255, 255, 0.8);
-}
-
-.volume {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 140px;
-  justify-content: flex-end;
-}
-
-.volume input[type="range"] {
-  width: 96px;
+.search-box button {
+  height: 40px;
+  padding: 0 20px;
+  border-radius: 6px;
+  border: 0;
+  background: #fff;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
 }
 
 .search-container {
@@ -328,4 +240,28 @@ html,
 
 .play-track-btn:hover {
   background: #ff5500;
+}
+
+.tracks-list {
+  list-style: none;
+  padding: 0;
+  margin: 20px 0;
+}
+
+.tracks-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  margin-bottom: 8px;
+}
+
+.tracks-list button {
+  padding: 6px 16px;
+  border-radius: 4px;
+  border: 0;
+  background: rgba(255, 255, 255, 0.9);
+  cursor: pointer;
 }

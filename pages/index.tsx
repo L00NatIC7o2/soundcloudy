@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Player from "../src/components/Player";
 
 export default function Home() {
@@ -12,9 +12,12 @@ export default function Home() {
   };
 
   const handleSearch = async () => {
+    if (!query.trim()) return;
     setLoading(true);
     try {
-      const response = await fetch(`/api/search?q=${query}`);
+      const response = await fetch(
+        `/api/search?q=${encodeURIComponent(query)}`,
+      );
       const data = await response.json();
       setTracks(data.collection || []);
     } catch (error) {
@@ -27,9 +30,11 @@ export default function Home() {
   return (
     <div className="app-shell">
       <aside className="rail">
-        <div className="rail-icons">{/* add your nav icons here */}</div>
+        <div className="rail-icons">
+          <button onClick={handleLogin}>🔐</button>
+        </div>
         <div className="rail-divider" />
-        <div className="rail-thumbs">{/* thumbnails */}</div>
+        <div className="rail-thumbs">{/* thumbnails go here */}</div>
       </aside>
 
       <div className="top-bar">
@@ -41,10 +46,22 @@ export default function Home() {
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleSearch()}
           />
+          <button onClick={handleSearch} disabled={loading}>
+            {loading ? "..." : "Search"}
+          </button>
         </div>
       </div>
 
-      <main className="main-area">{/* your main content */}</main>
+      <main className="main-area">
+        <ul className="tracks-list">
+          {tracks.map((t: any) => (
+            <li key={t.id}>
+              <span>{t.title}</span>
+              <button onClick={() => setCurrentTrack(t)}>Play</button>
+            </li>
+          ))}
+        </ul>
+      </main>
 
       <div className="player-bar">
         <Player currentTrack={currentTrack} />
