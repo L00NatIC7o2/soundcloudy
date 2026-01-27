@@ -29,7 +29,9 @@ export default async function handler(
 
     let streamUrl: string | undefined;
     if (prog) {
-      const streamResp = await axios.get(`${prog.url}?oauth_token=${token}`);
+      const streamResp = await axios.get(`${prog.url}?oauth_token=${token}`, {
+        headers: { Authorization: `OAuth ${token}` },
+      });
       streamUrl = streamResp.data?.url;
     } else if (track.stream_url) {
       streamUrl = `${track.stream_url}?oauth_token=${token}`;
