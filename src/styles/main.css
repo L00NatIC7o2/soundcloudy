@@ -19,7 +19,7 @@ html,
 .app-shell {
   display: grid;
   grid-template-columns: var(--rail-width) 1fr;
-  grid-template-rows: 64px 1fr var(--player-height);
+  grid-template-rows: 64px 1fr;
   min-height: 100vh;
   background: linear-gradient(135deg, #f57c3c 0%, #3d3f45 100%);
   color: #111;
@@ -264,4 +264,30 @@ html,
   border: 0;
   background: rgba(255, 255, 255, 0.9);
   cursor: pointer;
+}
+
+.player-bar {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100;
+  width: auto;
+  display: flex;
+  justify-content: center;
+}
+
+.player-surface {
+  width: 80%;
+  max-width: 960px;
+  min-width: 640px;
+  background: rgba(255, 255, 255, 0.22);
+  border-radius: 10px;
+  backdrop-filter: blur(6px);
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 18px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
