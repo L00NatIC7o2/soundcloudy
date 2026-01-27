@@ -12,51 +12,26 @@ export default async function handler(
     return res.status(400).json({ error: "Missing trackId or token" });
 
   try {
-    // Use api-v2 which includes media.transcodings
-    const trackResp = await axios.get(
-      `https://api-v2.soundcloud.com/tracks/${trackId}`,
-      {
-        headers: {
-          Authorization: `OAuth ${token}`,
-          Accept: "application/json; charset=utf-8",
-        },
-      },
+    // Use /tracks/:urn/streams endpoint to get streamable URLs
+    const streamsResp = await axios.get(
+      `https://api.soundcloud.com/tracks/soundcloud:tracks:${trackId}/streams`,
+      { headers: { Authorization: `OAuth ${token}` } },
     );
-    const track = trackResp.data;
+    const streams = streamsResp.data;
 
-    console.log("Track access:", track.access);
-    console.log("Track media:", track.media ? "present" : "missing");
+    // Prefer http_mp3_128_url, fallback to hls variants
+    const streamUrl =
+      streams.http_mp3_128_url ||
+      streams.hls_mp3_128_url ||
+      streams.preview_mp3_128_url;
 
-    if (track.access === "blocked") {
-      return res
-        .status(403)
-        .json({ error: "This track is not available for streaming" });
-    }
-
-    const transcodings = track.media?.transcodings || [];
-    const prog = transcodings.find(
-      (t: any) => t.format?.protocol === "progressive",
-    );
-    const hls = transcodings.find((t: any) => t.format?.protocol === "hls");
-    const transcoding = prog || hls;
-
-    if (!transcoding?.url) {
-      return res.status(404).json({
-        error: "No streamable transcoding available",
-        access: track.access,
-      });
-    }
-
-    // Resolve stream URL
-    const resolveResp = await axios.get(transcoding.url, {
-      headers: { Authorization: `OAuth ${token}` },
-    });
-    const streamUrl = resolveResp.data?.url;
     if (!streamUrl) {
-      return res.status(404).json({ error: "Stream URL not found" });
+      return res
+        .status(404)
+        .json({ error: "No stream URL available for this track" });
     }
 
-    // Pipe audio
+    // Fetch and pipe the audio
     const audioResp = await axios.get(streamUrl, {
       responseType: "stream",
       headers: { Range: req.headers.range },
@@ -79,8 +54,6 @@ export default async function handler(
       err.response?.status,
       err.response?.data || err.message,
     );
-    res
-      .status(err.response?.status || 500)
-      .json({ error: err.response?.data || err.message });
+    res.status(err.response?.status || 500);
   }
 }
