@@ -17,9 +17,7 @@ export default async function handler(
 
   try {
     const trackResp = await axios.get(
-      `https://api.soundcloud.com/tracks/${trackId}${
-        clientId ? `?client_id=${clientId}` : ""
-      }`,
+      `https://api.soundcloud.com/tracks/${trackId}${clientId ? `?client_id=${clientId}` : ""}`,
       { headers: { Authorization: `OAuth ${token}` } },
     );
     const track = trackResp.data;
@@ -27,20 +25,18 @@ export default async function handler(
     const prog = track.media?.transcodings?.find(
       (t: any) => t.format?.protocol === "progressive",
     );
-
     let streamUrl: string | undefined;
+
     if (prog) {
-      const streamResp = await axios.get(
-        `${prog.url}${prog.url.includes("?") ? "&" : "?"}oauth_token=${token}${
-          clientId ? `&client_id=${clientId}` : ""
-        }`,
-        { headers: { Authorization: `OAuth ${token}` } },
-      );
-      streamUrl = streamResp.data?.url;
+      const streamResp = await axios.get(prog.url, {
+        params: { oauth_token: token, client_id: clientId },
+        headers: { Authorization: `OAuth ${token}` },
+        maxRedirects: 0,
+        validateStatus: (s) => s >= 200 && s < 400,
+      });
+      streamUrl = streamResp.data?.url || streamResp.headers.location;
     } else if (track.stream_url) {
-      streamUrl = `${track.stream_url}?oauth_token=${token}${
-        clientId ? `&client_id=${clientId}` : ""
-      }`;
+      streamUrl = `${track.stream_url}?oauth_token=${token}${clientId ? `&client_id=${clientId}` : ""}`;
     }
 
     if (!streamUrl)
@@ -52,6 +48,7 @@ export default async function handler(
         Authorization: `OAuth ${token}`,
         Range: req.headers.range,
       },
+      maxRedirects: 5,
     });
 
     res.status(audioResp.status);
