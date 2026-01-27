@@ -14,13 +14,25 @@ export default async function handler(
 
   try {
     const playlistResp = await axios.get(
-      `https://api.soundcloud.com/playlists/${id}`,
+      `https://api.soundcloud.com/playlists/${id}?representation=compact`,
       {
         headers: { Authorization: `OAuth ${token}` },
       },
     );
 
-    res.json({ tracks: playlistResp.data.tracks || [] });
+    // Fetch full playlist data to get track metadata with added_at timestamps
+    const fullPlaylistResp = await axios.get(
+      `https://api.soundcloud.com/playlists/${id}/tracks`,
+      {
+        headers: { Authorization: `OAuth ${token}` },
+        params: { limit: 200 },
+      },
+    );
+
+    res.json({
+      tracks: fullPlaylistResp.data,
+      playlist: playlistResp.data,
+    });
   } catch (error: any) {
     console.error(
       "Playlist detail error:",
