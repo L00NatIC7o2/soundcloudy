@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import "../src/styles/main.css";
 import Player from "../src/components/Player";
 
 export default function Home() {
