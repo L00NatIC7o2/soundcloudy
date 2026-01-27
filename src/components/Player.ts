@@ -1,33 +1,40 @@
-import type { Track } from "../types/soundcloud";
+import { useEffect, useRef } from "react";
 
-export class Player {
-  private currentTrack: Track | null = null;
-  private isPlaying = false;
-  private audio: HTMLAudioElement;
+type Track = { id: number; title: string };
+type Props = { currentTrack?: Track | null; token: string; clientId: string };
 
-  constructor() {
-    this.audio = new Audio();
-  }
+export default function Player({ currentTrack, token, clientId }: Props) {
+  const audioRef = useRef<HTMLAudioElement>(null);
 
-  play(track: Track): void {
-    this.currentTrack = track;
+  useEffect(() => {
+    if (!currentTrack || !audioRef.current) return;
 
-    // Use preview_url instead of stream_url
-    if (track.preview_url) {
-      this.audio.src = track.preview_url;
-      this.audio.play();
-      this.isPlaying = true;
-    } else {
-      alert("Preview not available for this track");
-    }
-  }
+    let canceled = false;
+    (async () => {
+      try {
+        const track = await fetch(
+          `https://api.soundcloud.com/tracks/${currentTrack.id}?client_id=${clientId}`,
+          { headers: { Authorization: `OAuth ${token}` } }
+        ).then((r) => r.json());
 
-  pause(): void {
-    this.audio.pause();
-    this.isPlaying = false;
-  }
+        if (canceled) return;
+        const streamUrl = `${track.stream_url}?client_id=${clientId}`;
+        audioRef.current!.src = streamUrl;
+        await audioRef.current!.play().catch(() => {});
+      } catch (e) {
+        console.error("Player stream error:", e);
+      }
+    })();
 
-  getCurrentTrack(): Track | null {
-    return this.currentTrack;
-  }
+    return () => {
+      canceled = true;
+    };
+  }, [currentTrack, clientId, token]);
+
+  return (
+    <div>
+      <div>{currentTrack ? currentTrack.title : "No track selected"}</div>
+      <audio ref={audioRef} controls />
+    </div>
+  );
 }
