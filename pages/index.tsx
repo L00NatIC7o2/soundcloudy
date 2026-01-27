@@ -11,53 +11,18 @@ export default function Home() {
   const [playlistTracks, setPlaylistTracks] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [currentTrack, setCurrentTrack] = useState<any>(null);
-  const [loadingLastTrack, setLoadingLastTrack] = useState(true);
   const [sidebarExpanded, setSidebarExpanded] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [authChecking, setAuthChecking] = useState(true);
   const [viewingLikes, setViewingLikes] = useState(false);
-  const [geniusCache, setGeniusCache] = useState<Record<string, any>>({});
 
-  useEffect(() => {
-    const checkAuth = async () => {
-      try {
-        const res = await fetch("/api/auth/check");
-        if (!res.ok) {
-          router.push("/login");
-          setIsAuthenticated(false);
-        } else {
-          setIsAuthenticated(true);
-          fetchPlaylists();
-          fetchLastPlayedTrack();
-        }
-      } catch (error) {
-        console.error("Auth check failed:", error);
-        router.push("/login");
-        setIsAuthenticated(false);
-      } finally {
-        setAuthChecking(false);
-      }
-    };
-    checkAuth();
-  }, [router]);
-
-  // Show loading while checking auth
-  if (authChecking) {
-    return <div style={{ padding: "20px", color: "white" }}>Loading...</div>;
-  }
-
-  if (!isAuthenticated) {
-    return null; // Will redirect via useEffect
-  }
-
+  // Define all functions BEFORE useEffect
   const fetchPlaylists = async () => {
     try {
       const response = await fetch("/api/playlists");
       const data = await response.json();
       const sorted = (data.playlists || [])
-        .sort(
-          (a: any, b: any) => (b.playback_count || 0) - (a.playback_count || 0),
-        )
+        .sort((a: any, b: any) => (b.modified_at || 0) - (a.modified_at || 0))
         .slice(0, 5);
       setPlaylists(sorted);
     } catch (error) {
@@ -74,8 +39,6 @@ export default function Home() {
       }
     } catch (error) {
       console.error("Failed to fetch last played track:", error);
-    } finally {
-      setLoadingLastTrack(false);
     }
   };
 
@@ -148,7 +111,6 @@ export default function Home() {
     if (playlist.artwork_url) {
       return playlist.artwork_url.replace("-large", "-t500x500");
     }
-    // Use first track's artwork
     if (
       playlist.tracks &&
       playlist.tracks.length > 0 &&
@@ -170,31 +132,37 @@ export default function Home() {
     return new Date(dateString).getFullYear();
   };
 
-  const fetchGeniusMetadata = async (track: any) => {
-    const cacheKey = `${track.id}`;
-    if (geniusCache[cacheKey]) {
-      return geniusCache[cacheKey];
-    }
-
-    try {
-      const response = await fetch(
-        `/api/genius-metadata?title=${encodeURIComponent(track.title)}&artist=${encodeURIComponent(track.user?.username || "")}`,
-      );
-      const data = await response.json();
-
-      if (data.found && data.releaseDate) {
-        const metadata = {
-          releaseYear: new Date(data.releaseDate).getFullYear(),
-        };
-        setGeniusCache((prev) => ({ ...prev, [cacheKey]: metadata }));
-        return metadata;
+  // NOW define useEffect
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        const res = await fetch("/api/auth/check");
+        if (!res.ok) {
+          router.push("/login");
+          setIsAuthenticated(false);
+        } else {
+          setIsAuthenticated(true);
+          fetchPlaylists();
+          fetchLastPlayedTrack();
+        }
+      } catch (error) {
+        console.error("Auth check failed:", error);
+        router.push("/login");
+        setIsAuthenticated(false);
+      } finally {
+        setAuthChecking(false);
       }
-    } catch (error) {
-      console.error("Genius fetch failed:", error);
-    }
+    };
+    checkAuth();
+  }, [router]);
 
+  if (authChecking) {
+    return <div style={{ padding: "20px", color: "white" }}>Loading...</div>;
+  }
+
+  if (!isAuthenticated) {
     return null;
-  };
+  }
 
   const displayTitle = viewingLikes ? "Liked Songs" : selectedPlaylist?.title;
   const displayCover = viewingLikes
