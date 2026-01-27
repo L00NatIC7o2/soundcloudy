@@ -7,18 +7,16 @@ export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
-  const { trackId, token, clientId } = req.query as {
-    trackId?: string;
-    token?: string;
-    clientId?: string;
-  };
+  const { trackId, token } = req.query as { trackId?: string; token?: string };
   if (!trackId || !token)
     return res.status(400).json({ error: "Missing trackId or token" });
 
   try {
     const trackResp = await axios.get(
-      `https://api.soundcloud.com/tracks/${trackId}${clientId ? `?client_id=${clientId}` : ""}`,
-      { headers: { Authorization: `OAuth ${token}` } },
+      `https://api.soundcloud.com/tracks/${trackId}`,
+      {
+        headers: { Authorization: `OAuth ${token}` },
+      },
     );
     const track = trackResp.data;
 
@@ -29,14 +27,14 @@ export default async function handler(
 
     if (prog) {
       const streamResp = await axios.get(prog.url, {
-        params: { oauth_token: token, client_id: clientId },
         headers: { Authorization: `OAuth ${token}` },
+        params: { oauth_token: token },
         maxRedirects: 0,
         validateStatus: (s) => s >= 200 && s < 400,
       });
       streamUrl = streamResp.data?.url || streamResp.headers.location;
     } else if (track.stream_url) {
-      streamUrl = `${track.stream_url}?oauth_token=${token}${clientId ? `&client_id=${clientId}` : ""}`;
+      streamUrl = `${track.stream_url}?oauth_token=${token}`;
     }
 
     if (!streamUrl)
@@ -48,7 +46,8 @@ export default async function handler(
         Authorization: `OAuth ${token}`,
         Range: req.headers.range,
       },
-      maxRedirects: 5,
+      maxRedirects: 0,
+      validateStatus: (s) => s >= 200 && s < 400,
     });
 
     res.status(audioResp.status);
