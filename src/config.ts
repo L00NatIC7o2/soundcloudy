@@ -1,6 +1,6 @@
 export const config = {
-  clientId: import.meta.env.VITE_SOUNDCLOUD_CLIENT_ID || "",
-  clientSecret: import.meta.env.VITE_SOUNDCLOUD_CLIENT_SECRET || "",
+  clientId: process.env.VITE_SOUNDCLOUD_CLIENT_ID || "",
+  clientSecret: process.env.VITE_SOUNDCLOUD_CLIENT_SECRET || "",
   apiBase: "https://api.soundcloud.com",
 };
 
