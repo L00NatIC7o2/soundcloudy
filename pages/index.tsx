@@ -183,6 +183,17 @@ export default function Home() {
     checkAuth();
   }, [router]);
 
+  useEffect(() => {
+    if (playlistTracks.length > 0) {
+      // Fetch metadata for tracks that don't have it cached
+      playlistTracks.forEach((track) => {
+        if (track.id && !geniusCache[track.id]) {
+          fetchGeniusMetadata(track);
+        }
+      });
+    }
+  }, [playlistTracks, geniusCache]);
+
   if (authChecking) {
     return <div style={{ padding: "20px", color: "white" }}>Loading...</div>;
   }
@@ -295,48 +306,42 @@ export default function Home() {
               <h2 className="playlist-header-title">{displayTitle}</h2>
             </div>
             <div className="track-list">
-              {playlistTracks.map((track: any, index: number) => {
-                useEffect(() => {
-                  if (track.id) fetchGeniusMetadata(track);
-                }, [track.id]);
-
-                return (
-                  <div
-                    key={track.id || index}
-                    className="track-row"
-                    onClick={() => setCurrentTrack(track)}
-                  >
-                    <img
-                      src={
-                        track.artwork_url?.replace("-large", "-t200x200") ||
-                        "/placeholder.png"
-                      }
-                      alt={track.title}
-                      className="track-row-cover"
-                    />
-                    <div className="track-row-info">
-                      <div className="track-row-title">{track.title}</div>
-                      <div className="track-row-artist">
-                        {track.user?.username || "Unknown"}
-                      </div>
-                    </div>
-                    <div className="track-row-duration">
-                      {formatDuration(track.duration)}
-                    </div>
-                    <div className="track-row-year">
-                      {geniusCache[track.id]?.releaseYear ||
-                        (track.created_at ? getYear(track.created_at) : "—")}
-                    </div>
-                    <div className="track-row-added">
-                      {track.added_at
-                        ? formatTimeAgo(track.added_at)
-                        : track.created_at
-                          ? formatTimeAgo(track.created_at)
-                          : "—"}
+              {playlistTracks.map((track: any, index: number) => (
+                <div
+                  key={track.id || index}
+                  className="track-row"
+                  onClick={() => setCurrentTrack(track)}
+                >
+                  <img
+                    src={
+                      track.artwork_url?.replace("-large", "-t200x200") ||
+                      "/placeholder.png"
+                    }
+                    alt={track.title}
+                    className="track-row-cover"
+                  />
+                  <div className="track-row-info">
+                    <div className="track-row-title">{track.title}</div>
+                    <div className="track-row-artist">
+                      {track.user?.username || "Unknown"}
                     </div>
                   </div>
-                );
-              })}
+                  <div className="track-row-duration">
+                    {formatDuration(track.duration)}
+                  </div>
+                  <div className="track-row-year">
+                    {geniusCache[track.id]?.releaseYear ||
+                      (track.created_at ? getYear(track.created_at) : "—")}
+                  </div>
+                  <div className="track-row-added">
+                    {track.added_at
+                      ? formatTimeAgo(track.added_at)
+                      : track.created_at
+                        ? formatTimeAgo(track.created_at)
+                        : "—"}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         ) : (
