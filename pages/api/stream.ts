@@ -12,21 +12,38 @@ export default async function handler(
     return res.status(400).json({ error: "Missing trackId or token" });
 
   try {
-    // Get stream transcodings from /tracks/:id/stream endpoint
-    const streamResp = await axios.get(
-      `https://api.soundcloud.com/tracks/${trackId}/stream`,
-      { headers: { Authorization: `OAuth ${token}` } },
+    // Fetch track metadata with transcodings
+    const trackResp = await axios.get(
+      `https://api.soundcloud.com/tracks/${trackId}`,
+      {
+        headers: { Authorization: `OAuth ${token}` },
+      },
     );
-    const streamData = streamResp.data;
+    const track = trackResp.data;
 
-    // Find progressive mp3 URL
-    const mp3Url = streamData.http_mp3_128_url || streamData.url;
-    if (!mp3Url) {
-      return res.status(404).json({ error: "No progressive stream available" });
+    // Find progressive transcoding
+    const prog = track.media?.transcodings?.find(
+      (t: any) => t.format?.protocol === "progressive",
+    );
+    if (!prog?.url) {
+      return res
+        .status(404)
+        .json({ error: "No progressive stream available for this track" });
+    }
+
+    // Resolve the progressive stream URL
+    const resolveResp = await axios.get(prog.url, {
+      headers: { Authorization: `OAuth ${token}` },
+    });
+    const streamUrl = resolveResp.data?.url;
+    if (!streamUrl) {
+      return res
+        .status(404)
+        .json({ error: "Stream URL not found in response" });
     }
 
     // Fetch and pipe the audio
-    const audioResp = await axios.get(mp3Url, {
+    const audioResp = await axios.get(streamUrl, {
       responseType: "stream",
       headers: { Range: req.headers.range },
     });
