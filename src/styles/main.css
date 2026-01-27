@@ -245,6 +245,12 @@ html,
   padding: 0 20px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
   font-size: 14px;
+  background: white;
+  color: #333;
+}
+
+.search-box input::placeholder {
+  color: rgba(0, 0, 0, 0.5);
 }
 
 .search-box button {
@@ -257,10 +263,25 @@ html,
   font-weight: 600;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
   transition: transform 0.2s;
+  color: #333;
 }
 
 .search-box button:hover {
   transform: scale(1.05);
+}
+
+/* Top Bar - Fixed to viewport */
+.top-bar {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 99;
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 12px 24px;
 }
 
 /* Main Area */
@@ -270,6 +291,7 @@ html,
   padding: 24px;
   overflow-y: auto;
   padding-bottom: 140px;
+  margin-top: 80px;
 }
 
 .tracks-grid {
