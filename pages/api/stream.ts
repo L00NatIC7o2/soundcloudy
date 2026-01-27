@@ -7,40 +7,32 @@ export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
-  const { trackId, token, clientId } = req.query as {
-    trackId?: string;
-    token?: string;
-    clientId?: string;
-  };
+  const { trackId, token } = req.query as { trackId?: string; token?: string };
   if (!trackId || !token)
     return res.status(400).json({ error: "Missing trackId or token" });
 
   try {
-    // Fetch track metadata with client_id to get media field
+    // Use api-v2 which includes media.transcodings
     const trackResp = await axios.get(
-      `https://api.soundcloud.com/tracks/${trackId}`,
+      `https://api-v2.soundcloud.com/tracks/${trackId}`,
       {
         headers: {
           Authorization: `OAuth ${token}`,
           Accept: "application/json; charset=utf-8",
         },
-        params: clientId ? { client_id: clientId } : {},
       },
     );
     const track = trackResp.data;
 
     console.log("Track access:", track.access);
-    console.log("Track has media:", !!track.media);
-    console.log("Track media:", JSON.stringify(track.media, null, 2));
+    console.log("Track media:", track.media ? "present" : "missing");
 
-    // Check if track is blocked
     if (track.access === "blocked") {
       return res
         .status(403)
         .json({ error: "This track is not available for streaming" });
     }
 
-    // Find progressive or HLS transcoding
     const transcodings = track.media?.transcodings || [];
     const prog = transcodings.find(
       (t: any) => t.format?.protocol === "progressive",
@@ -49,27 +41,22 @@ export default async function handler(
     const transcoding = prog || hls;
 
     if (!transcoding?.url) {
-      console.log("Available transcodings:", transcodings);
       return res.status(404).json({
         error: "No streamable transcoding available",
         access: track.access,
-        hasMedia: !!track.media,
-        transcodingsCount: transcodings.length,
       });
     }
 
-    // Resolve the stream URL
+    // Resolve stream URL
     const resolveResp = await axios.get(transcoding.url, {
       headers: { Authorization: `OAuth ${token}` },
     });
     const streamUrl = resolveResp.data?.url;
     if (!streamUrl) {
-      return res
-        .status(404)
-        .json({ error: "Stream URL not found in response" });
+      return res.status(404).json({ error: "Stream URL not found" });
     }
 
-    // Fetch and pipe the audio
+    // Pipe audio
     const audioResp = await axios.get(streamUrl, {
       responseType: "stream",
       headers: { Range: req.headers.range },
