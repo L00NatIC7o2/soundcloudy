@@ -2,10 +2,9 @@ import axios from "axios";
 
 export default async (req, res) => {
   const { code } = req.query;
-
   if (!code) return res.status(400).json({ error: "No code" });
 
-  const baseUrl = `${req.headers["x-forwarded-proto"]}://${req.headers["x-forwarded-host"]}`;
+  const baseUrl = "https://soundcloudy.vercel.app"; // use Vercel URL
 
   try {
     const response = await axios.post(
@@ -15,7 +14,7 @@ export default async (req, res) => {
         client_secret: process.env.VITE_SOUNDCLOUD_CLIENT_SECRET,
         redirect_uri: `${baseUrl}/api/callback`,
         grant_type: "authorization_code",
-        code: code,
+        code,
       }),
       { headers: { "Content-Type": "application/x-www-form-urlencoded" } },
     );
