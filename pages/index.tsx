@@ -25,32 +25,30 @@ export default function Home() {
   };
 
   return (
-    <div id="app">
-      <h1>SoundCloudy</h1>
+    <div className="app-shell">
+      <aside className="rail">
+        <div className="rail-icons">{/* add your nav icons here */}</div>
+        <div className="rail-divider" />
+        <div className="rail-thumbs">{/* thumbnails */}</div>
+      </aside>
 
-      <button onClick={handleLogin}>Login with SoundCloud</button>
-
-      <div className="search-container">
-        <input
-          type="text"
-          placeholder="Search tracks..."
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
-        <button onClick={handleSearch} disabled={loading}>
-          {loading ? "Searching..." : "Search"}
-        </button>
+      <div className="top-bar">
+        <div className="search-box">
+          <input
+            type="text"
+            placeholder="Search tracks..."
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+          />
+        </div>
       </div>
 
-      <Player currentTrack={currentTrack} />
+      <main className="main-area">{/* your main content */}</main>
 
-      <ul className="tracks-list">
-        {tracks.map((t: any) => (
-          <li key={t.id}>
-            {t.title} <button onClick={() => setCurrentTrack(t)}>Play</button>
-          </li>
-        ))}
-      </ul>
+      <div className="player-bar">
+        <Player currentTrack={currentTrack} />
+      </div>
     </div>
   );
 }
