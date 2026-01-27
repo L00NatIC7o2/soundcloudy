@@ -12,7 +12,7 @@ const loginBtn = document.createElement("button");
 loginBtn.textContent = "Login with SoundCloud";
 loginBtn.addEventListener("click", () => {
   const CLIENT_ID = "uhlkXHnXoaAxIjoziy18peYV5eSwuMLz";
-  const REDIRECT_URI = "https://notyourniche.com/soundcloudy/callback";
+  const REDIRECT_URI = "https://notyourniche.com/api/callback";
   const authUrl = `https://secure.soundcloud.com/authorize?client_id=${CLIENT_ID}&redirect_uri=${REDIRECT_URI}&response_type=code&scope=non-expiring`;
   window.location.href = authUrl;
 });
