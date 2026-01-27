@@ -72,8 +72,8 @@ html,
   top: 0;
   left: 0;
   height: 100vh;
-  background: rgba(255, 255, 255, 0.15);
-  backdrop-filter: blur(16px);
+  background: rgba(189, 186, 186, 0.404);
+  backdrop-filter: blur(20px);
   transition: width 0.3s;
   z-index: 101;
   display: flex;
