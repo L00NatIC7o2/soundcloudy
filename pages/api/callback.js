@@ -1,18 +1,16 @@
 import axios from "axios";
 
-export default async (req, context) => {
-  const { code } = new URL(req.url).searchParams;
+export default async (req, res) => {
+  const { code } = req.query;
 
-  if (!code) {
-    return new Response("No code", { status: 400 });
-  }
+  if (!code) return res.status(400).json({ error: "No code" });
 
   try {
     const response = await axios.post(
       "https://secure.soundcloud.com/oauth/token",
       new URLSearchParams({
         client_id: process.env.VITE_SOUNDCLOUD_CLIENT_ID,
-        redirect_uri: "https://notyourniche.com/soundcloudy/callback",
+        redirect_uri: "https://notyourniche.com/api/callback",
         grant_type: "authorization_code",
         code: code,
       }),
@@ -20,14 +18,9 @@ export default async (req, context) => {
     );
 
     const token = response.data.access_token;
-    return new Response(null, {
-      status: 302,
-      headers: {
-        Location: `https://notyourniche.com/soundcloudy/?token=${token}`,
-      },
-    });
+    res.redirect(`https://notyourniche.com/?token=${token}`);
   } catch (error) {
     console.error("OAuth error:", error.response?.data);
-    return new Response("Auth failed", { status: 500 });
+    res.redirect("https://notyourniche.com/?error=auth_failed");
   }
 };
