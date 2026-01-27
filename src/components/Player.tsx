@@ -3,7 +3,7 @@ import { useEffect, useRef } from "react";
 type Track = { id: number; title: string };
 type Props = { currentTrack?: Track | null; token: string; clientId: string };
 
-function Player({ currentTrack, token, clientId }: Props) {
+function Player({ currentTrack, token }: Props) {
   const audioRef = useRef<HTMLAudioElement>(null);
 
   useEffect(() => {
@@ -12,13 +12,15 @@ function Player({ currentTrack, token, clientId }: Props) {
 
     (async () => {
       try {
-        const track = await fetch(
-          `https://api.soundcloud.com/tracks/${currentTrack.id}?client_id=${clientId}`,
+        const resp = await fetch(
+          `https://api.soundcloud.com/tracks/${currentTrack.id}`,
           { headers: { Authorization: `OAuth ${token}` } },
-        ).then((r) => r.json());
+        );
+        if (!resp.ok) throw new Error(`track fetch ${resp.status}`);
+        const track = await resp.json();
 
         if (canceled) return;
-        const streamUrl = `${track.stream_url}?client_id=${clientId}`;
+        const streamUrl = `${track.stream_url}?oauth_token=${token}`;
         audioRef.current!.src = streamUrl;
         await audioRef.current!.play().catch(() => {});
       } catch (e) {
@@ -29,7 +31,7 @@ function Player({ currentTrack, token, clientId }: Props) {
     return () => {
       canceled = true;
     };
-  }, [currentTrack, clientId, token]);
+  }, [currentTrack, token]);
 
   return (
     <div>
