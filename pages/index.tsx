@@ -1,15 +1,28 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/router";
 import Player from "../src/components/Player";
 
 export default function Home() {
+  const router = useRouter();
   const [query, setQuery] = useState("");
   const [tracks, setTracks] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [currentTrack, setCurrentTrack] = useState<any>(null);
+  const [sidebarExpanded, setSidebarExpanded] = useState(true);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
 
-  const handleLogin = () => {
-    window.location.href = "/api/auth/login";
-  };
+  useEffect(() => {
+    // Check authentication
+    const checkAuth = async () => {
+      const res = await fetch("/api/auth/check");
+      if (!res.ok) {
+        router.push("/login");
+      } else {
+        setIsAuthenticated(true);
+      }
+    };
+    checkAuth();
+  }, [router]);
 
   const handleSearch = async () => {
     if (!query.trim()) return;
@@ -27,14 +40,72 @@ export default function Home() {
     }
   };
 
+  if (!isAuthenticated) {
+    return <div>Loading...</div>;
+  }
+
   return (
     <div className="app-shell">
-      <aside className="rail">
-        <div className="rail-icons">
-          <button onClick={handleLogin}>🔐</button>
+      <aside
+        className={`sidebar ${sidebarExpanded ? "expanded" : "collapsed"}`}
+      >
+        <button
+          className="sidebar-toggle"
+          onClick={() => setSidebarExpanded(!sidebarExpanded)}
+        >
+          {sidebarExpanded ? "◀" : "▶"}
+        </button>
+
+        <nav className="sidebar-nav">
+          <button className="nav-item">
+            <span className="nav-icon">🏠</span>
+            {sidebarExpanded && <span className="nav-label">Home</span>}
+          </button>
+
+          <button className="nav-item">
+            <span className="nav-icon">❤️</span>
+            {sidebarExpanded && <span className="nav-label">Liked Songs</span>}
+          </button>
+
+          <button className="nav-item">
+            <span className="nav-icon">🆕</span>
+            {sidebarExpanded && <span className="nav-label">New Releases</span>}
+          </button>
+        </nav>
+
+        <div className="sidebar-divider" />
+
+        <div className="sidebar-playlists">
+          {sidebarExpanded && <div className="section-title">Most Played</div>}
+          <div className="playlist-thumbs">
+            {/* Placeholder thumbnails */}
+            <img
+              src="/placeholder.png"
+              alt="Playlist"
+              className="playlist-thumb"
+            />
+            <img
+              src="/placeholder.png"
+              alt="Playlist"
+              className="playlist-thumb"
+            />
+            <img
+              src="/placeholder.png"
+              alt="Playlist"
+              className="playlist-thumb"
+            />
+            <img
+              src="/placeholder.png"
+              alt="Playlist"
+              className="playlist-thumb"
+            />
+            <img
+              src="/placeholder.png"
+              alt="Playlist"
+              className="playlist-thumb"
+            />
+          </div>
         </div>
-        <div className="rail-divider" />
-        <div className="rail-thumbs">{/* thumbnails go here */}</div>
       </aside>
 
       <div className="top-bar">
