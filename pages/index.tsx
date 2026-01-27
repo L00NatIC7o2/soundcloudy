@@ -16,6 +16,7 @@ export default function Home() {
   const [authChecking, setAuthChecking] = useState(true);
   const [viewingLikes, setViewingLikes] = useState(false);
   const [geniusCache, setGeniusCache] = useState<Record<string, any>>({});
+  const [headerScrolled, setHeaderScrolled] = useState(false);
 
   // Define all functions BEFORE useEffect
   const fetchPlaylists = async () => {
@@ -257,7 +258,7 @@ export default function Home() {
 
         <div className="sidebar-playlists">
           {sidebarExpanded && (
-            <div className="section-title">Most Played Playlists</div>
+            <div className="section-title">Recent Playlists</div>
           )}
           <div className="playlist-thumbs">
             {playlists.length > 0 ? (
@@ -306,7 +307,9 @@ export default function Home() {
       <main className="main-area">
         {selectedPlaylist || viewingLikes ? (
           <div className="playlist-view">
-            <div className="playlist-header-sticky">
+            <div
+              className={`playlist-header-sticky ${headerScrolled ? "scrolled" : ""}`}
+            >
               <img
                 src={displayCover}
                 alt={displayTitle}

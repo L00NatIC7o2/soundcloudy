@@ -630,6 +630,7 @@ html,
   width: 100%;
 }
 
+/* Playlist header - Sticky with collapse on scroll */
 .playlist-header-sticky {
   position: sticky;
   top: 0;
@@ -641,12 +642,19 @@ html,
   backdrop-filter: blur(10px);
   z-index: 10;
   padding: 24px;
-  margin: -24px -24px 24px -24px;
   display: flex;
   align-items: center;
   gap: 24px;
   border-radius: 0 0 16px 16px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  transition:
+    padding 0.3s,
+    height 0.3s;
+}
+
+.playlist-header-sticky.scrolled {
+  padding: 12px 24px;
+  height: 80px;
 }
 
 .playlist-header-cover {
@@ -655,6 +663,14 @@ html,
   border-radius: 12px;
   object-fit: cover;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  transition:
+    width 0.3s,
+    height 0.3s;
+}
+
+.playlist-header-sticky.scrolled .playlist-header-cover {
+  width: 56px;
+  height: 56px;
 }
 
 .playlist-header-title {
@@ -663,72 +679,51 @@ html,
   margin: 0;
   color: white;
   text-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  transition: font-size 0.3s;
 }
 
-.track-list {
+.playlist-header-sticky.scrolled .playlist-header-title {
+  font-size: 24px;
+}
+
+/* Sidebar - Fixed position */
+.sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 100vh;
+  background: linear-gradient(
+    180deg,
+    rgba(245, 124, 60, 0.95) 0%,
+    rgba(61, 63, 69, 0.95) 100%
+  );
+  backdrop-filter: blur(10px);
+  transition: width 0.3s;
+  z-index: 101;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  overflow-y: auto;
+  box-shadow: 2px 0 12px rgba(0, 0, 0, 0.15);
 }
 
-.track-row {
-  display: grid;
-  grid-template-columns: 60px 1fr 80px 80px 120px;
-  gap: 16px;
-  align-items: center;
-  padding: 12px;
-  background: rgba(255, 255, 255, 0.08);
-  border-radius: 8px;
-  cursor: pointer;
-  transition: background 0.2s;
+.sidebar.collapsed {
+  width: var(--sidebar-collapsed);
 }
 
-.track-row:hover {
-  background: rgba(255, 255, 255, 0.15);
+.sidebar.expanded {
+  width: var(--sidebar-expanded);
 }
 
-.track-row-cover {
-  width: 60px;
-  height: 60px;
-  border-radius: 6px;
-  object-fit: cover;
+/* Update main-area to account for fixed sidebar */
+.main-area {
+  margin-top: 80px;
+  margin-left: var(--sidebar-collapsed);
+  transition: margin-left 0.3s;
+  padding-bottom: 120px; /* Space for player */
 }
 
-.track-row-info {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-}
-
-.track-row-title {
-  font-weight: 600;
-  font-size: 15px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: white;
-}
-
-.track-row-artist {
-  font-size: 13px;
-  opacity: 0.7;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.track-row-duration,
-.track-row-year {
-  font-size: 14px;
-  opacity: 0.8;
-  text-align: right;
-}
-
-.track-row-added {
-  font-size: 13px;
-  opacity: 0.7;
-  text-align: right;
+.app-shell:has(.sidebar.expanded) .main-area {
+  margin-left: var(--sidebar-expanded);
 }
 
 /* Responsive */
