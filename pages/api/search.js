@@ -16,15 +16,19 @@ export default async function handler(req, res) {
           limit: 50,
           client_id: process.env.VITE_SOUNDCLOUD_CLIENT_ID,
         },
-        headers: {
-          Authorization: `OAuth ${token}`,
-        },
+        headers: { Authorization: `OAuth ${token}` },
       },
     );
 
     res.json({ collection: response.data.collection || response.data });
   } catch (error) {
-    console.error("Search error:", error.response?.data || error.message);
-    res.status(500).json({ error: error.message });
+    console.error(
+      "Search error:",
+      error.response?.status,
+      error.response?.data || error.message,
+    );
+    res.status(error.response?.status || 500).json({
+      error: error.response?.data || error.message,
+    });
   }
 }
