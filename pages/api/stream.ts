@@ -12,42 +12,23 @@ export default async function handler(
     return res.status(400).json({ error: "Missing trackId or token" });
 
   try {
-    const trackResp = await axios.get(
-      `https://api.soundcloud.com/tracks/${trackId}`,
-      {
-        headers: { Authorization: `OAuth ${token}` },
-      },
+    // Get stream transcodings from /tracks/:id/stream endpoint
+    const streamResp = await axios.get(
+      `https://api.soundcloud.com/tracks/${trackId}/stream`,
+      { headers: { Authorization: `OAuth ${token}` } },
     );
-    const track = trackResp.data;
+    const streamData = streamResp.data;
 
-    const prog = track.media?.transcodings?.find(
-      (t: any) => t.format?.protocol === "progressive",
-    );
-    let streamUrl: string | undefined;
-
-    if (prog) {
-      const streamResp = await axios.get(prog.url, {
-        headers: { Authorization: `OAuth ${token}` },
-        params: { oauth_token: token },
-        maxRedirects: 0,
-        validateStatus: (s) => s >= 200 && s < 400,
-      });
-      streamUrl = streamResp.data?.url || streamResp.headers.location;
-    } else if (track.stream_url) {
-      streamUrl = `${track.stream_url}?oauth_token=${token}`;
+    // Find progressive mp3 URL
+    const mp3Url = streamData.http_mp3_128_url || streamData.url;
+    if (!mp3Url) {
+      return res.status(404).json({ error: "No progressive stream available" });
     }
 
-    if (!streamUrl)
-      return res.status(404).json({ error: "No stream URL available" });
-
-    const audioResp = await axios.get(streamUrl, {
+    // Fetch and pipe the audio
+    const audioResp = await axios.get(mp3Url, {
       responseType: "stream",
-      headers: {
-        Authorization: `OAuth ${token}`,
-        Range: req.headers.range,
-      },
-      maxRedirects: 0,
-      validateStatus: (s) => s >= 200 && s < 400,
+      headers: { Range: req.headers.range },
     });
 
     res.status(audioResp.status);
@@ -62,6 +43,11 @@ export default async function handler(
     });
     audioResp.data.pipe(res);
   } catch (err: any) {
+    console.error(
+      "Stream error:",
+      err.response?.status,
+      err.response?.data || err.message,
+    );
     res
       .status(err.response?.status || 500)
       .json({ error: err.response?.data || err.message });
