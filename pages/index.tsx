@@ -203,28 +203,32 @@ export default function Home() {
     }
   };
 
-  const handlePrevious = () => {
-    if (currentQueueIndex > 0) {
-      const prevIndex = currentQueueIndex - 1;
-      setCurrentQueueIndex(prevIndex);
+  const handlePrev = () => {
+    if (queueIndex > 0) {
+      const prevIndex = queueIndex - 1;
+      setQueueIndex(prevIndex);
       setCurrentTrack(queue[prevIndex]);
+      setIsPlaying(true);
+    } else {
+      // Loop back to end of queue
+      const lastIndex = queue.length - 1;
+      setQueueIndex(lastIndex);
+      setCurrentTrack(queue[lastIndex]);
+      setIsPlaying(true);
     }
   };
 
   const handleNext = () => {
-    if (currentQueueIndex < queue.length - 1) {
-      const nextIndex = currentQueueIndex + 1;
-      setCurrentQueueIndex(nextIndex);
+    if (queueIndex < queue.length - 1) {
+      const nextIndex = queueIndex + 1;
+      setQueueIndex(nextIndex);
       setCurrentTrack(queue[nextIndex]);
-    } else if (queueSource === "search" && currentTrack) {
-      // Fetch more related tracks
-      fetchRelatedTracks(currentTrack.id).then((related) => {
-        if (related.length > 0) {
-          setQueue([...queue, ...related]);
-          setCurrentQueueIndex(queue.length);
-          setCurrentTrack(related[0]);
-        }
-      });
+      setIsPlaying(true);
+    } else {
+      // Loop back to start
+      setQueueIndex(0);
+      setCurrentTrack(queue[0]);
+      setIsPlaying(true);
     }
   };
 
