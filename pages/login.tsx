@@ -7,22 +7,29 @@ export default function Login() {
   const [error, setError] = useState<string | null>(null);
 
   const handleLogin = () => {
-    const clientId = "uhlkXHnXoaAxIjoziy18peYV5eSwuMLz";
-    const redirectUri = `${window.location.origin}/oauth-callback`;
+    setLoading(true);
+    setError(null);
 
-    const authUrl = new URL("https://soundcloud.com/oauth");
-    authUrl.searchParams.append("client_id", clientId);
-    authUrl.searchParams.append("redirect_uri", redirectUri);
-    authUrl.searchParams.append("response_type", "token");
-    authUrl.searchParams.append("scope", "non-expiring");
+    try {
+      const clientId = "uhlkXHnXoaAxIjoziy18peYV5eSwuMLz";
+      const redirectUri = encodeURIComponent(
+        `${window.location.origin}/api/auth/callback`,
+      );
 
-    window.location.href = authUrl.toString();
+      const authUrl = `https://soundcloud.com/oauth?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code&scope=non-expiring`;
+
+      window.location.href = authUrl;
+    } catch (err: any) {
+      setError(err.message);
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
     const { error } = router.query;
     if (error) {
       setError(`Login error: ${error}`);
+      setLoading(false);
     }
   }, [router.query]);
 

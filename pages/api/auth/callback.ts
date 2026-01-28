@@ -8,12 +8,11 @@ export default async function handler(
   const { code, error } = req.query;
 
   if (error) {
-    res.redirect(`/login?error=${error}`);
-    return;
+    return res.redirect(`/login?error=${error}`);
   }
 
   if (!code || typeof code !== "string") {
-    res.status(400).json({ error: "Missing authorization code" });
+    return res.status(400).json({ error: "Missing authorization code" });
     return;
   }
 
@@ -37,8 +36,6 @@ export default async function handler(
     if (!access_token) {
       throw new Error("No access token in response");
     }
-
-    console.log("Token received successfully");
 
     res.setHeader(
       "Set-Cookie",
