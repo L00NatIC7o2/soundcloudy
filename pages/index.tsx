@@ -42,12 +42,17 @@ export default function Home() {
   const fetchLastPlayedTrack = async () => {
     try {
       const response = await fetch("/api/recent-tracks");
+      if (!response.ok) {
+        console.warn("Failed to fetch recent tracks:", response.status);
+        return;
+      }
       const data = await response.json();
       if (data.track) {
         setCurrentTrack(data.track);
       }
     } catch (error) {
-      console.error("Failed to fetch last played track:", error);
+      console.warn("Failed to fetch last played track:", error);
+      // Silently fail - user can select a track manually
     }
   };
 
