@@ -300,12 +300,35 @@ export default function Home() {
   }, [playlistTracks, geniusCache]);
 
   useEffect(() => {
+    let ticking = false;
+    let lastScrollY = 0;
+
     const handleScroll = () => {
-      const scrollY = window.scrollY;
-      setHeaderScrolled(scrollY > 100);
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          const scrollY = window.scrollY;
+
+          // Add hysteresis - different thresholds for scrolling up vs down
+          if (scrollY > lastScrollY) {
+            // Scrolling down
+            if (scrollY > 120) {
+              setHeaderScrolled(true);
+            }
+          } else {
+            // Scrolling up
+            if (scrollY < 80) {
+              setHeaderScrolled(false);
+            }
+          }
+
+          lastScrollY = scrollY;
+          ticking = false;
+        });
+        ticking = true;
+      }
     };
 
-    window.addEventListener("scroll", handleScroll);
+    window.addEventListener("scroll", handleScroll, { passive: true });
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 

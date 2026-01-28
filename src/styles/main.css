@@ -336,6 +336,7 @@ html,
   margin-top: -24px;
 }
 
+/* Update playlist header with will-change for better performance */
 .playlist-header-sticky {
   position: sticky;
   top: 0;
@@ -353,14 +354,16 @@ html,
   border-radius: 0 0 16px 16px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   transition:
-    padding 0.3s,
-    height 0.3s;
+    padding 0.3s ease,
+    height 0.3s ease;
   margin-bottom: 24px;
+  will-change: padding, height;
+  min-height: 248px; /* Prevents layout shift */
 }
 
 .playlist-header-sticky.scrolled {
   padding: 12px 24px;
-  height: 80px;
+  min-height: 80px;
 }
 
 .playlist-header-cover {
@@ -370,8 +373,9 @@ html,
   object-fit: cover;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
   transition:
-    width 0.3s,
-    height 0.3s;
+    width 0.3s ease,
+    height 0.3s ease;
+  flex-shrink: 0;
 }
 
 .playlist-header-sticky.scrolled .playlist-header-cover {
@@ -385,7 +389,8 @@ html,
   margin: 0;
   color: white;
   text-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-  transition: font-size 0.3s;
+  transition: font-size 0.3s ease;
+  line-height: 1.2;
 }
 
 .playlist-header-sticky.scrolled .playlist-header-title {
