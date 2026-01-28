@@ -99,7 +99,7 @@ html,
 /* App Shell */
 .app-shell {
   min-height: 100vh;
-  background: linear-gradient(135deg, #f57c3c 0%, #3d3f45 100%);
+  background: linear-gradient(135deg, #000000 0%, #000000 100%);
   color: #fff;
 }
 
@@ -387,8 +387,8 @@ html,
   top: 0;
   background: linear-gradient(
     135deg,
-    rgba(245, 124, 60, 0.95) 0%,
-    rgba(61, 63, 69, 0.95) 100%
+    rgba(235, 235, 235, 0.95) 0%,
+    rgb(0, 0, 0) 100%
   );
   backdrop-filter: blur(10px);
   z-index: 10;
@@ -412,8 +412,8 @@ html,
   top: 0;
   background: linear-gradient(
     135deg,
-    rgba(245, 124, 60, 0.95) 0%,
-    rgba(61, 63, 69, 0.95) 100%
+    rgba(0, 0, 0, 0.95) 0%,
+    rgba(0, 0, 0, 0.95) 100%
   );
   backdrop-filter: blur(10px);
   z-index: 10;
@@ -805,7 +805,7 @@ html,
 
 .sidebar {
   width: 250px;
-  background: linear-gradient(180deg, #1a1a1a 0%, #0a0a0a 100%);
+  background: linear-gradient(180deg, #000000 0%, #0a0a0a 100%);
   overflow-y: auto;
 
 /* Responsive */
