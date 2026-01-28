@@ -274,8 +274,10 @@ export default function Home() {
           setIsAuthenticated(false);
         } else {
           setIsAuthenticated(true);
-          fetchPlaylists();
-          fetchLastPlayedTrack();
+          // Small delay to ensure auth is ready
+          await new Promise((resolve) => setTimeout(resolve, 100));
+          await fetchPlaylists();
+          await fetchLastPlayedTrack();
         }
       } catch (error) {
         console.error("Auth check failed:", error);

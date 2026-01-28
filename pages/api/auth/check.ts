@@ -8,18 +8,22 @@ export default async function handler(
   const token = req.cookies.soundcloud_token;
 
   if (!token) {
-    return res.status(401).json({ authenticated: false });
+    return res.status(401).json({ error: "Not authenticated" });
   }
 
   try {
-    // Verify token is valid by making a test request
-    await axios.get("https://api.soundcloud.com/me", {
+    // Verify token by calling a simple endpoint
+    await axios.get("https://api-v2.soundcloud.com/me", {
       headers: { Authorization: `OAuth ${token}` },
     });
 
-    res.status(200).json({ authenticated: true });
+    res.json({ authenticated: true });
   } catch (error: any) {
-    console.error("Token validation failed:", error.message);
-    res.status(401).json({ authenticated: false });
+    console.error("Auth check failed:", error.response?.status);
+
+    // Token is invalid or expired
+    res.setHeader("Set-Cookie", "soundcloud_token=; Path=/; Max-Age=0");
+
+    return res.status(401).json({ error: "Not authenticated" });
   }
 }
