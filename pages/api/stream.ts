@@ -42,7 +42,8 @@ export default async function handler(
     // v1 API provides stream_url directly
     if (track.stream_url) {
       console.log("Redirecting to stream_url");
-      return res.redirect(307, track.stream_url);
+      res.redirect(307, track.stream_url);
+      return; // Don't return the result of redirect
     }
 
     // Fallback: Try the /stream endpoint
@@ -61,12 +62,14 @@ export default async function handler(
 
       if (streamResponse.headers.location) {
         console.log("Got redirect from /stream");
-        return res.redirect(307, streamResponse.headers.location);
+        res.redirect(307, streamResponse.headers.location);
+        return;
       }
 
       if (streamResponse.data && typeof streamResponse.data === "string") {
         console.log("Got stream URL from response");
-        return res.redirect(307, streamResponse.data);
+        res.redirect(307, streamResponse.data);
+        return;
       }
     } catch (streamError: any) {
       if (
@@ -74,13 +77,14 @@ export default async function handler(
         streamError.response?.headers?.location
       ) {
         console.log("Got redirect from error response");
-        return res.redirect(307, streamError.response.headers.location);
+        res.redirect(307, streamError.response.headers.location);
+        return;
       }
       console.error("Stream endpoint failed:", streamError.message);
     }
 
     console.error("No stream URL found");
-    return res.status(404).json({
+    res.status(404).json({
       error: "No stream URL available",
     });
   } catch (error: any) {
@@ -91,9 +95,10 @@ export default async function handler(
     );
 
     if (error.response?.status === 401) {
-      return res.status(401).json({
+      res.status(401).json({
         error: "Token expired",
       });
+      return;
     }
 
     res.status(error.response?.status || 500).json({
