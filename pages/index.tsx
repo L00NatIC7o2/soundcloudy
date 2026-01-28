@@ -429,25 +429,63 @@ export default function Home() {
 
   return (
     <div className="app-container">
-      <Sidebar
-        playlists={playlists}
-        selectedPlaylist={selectedPlaylist}
-        onPlaylistClick={handlePlaylistClick}
-        onLikesClick={() => {
-          setViewingLikes(true);
-          setSelectedPlaylist(null);
-        }}
-      />
+      {/* Sidebar */}
+      <div className={`sidebar ${sidebarExpanded ? "expanded" : "collapsed"}`}>
+        <button
+          className="sidebar-toggle"
+          onClick={() => setSidebarExpanded(!sidebarExpanded)}
+        >
+          {sidebarExpanded ? "→" : "←"}
+        </button>
 
+        <div className="sidebar-nav">
+          <div
+            className={`nav-item ${viewingLikes ? "active" : ""}`}
+            onClick={() => {
+              setViewingLikes(true);
+              setSelectedPlaylist(null);
+              setQuery("");
+            }}
+          >
+            <span className="nav-icon">❤️</span>
+            <span className="nav-label">Likes</span>
+          </div>
+        </div>
+
+        <div className="sidebar-playlists">
+          <div className="section-title">Playlists</div>
+          <div className="playlist-thumbs">
+            {playlists.map((p: any) => (
+              <div
+                key={p.id}
+                className={`playlist-item ${selectedPlaylist === p.id ? "active" : ""}`}
+                onClick={() => handlePlaylistClick(p.id)}
+              >
+                <img
+                  src={p.artwork_url || "/placeholder.png"}
+                  alt={p.title}
+                  className="playlist-thumb"
+                />
+                <span className="playlist-title-sidebar">{p.title}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Main Area */}
       <div className="main-area">
-        <div className="search-container">
-          <input
-            type="text"
-            className="search-input"
-            placeholder="Search for songs..."
-            value={query}
-            onChange={(e) => handleSearchInput(e.target.value)}
-          />
+        <div className="top-bar">
+          <div className="search-section">
+            <input
+              type="text"
+              placeholder="Search for songs..."
+              value={query}
+              onChange={(e) => handleSearchInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleSearch(0)}
+            />
+            <button onClick={() => handleSearch(0)}>Search</button>
+          </div>
         </div>
 
         {/* SEARCH RESULTS VIEW */}
