@@ -1090,3 +1090,60 @@ html,
     grid-template-columns: repeat(3, 1fr);
   }
 }
+
+/* Find and update these styles */
+
+.sidebar-playlist-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px;
+  cursor: pointer;
+  border-radius: 8px;
+  transition: background 0.2s;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.sidebar-playlist-item:hover {
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.sidebar-playlist-item.active {
+  background: rgba(0, 0, 0, 0.3);
+}
+
+/* Keep cover art FIXED size - this is important */
+.sidebar-playlist-cover {
+  width: 40px !important;
+  height: 40px !important;
+  min-width: 40px !important;
+  max-width: 40px !important;
+  border-radius: 4px;
+  object-fit: cover;
+  background: rgba(255, 255, 255, 0.1);
+  flex-shrink: 0; /* Prevent shrinking */
+}
+
+/* Playlist name - only visible when sidebar expanded */
+.sidebar-playlist-name {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 0.2s;
+  min-width: 0; /* Allow text to shrink properly */
+}
+
+/* When sidebar is expanded, show the playlist names */
+.sidebar.expanded .sidebar-playlist-name {
+  opacity: 1;
+}
+
+/* When sidebar is collapsed, hide the playlist names */
+.sidebar.collapsed .sidebar-playlist-name {
+  display: none;
+}
