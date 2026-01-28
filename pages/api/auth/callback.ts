@@ -20,15 +20,27 @@ export default async function handler(
   try {
     const redirectUri = `${process.env.NEXTAUTH_URL}/api/auth/callback`;
 
+    console.log("Exchanging code for token with:", {
+      client_id: process.env.SOUNDCLOUD_CLIENT_ID,
+      redirect_uri: redirectUri,
+    });
+
+    // Use application/x-www-form-urlencoded format
+    const params = new URLSearchParams({
+      client_id: process.env.SOUNDCLOUD_CLIENT_ID!,
+      client_secret: process.env.SOUNDCLOUD_CLIENT_SECRET!,
+      grant_type: "authorization_code",
+      redirect_uri: redirectUri,
+      code: code,
+    });
+
     const response = await axios.post(
       "https://api.soundcloud.com/oauth2/token",
+      params.toString(),
       {
-        client_id: process.env.SOUNDCLOUD_CLIENT_ID,
-        client_secret: process.env.SOUNDCLOUD_CLIENT_SECRET,
-        grant_type: "authorization_code",
-        redirect_uri: redirectUri,
-        code,
-        // Remove scope: "non-expiring"
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
       },
     );
 
@@ -38,7 +50,7 @@ export default async function handler(
       throw new Error("No access token in response");
     }
 
-    console.log("Token received, expires in:", expires_in);
+    console.log("Token received successfully, expires in:", expires_in);
 
     // Store both access and refresh tokens
     const cookies = [
@@ -58,6 +70,13 @@ export default async function handler(
       "Auth callback error:",
       error.response?.data || error.message,
     );
-    res.redirect(`/login?error=auth_failed`);
+
+    // Show more detailed error
+    const errorMsg =
+      error.response?.data?.error_description ||
+      error.response?.data?.error ||
+      "auth_failed";
+
+    res.redirect(`/login?error=${encodeURIComponent(errorMsg)}`);
   }
 }
