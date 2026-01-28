@@ -204,58 +204,76 @@ html,
   text-transform: uppercase;
   opacity: 0.7;
   margin-bottom: 16px;
+  padding: 0 12px;
 }
 
 .playlist-thumbs {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 12px;
+  padding: 0 12px;
 }
 
+/* Updated playlist item - flexbox row layout */
 .playlist-item {
   display: flex;
-  flex-direction: column;
-  gap: 10px;
+  align-items: center;
+  gap: 12px;
   cursor: pointer;
-  transition: transform 0.2s;
-  padding: 4px;
+  transition: background 0.2s;
+  padding: 8px;
   border-radius: 8px;
+  white-space: nowrap;
+  overflow: hidden;
 }
 
 .playlist-item:hover {
-  transform: scale(1.05);
+  background: rgba(255, 255, 255, 0.1);
 }
 
-.sidebar.collapsed .playlist-item {
-  gap: 0;
+.playlist-item.active {
+  background: rgba(255, 255, 255, 0.2);
 }
 
+/* Keep thumbnail fixed size */
 .playlist-thumb {
-  width: 100%;
-  aspect-ratio: 1;
-  border-radius: 8px;
+  width: 48px !important;
+  height: 48px !important;
+  min-width: 48px !important;
+  max-width: 48px !important;
+  border-radius: 6px;
   object-fit: cover;
-  box-shadow: 0 2px 8px rgba(255, 255, 255, 0);
+  background: rgba(255, 255, 255, 0.1);
+  flex-shrink: 0;
 }
 
-.sidebar.collapsed .playlist-thumb {
-  width: 64px;
-  height: 64px;
-}
-
+/* Playlist title - only show when expanded */
 .playlist-title-sidebar {
   font-size: 13px;
   font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  text-align: center;
-  padding: 0 4px;
-  color: rgb(255, 255, 255);
+  flex: 1;
+  opacity: 0;
+  transition: opacity 0.2s;
+  min-width: 0;
 }
 
+/* Show title when sidebar is expanded */
+.sidebar.expanded .playlist-title-sidebar {
+  opacity: 1;
+}
+
+/* Hide title when sidebar is collapsed */
 .sidebar.collapsed .playlist-title-sidebar {
   display: none;
+}
+
+/* Center text when collapsed (thumbnail only) */
+.sidebar.collapsed .playlist-item {
+  justify-content: center;
+  gap: 0;
 }
 
 /* Top Bar - Fixed to viewport */
