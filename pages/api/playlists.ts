@@ -14,12 +14,13 @@ export default async function handler(
   }
 
   try {
-    // Use v1 API endpoint which works with OAuth tokens
     const response = await axios.get(
       "https://api.soundcloud.com/me/playlists",
       {
+        headers: {
+          Authorization: `OAuth ${token}`,
+        },
         params: {
-          oauth_token: token,
           limit: 50,
           linked_partitioning: 1,
         },
@@ -51,7 +52,7 @@ export default async function handler(
     }
 
     res.status(error.response?.status || 500).json({
-      error: error.response?.data?.error || "Failed to fetch playlists",
+      error: error.response?.data?.message || "Failed to fetch playlists",
       playlists: [],
     });
   }

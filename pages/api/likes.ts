@@ -14,12 +14,13 @@ export default async function handler(
   }
 
   try {
-    // Use the v1 API endpoint which works with OAuth tokens
     const response = await axios.get(
       "https://api.soundcloud.com/me/favorites",
       {
+        headers: {
+          Authorization: `OAuth ${token}`,
+        },
         params: {
-          oauth_token: token,
           limit: 200,
           linked_partitioning: 1,
         },

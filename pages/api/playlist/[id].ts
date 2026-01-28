@@ -17,12 +17,11 @@ export default async function handler(
   }
 
   try {
-    // Use v1 API endpoint
     const response = await axios.get(
       `https://api.soundcloud.com/playlists/${id}`,
       {
-        params: {
-          oauth_token: token,
+        headers: {
+          Authorization: `OAuth ${token}`,
         },
         timeout: 10000,
       },

@@ -25,9 +25,10 @@ export default async function handler(
 
     await axios({
       method,
-      url: `https://api-v2.soundcloud.com/me/likes/${trackId}`,
-      headers: { Authorization: `OAuth ${token}` },
-      params: { client_id: process.env.SOUNDCLOUD_CLIENT_ID },
+      url: `https://api.soundcloud.com/me/favorites/${trackId}`,
+      headers: {
+        Authorization: `OAuth ${token}`,
+      },
       timeout: 5000,
     });
 
