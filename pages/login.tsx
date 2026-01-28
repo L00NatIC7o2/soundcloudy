@@ -12,12 +12,19 @@ export default function Login() {
 
     try {
       const clientId = "uhlkXHnXoaAxIjoziy18peYV5eSwuMLz";
-      const redirectUri = encodeURIComponent(
-        `${window.location.origin}/api/auth/callback`,
-      );
+      const redirectUri = `${window.location.origin}/api/auth/callback`;
 
-      const authUrl = `https://soundcloud.com/oauth?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code&scope=non-expiring`;
+      // Use URLSearchParams to properly encode parameters
+      const params = new URLSearchParams({
+        client_id: clientId,
+        redirect_uri: redirectUri,
+        response_type: "code",
+        scope: "non-expiring",
+      });
 
+      const authUrl = `https://soundcloud.com/oauth?${params.toString()}`;
+
+      console.log("Redirecting to:", authUrl);
       window.location.href = authUrl;
     } catch (err: any) {
       setError(err.message);
