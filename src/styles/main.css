@@ -109,7 +109,7 @@ html,
   top: 0;
   left: 0;
   height: 100vh;
-  background: rgba(189, 186, 186, 0.404);
+  background: rgb(255, 252, 252);
   backdrop-filter: blur(20px);
   transition: width 0.3s;
   z-index: 101;
@@ -133,7 +133,7 @@ html,
   width: 40px;
   height: 40px;
   border: 0;
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(0, 0, 0, 0.2);
   color: white;
   border-radius: 8px;
   cursor: pointer;
@@ -182,7 +182,7 @@ html,
 
 .sidebar-divider {
   height: 1px;
-  background: rgba(255, 255, 255, 0.2);
+  background: rgb(138, 138, 138);
   margin: 20px 12px;
 }
 
@@ -237,7 +237,7 @@ html,
   aspect-ratio: 1;
   border-radius: 8px;
   object-fit: cover;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 2px 8px rgba(255, 255, 255, 0);
 }
 
 .sidebar.collapsed .playlist-thumb {
@@ -253,7 +253,7 @@ html,
   white-space: nowrap;
   text-align: center;
   padding: 0 4px;
-  color: white;
+  color: rgb(255, 255, 255);
 }
 
 .sidebar.collapsed .playlist-title-sidebar {
