@@ -190,6 +190,14 @@ html,
   padding: 0 12px;
   flex: 1;
   overflow-y: auto;
+  
+  /* Hide scrollbar */
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE and Edge */
+}
+
+.sidebar-playlists::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, Opera */
 }
 
 .section-title {
@@ -798,33 +806,7 @@ html,
 .sidebar {
   width: 250px;
   background: linear-gradient(180deg, #1a1a1a 0%, #0a0a0a 100%);
-  padding: 20px;
   overflow-y: auto;
-  border-right: 1px solid rgba(255, 255, 255, 0.1);
-  /* Remove these lines:
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-  */
-}
-
-/* Remove this block:
-.sidebar::-webkit-scrollbar {
-  display: none;
-}
-*/
-
-/* Remove this block:
-.playlists-list {
-  max-height: 400px;
-  overflow-y: auto;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-}
-
-.playlists-list::-webkit-scrollbar {
-  display: none;
-}
-*/
 
 /* Responsive */
 @media (max-width: 1024px) {
