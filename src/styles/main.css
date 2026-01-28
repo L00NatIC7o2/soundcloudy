@@ -118,6 +118,12 @@ html,
   overflow-y: auto;
   box-shadow: 2px 0 12px rgba(0, 0, 0, 0.15);
   padding: 16px 0;
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE and Edge */
+}
+
+.sidebar::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, Opera */
 }
 
 .sidebar.collapsed {
@@ -859,6 +865,7 @@ html,
     border-right: none;
     border-bottom: 1px solid rgba(255, 255, 255, 0.1);
     padding: 15px;
+    flex-direction: row;
   }
 
   .sidebar-nav {
@@ -1023,7 +1030,7 @@ html,
 
   .player-right {
     width: 100%;
-    justify-content: center;
+    display: flex;
     order: 2;
   }
 
