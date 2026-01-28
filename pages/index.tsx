@@ -101,16 +101,21 @@ export default function Home() {
       setViewingLikes(false);
 
       try {
-        console.log("Fetching search results with offset:", offsetValue);
+        console.log(
+          "🔍 Fetching search with query:",
+          query,
+          "offset:",
+          offsetValue,
+        );
         const response = await fetch(
           `/api/search?q=${encodeURIComponent(query)}&offset=${offsetValue}&limit=20`,
         );
         const data = await response.json();
 
         console.log(
-          "Got results:",
+          "📦 Got",
           data.collection?.length,
-          "Has more:",
+          "results, hasMore:",
           data.hasMore,
         );
 
@@ -126,13 +131,18 @@ export default function Home() {
             (t: any) => !existingIds.has(t.id),
           );
 
+          console.log(
+            "➕ Appending",
+            uniqueNewTracks.length,
+            "new unique tracks",
+          );
           setTracks((prev) => [...prev, ...uniqueNewTracks]);
           setSearchOffset(offsetValue + 20);
         }
 
         setSearchHasMore(data.hasMore);
       } catch (error) {
-        console.error("Search error:", error);
+        console.error("❌ Search error:", error);
       } finally {
         setLoading(false);
         setIsLoadingMore(false);
@@ -566,49 +576,74 @@ export default function Home() {
           </div>
         ) : (
           <>
-            <div className="tracks-grid">
-              {tracks.map((t: any) => (
-                <div
-                  key={`${t.id}-search`} // Add -search suffix to ensure unique keys
-                  className="track-card"
-                  onClick={() => handleTrackClick(t, "search", tracks)}
-                >
-                  <img
-                    src={
-                      t.artwork_url?.replace("-large", "-t500x500") ||
-                      "/placeholder.png"
-                    }
-                    alt={t.title}
-                    className="track-cover"
-                  />
-                  <div className="track-info">
-                    <div className="track-title">{t.title}</div>
-                    <div className="track-artist">{t.user?.username}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
+            {!selectedPlaylist && !viewingLikes && query.trim() ? (
+              <>
+                <div className="main-content">
+                  {loading && tracks.length === 0 ? (
+                    <div style={{ textAlign: "center", padding: "40px" }}>
+                      <div className="loading">Searching...</div>
+                    </div>
+                  ) : tracks.length > 0 ? (
+                    <>
+                      <div className="tracks-grid">
+                        {tracks.map((t: any) => (
+                          <div
+                            key={`track-${t.id}`}
+                            className="track-card"
+                            onClick={() =>
+                              handleTrackClick(t, "search", tracks)
+                            }
+                          >
+                            <img
+                              src={
+                                t.artwork_url?.replace("-large", "-t500x500") ||
+                                "/placeholder.png"
+                              }
+                              alt={t.title}
+                              className="track-cover"
+                            />
+                            <div className="track-info">
+                              <div className="track-title">{t.title}</div>
+                              <div className="track-artist">
+                                {t.user?.username}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
 
-            {/* Infinite scroll trigger - MUST be visible and have height */}
-            <div
-              ref={observerTarget}
-              style={{
-                padding: "40px 20px",
-                textAlign: "center",
-                minHeight: "100px",
-                visibility: "visible", // Make sure it's visible
-              }}
-            >
-              {isLoadingMore && (
-                <div className="loading">Loading more results...</div>
-              )}
-              {!searchHasMore && tracks.length > 0 && (
-                <div className="end-message">No more results</div>
-              )}
-              {tracks.length === 0 && !loading && (
-                <div className="end-message">No results found</div>
-              )}
-            </div>
+                      {/* Load more trigger */}
+                      <div
+                        ref={observerTarget}
+                        style={{
+                          padding: "40px 20px",
+                          textAlign: "center",
+                          width: "100%",
+                          minHeight: "120px",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}
+                      >
+                        {isLoadingMore ? (
+                          <div className="loading">
+                            📥 Loading more results...
+                          </div>
+                        ) : searchHasMore ? (
+                          <div style={{ opacity: 0.5 }}>Scroll for more...</div>
+                        ) : tracks.length > 0 ? (
+                          <div className="end-message">✅ No more results</div>
+                        ) : null}
+                      </div>
+                    </>
+                  ) : (
+                    <div style={{ textAlign: "center", padding: "40px" }}>
+                      <div className="end-message">No results found</div>
+                    </div>
+                  )}
+                </div>
+              </>
+            ) : null}
           </>
         )}
       </main>
