@@ -15,12 +15,13 @@ export default async function handler(
       .json({ found: false, reason: "Token not configured" });
   }
 
-  if (!title) {
-    return res.status(400).json({ error: "Missing title" });
+  if (!title || title.trim() === "") {
+    return res.status(200).json({ found: false, reason: "Missing title" });
   }
 
   try {
-    const searchQuery = artist ? `${title} ${artist}` : title;
+    const searchQuery =
+      artist && artist.trim() !== "" ? `${title} ${artist}` : title;
 
     const searchResp = await axios.get("https://api.genius.com/search", {
       headers: { Authorization: `Bearer ${geniusToken}` },
@@ -28,7 +29,8 @@ export default async function handler(
       timeout: 5000,
     });
 
-    const hits = searchResp.data.response.hits;
+    const hits = searchResp.data?.response?.hits || [];
+
     if (hits.length === 0) {
       return res.json({ found: false });
     }
@@ -38,13 +40,21 @@ export default async function handler(
 
     res.json({
       found: true,
-      releaseDate,
+      releaseDate: releaseDate || null,
       title: song.title,
-      artist: song.primary_artist.name,
+      artist: song.primary_artist?.name,
       url: song.url,
     });
   } catch (error: any) {
-    console.error("Genius API error:", error.response?.data || error.message);
+    if (axios.isAxiosError(error)) {
+      console.error(
+        "Genius API error:",
+        error.response?.status,
+        error.response?.data || error.message,
+      );
+    } else {
+      console.error("Genius API error:", error.message);
+    }
     res.status(200).json({ found: false, reason: error.message });
   }
 }

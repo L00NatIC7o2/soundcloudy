@@ -204,7 +204,15 @@ export default function Home() {
         artist: track.user?.username || "",
       });
 
-      const response = await fetch(`/api/genius-metadata?${params.toString()}`);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
+
+      const response = await fetch(
+        `/api/genius-metadata?${params.toString()}`,
+        { signal: controller.signal },
+      );
+
+      clearTimeout(timeoutId);
 
       if (!response.ok) {
         console.warn(`Genius API error: ${response.status}`);
@@ -220,8 +228,12 @@ export default function Home() {
         setGeniusCache((prev) => ({ ...prev, [cacheKey]: metadata }));
         return metadata;
       }
-    } catch (error) {
-      console.error("Genius fetch failed:", error);
+    } catch (error: any) {
+      if (error.name === "AbortError") {
+        console.warn("Genius fetch timeout for track:", track.id);
+      } else {
+        console.error("Genius fetch failed:", error);
+      }
     }
 
     return null;
@@ -254,7 +266,9 @@ export default function Home() {
     if (playlistTracks.length > 0) {
       playlistTracks.forEach((track) => {
         if (track.id && !geniusCache[track.id]) {
-          fetchGeniusMetadata(track);
+          fetchGeniusMetadata(track).catch((err) => {
+            console.warn(`Failed to fetch Genius data for ${track.id}:`, err);
+          });
         }
       });
     }

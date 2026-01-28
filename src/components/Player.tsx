@@ -139,16 +139,22 @@ export default function Player({ currentTrack, onTrackEnd }: PlayerProps) {
       setCurrentTime(audioRef.current.currentTime);
       setDuration(audioRef.current.duration || 0);
 
-      // Update Media Session position
+      // Update Media Session position - only if duration is valid
       if (
         "mediaSession" in navigator &&
-        navigator.mediaSession.setPositionState
+        navigator.mediaSession.setPositionState &&
+        !isNaN(audioRef.current.duration) &&
+        audioRef.current.duration > 0
       ) {
-        navigator.mediaSession.setPositionState({
-          duration: audioRef.current.duration,
-          playbackRate: audioRef.current.playbackRate,
-          position: audioRef.current.currentTime,
-        });
+        try {
+          navigator.mediaSession.setPositionState({
+            duration: audioRef.current.duration,
+            playbackRate: audioRef.current.playbackRate,
+            position: audioRef.current.currentTime,
+          });
+        } catch (error) {
+          console.warn("Failed to set position state:", error);
+        }
       }
     }
   };
