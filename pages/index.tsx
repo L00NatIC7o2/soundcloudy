@@ -123,6 +123,17 @@ export default function Home() {
     }
   };
 
+  const handleSearchInput = (value: string) => {
+    setQuery(value);
+    setSearchOffset(0);
+    if (value.trim()) {
+      handleSearch(0);
+    } else {
+      setTracks([]);
+      setSearchHasMore(false);
+    }
+  };
+
   const handleTrackClick = async (
     track: any,
     source: "playlist" | "search",
