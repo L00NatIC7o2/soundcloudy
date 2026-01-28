@@ -429,51 +429,16 @@ export default function Home() {
 
   return (
     <div className="app-container">
-      {/* SIDEBAR */}
-      <div className={`sidebar ${sidebarExpanded ? "expanded" : "collapsed"}`}>
-        <button
-          className="sidebar-toggle"
-          onClick={() => setSidebarExpanded(!sidebarExpanded)}
-        >
-          {sidebarExpanded ? "→" : "←"}
-        </button>
+      <Sidebar
+        playlists={playlists}
+        selectedPlaylist={selectedPlaylist}
+        onPlaylistClick={handlePlaylistClick}
+        onLikesClick={() => {
+          setViewingLikes(true);
+          setSelectedPlaylist(null);
+        }}
+      />
 
-        <div className="sidebar-nav">
-          <div
-            className={`nav-item ${viewingLikes ? "active" : ""}`}
-            onClick={() => {
-              setViewingLikes(true);
-              setSelectedPlaylist(null);
-              setQuery("");
-            }}
-          >
-            <span className="nav-icon">❤️</span>
-            <span className="nav-label">Likes</span>
-          </div>
-        </div>
-
-        <div className="sidebar-playlists">
-          <div className="section-title">Playlists</div>
-          <div className="playlist-thumbs">
-            {playlists.map((p: any) => (
-              <div
-                key={p.id}
-                className={`playlist-item ${selectedPlaylist === p.id ? "active" : ""}`}
-                onClick={() => handlePlaylistClick(p.id)}
-              >
-                <img
-                  src={p.artwork_url || "/placeholder.png"}
-                  alt={p.title}
-                  className="playlist-thumb"
-                />
-                <span className="playlist-title-sidebar">{p.title}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* MAIN AREA */}
       <div className="main-area">
         <div className="search-container">
           <input
@@ -557,70 +522,108 @@ export default function Home() {
         ) : selectedPlaylist ? (
           // PLAYLIST VIEW
           <div className="playlist-view">
-            <h2>
-              {playlists.find((p: any) => p.id === selectedPlaylist)?.title}
-            </h2>
-            {loading ? (
-              <div style={{ textAlign: "center", padding: "40px" }}>
-                <div className="loading">Loading playlist...</div>
-              </div>
-            ) : (
-              <div className="tracks-grid">
-                {tracks.map((t: any) => (
-                  <div
-                    key={`playlist-${t.id}`}
-                    className="track-card"
-                    onClick={() => handleTrackClick(t, "playlist", tracks)}
-                  >
-                    <img
-                      src={
-                        t.artwork_url?.replace("-large", "-t500x500") ||
-                        "/placeholder.png"
-                      }
-                      alt={t.title}
-                      className="track-cover"
-                    />
-                    <div className="track-info">
-                      <div className="track-title">{t.title}</div>
-                      <div className="track-artist">{t.user?.username}</div>
+            <div
+              className={`playlist-header-sticky ${headerScrolled ? "scrolled" : ""}`}
+            >
+              <img
+                src={displayCover}
+                alt={displayTitle}
+                className="playlist-header-cover"
+              />
+              <h2 className="playlist-header-title">{displayTitle}</h2>
+            </div>
+            <div className="track-list">
+              {playlistTracks.map((track: any, index: number) => (
+                <div
+                  key={track.id || index}
+                  className="track-row"
+                  onClick={() =>
+                    handleTrackClick(track, "playlist", playlistTracks)
+                  }
+                >
+                  <img
+                    src={
+                      track.artwork_url?.replace("-large", "-t200x200") ||
+                      "/placeholder.png"
+                    }
+                    alt={track.title}
+                    className="track-row-cover"
+                  />
+                  <div className="track-row-info">
+                    <div className="track-row-title">{track.title}</div>
+                    <div className="track-row-artist">
+                      {track.user?.username || "Unknown"}
                     </div>
                   </div>
-                ))}
-              </div>
-            )}
+                  <div className="track-row-duration">
+                    {formatDuration(track.duration)}
+                  </div>
+                  <div className="track-row-year">
+                    {geniusCache[track.id]?.releaseYear ||
+                      (track.created_at ? getYear(track.created_at) : "—")}
+                  </div>
+                  <div className="track-row-added">
+                    {track.added_at
+                      ? formatTimeAgo(track.added_at)
+                      : track.created_at
+                        ? formatTimeAgo(track.created_at)
+                        : "—"}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         ) : viewingLikes ? (
           // LIKES VIEW
           <div className="likes-view">
-            <h2>Liked Songs</h2>
-            {loading ? (
-              <div style={{ textAlign: "center", padding: "40px" }}>
-                <div className="loading">Loading likes...</div>
-              </div>
-            ) : (
-              <div className="tracks-grid">
-                {tracks.map((t: any) => (
-                  <div
-                    key={`like-${t.id}`}
-                    className="track-card"
-                    onClick={() => handleTrackClick(t, "likes", tracks)}
-                  >
-                    <img
-                      src={
-                        t.artwork_url?.replace("-large", "-t500x500") ||
-                        "/placeholder.png"
-                      }
-                      alt={t.title}
-                      className="track-cover"
-                    />
-                    <div className="track-info">
-                      <div className="track-title">{t.title}</div>
-                      <div className="track-artist">{t.user?.username}</div>
+            <div className="playlist-header-sticky">
+              <img
+                src={getLikedSongsCover()}
+                alt="Liked Songs"
+                className="playlist-header-cover"
+              />
+              <h2 className="playlist-header-title">Liked Songs</h2>
+            </div>
+            <div className="track-list">
+              {playlistTracks.map((track: any, index: number) => (
+                <div
+                  key={track.id || index}
+                  className="track-row"
+                  onClick={() =>
+                    handleTrackClick(track, "playlist", playlistTracks)
+                  }
+                >
+                  <img
+                    src={
+                      track.artwork_url?.replace("-large", "-t200x200") ||
+                      "/placeholder.png"
+                    }
+                    alt={track.title}
+                    className="track-row-cover"
+                  />
+                  <div className="track-row-info">
+                    <div className="track-row-title">{track.title}</div>
+                    <div className="track-row-artist">
+                      {track.user?.username || "Unknown"}
                     </div>
                   </div>
-                ))}
-              </div>
-            )}
+                  <div className="track-row-duration">
+                    {formatDuration(track.duration)}
+                  </div>
+                  <div className="track-row-year">
+                    {geniusCache[track.id]?.releaseYear ||
+                      (track.created_at ? getYear(track.created_at) : "—")}
+                  </div>
+                  <div className="track-row-added">
+                    {track.added_at
+                      ? formatTimeAgo(track.added_at)
+                      : track.created_at
+                        ? formatTimeAgo(track.created_at)
+                        : "—"}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         ) : (
           // DEFAULT VIEW
@@ -630,10 +633,14 @@ export default function Home() {
         )}
       </div>
 
-      {/* PLAYER */}
-      {currentTrack && (
-        <div className="player-bar">{/* Your existing player JSX */}</div>
-      )}
+      <Player
+        currentTrack={currentTrack}
+        isPlaying={isPlaying}
+        onPlayPause={() => setIsPlaying(!isPlaying)}
+        onNext={handleNext}
+        onPrev={handlePrev}
+        queue={queue}
+      />
     </div>
   );
 }
