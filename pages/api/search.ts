@@ -5,27 +5,34 @@ export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
-  const { q } = req.query as { q?: string };
-  const token = req.cookies.soundcloud_token;
+  const { q, offset = "0", limit = "20" } = req.query;
 
   if (!q) {
-    return res.status(400).json({ error: "Missing search query" });
-  }
-
-  if (!token) {
-    return res.status(401).json({ error: "Not authenticated" });
+    return res.status(400).json({ collection: [], hasMore: false });
   }
 
   try {
+    const offsetNum = parseInt(offset as string) || 0;
+    const limitNum = parseInt(limit as string) || 20;
+
     const response = await axios.get("https://api.soundcloud.com/tracks", {
-      params: { q, limit: 50 },
-      headers: { Authorization: `OAuth ${token}` },
+      params: {
+        q,
+        offset: offsetNum,
+        limit: limitNum,
+        client_id: process.env.SOUNDCLOUD_CLIENT_ID,
+      },
+      timeout: 10000,
     });
-    res.json({ collection: response.data });
+
+    const collection = Array.isArray(response.data)
+      ? response.data
+      : response.data.collection || [];
+    const hasMore = collection.length >= limitNum;
+
+    res.json({ collection, hasMore });
   } catch (error: any) {
-    console.error("Search error:", error.response?.data || error.message);
-    res.status(error.response?.status || 500).json({
-      error: error.response?.data?.message || error.message,
-    });
+    console.error("Search error:", error.message);
+    res.status(200).json({ collection: [], hasMore: false });
   }
 }
