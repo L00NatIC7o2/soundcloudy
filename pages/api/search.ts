@@ -17,6 +17,7 @@ export default async function handler(
   }
 
   try {
+    // v1 API search endpoint
     const response = await axios.get("https://api.soundcloud.com/tracks", {
       headers: {
         Authorization: `OAuth ${token}`,
@@ -26,12 +27,15 @@ export default async function handler(
         limit: 20,
         linked_partitioning: 1,
       },
-      timeout: 5000,
+      timeout: 10000,
     });
 
-    res.json({ collection: response.data.collection || response.data || [] });
+    const collection = response.data.collection || response.data || [];
+    console.log("Search results:", collection.length);
+
+    res.json({ collection });
   } catch (error: any) {
-    console.error("Search error:", error.message);
+    console.error("Search error:", error.response?.status, error.message);
     res.status(error.response?.status || 500).json({
       error: "Search failed",
       collection: [],

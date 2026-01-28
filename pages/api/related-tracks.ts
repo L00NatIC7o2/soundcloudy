@@ -17,18 +17,20 @@ export default async function handler(
   }
 
   try {
-    // Get track info first
+    // Get track info
     const trackResponse = await axios.get(
       `https://api.soundcloud.com/tracks/${trackId}`,
       {
         headers: {
           Authorization: `OAuth ${token}`,
         },
-        timeout: 5000,
+        timeout: 10000,
       },
     );
 
     const track = trackResponse.data;
+
+    // Search for related tracks by artist or genre
     const searchQuery =
       track.user?.username || track.genre || track.title.split(" ")[0];
 
@@ -43,19 +45,27 @@ export default async function handler(
           limit: 20,
           linked_partitioning: 1,
         },
-        timeout: 5000,
+        timeout: 10000,
       },
     );
 
+    // Filter out current track
     const related = (
       relatedResponse.data.collection ||
       relatedResponse.data ||
       []
-    ).filter((t: any) => t.id !== parseInt(trackId));
+    )
+      .filter((t: any) => t.id !== parseInt(trackId))
+      .slice(0, 10); // Limit to 10 related tracks
 
+    console.log("Related tracks found:", related.length);
     res.json({ collection: related });
   } catch (error: any) {
-    console.error("Related tracks error:", error.message);
+    console.error(
+      "Related tracks error:",
+      error.response?.status,
+      error.message,
+    );
     res.status(error.response?.status || 500).json({
       error: "Failed to fetch related tracks",
       collection: [],
