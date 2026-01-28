@@ -87,10 +87,10 @@ export default function Home() {
     }
   };
 
-  const handleSearch = async (offset = 0) => {
+  const handleSearch = async (offsetValue = 0) => {
     if (!query.trim()) return;
 
-    if (offset === 0) {
+    if (offsetValue === 0) {
       setLoading(true);
     } else {
       setIsLoadingMore(true);
@@ -100,9 +100,9 @@ export default function Home() {
     setViewingLikes(false);
 
     try {
-      console.log("Fetching search results with offset:", offset); // Debug log
+      console.log("Fetching search results with offset:", offsetValue);
       const response = await fetch(
-        `/api/search?q=${encodeURIComponent(query)}&offset=${offset}&limit=20`,
+        `/api/search?q=${encodeURIComponent(query)}&offset=${offsetValue}&limit=20`,
       );
       const data = await response.json();
 
@@ -111,16 +111,22 @@ export default function Home() {
         data.collection?.length,
         "Has more:",
         data.hasMore,
-      ); // Debug log
+      );
 
-      if (offset === 0) {
+      if (offsetValue === 0) {
         // New search - replace all results
         setTracks(data.collection || []);
-        setSearchOffset(20); // Set next offset to 20
+        setSearchOffset(20);
       } else {
-        // Load more - append to existing results
-        setTracks((prev) => [...prev, ...(data.collection || [])]);
-        setSearchOffset((prev) => prev + 20); // Increment offset
+        // Load more - append to existing results (avoid duplicates)
+        const newTracks = data.collection || [];
+        const existingIds = new Set(tracks.map((t: any) => t.id));
+        const uniqueNewTracks = newTracks.filter(
+          (t: any) => !existingIds.has(t.id),
+        );
+
+        setTracks((prev) => [...prev, ...uniqueNewTracks]);
+        setSearchOffset(offsetValue + 20);
       }
 
       setSearchHasMore(data.hasMore);
@@ -497,7 +503,7 @@ export default function Home() {
             onChange={(e) => handleSearchInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleSearch(0)}
           />
-          <button onClick={handleSearch}>Search</button>
+          <button onClick={() => handleSearch(0)}>Search</button>
         </div>
       </div>
 
