@@ -28,14 +28,21 @@ export default function Home() {
   // Define all functions BEFORE useEffect
   const fetchPlaylists = async () => {
     try {
+      console.log("Calling /api/playlists");
       const response = await fetch("/api/playlists");
+
+      if (!response.ok) {
+        console.error("Playlists API failed:", response.status);
+        throw new Error(`Failed to fetch playlists: ${response.status}`);
+      }
+
       const data = await response.json();
-      const sorted = (data.playlists || [])
-        .sort((a: any, b: any) => (b.modified_at || 0) - (a.modified_at || 0))
-        .slice(0, 5);
-      setPlaylists(sorted);
+      console.log("Playlists received:", data.playlists?.length || 0);
+
+      setPlaylists(data.playlists || []);
     } catch (error) {
-      console.error("Failed to fetch playlists:", error);
+      console.error("Error fetching playlists:", error);
+      setPlaylists([]);
     }
   };
 
@@ -253,16 +260,21 @@ export default function Home() {
       try {
         const res = await fetch("/api/auth/check");
         if (!res.ok) {
+          console.log("Not authenticated, redirecting to login");
           router.push("/login");
           setIsAuthenticated(false);
-        } else {
-          setIsAuthenticated(true);
+          return;
+        }
 
-          try {
-            await fetchPlaylists();
-          } catch (err) {
-            console.warn("Failed to fetch playlists:", err);
-          }
+        console.log("Authentication successful");
+        setIsAuthenticated(true);
+
+        // Fetch playlists
+        try {
+          console.log("Fetching playlists...");
+          await fetchPlaylists();
+        } catch (err) {
+          console.error("Failed to fetch playlists:", err);
         }
       } catch (error) {
         console.error("Auth check failed:", error);
@@ -272,6 +284,7 @@ export default function Home() {
         setAuthChecking(false);
       }
     };
+
     checkAuth();
   }, [router]);
 
