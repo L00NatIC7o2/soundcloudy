@@ -116,8 +116,17 @@ html,
   display: flex;
   flex-direction: column;
   overflow-y: auto;
+  overflow-x: hidden;
   box-shadow: 2px 0 12px rgba(0, 0, 0, 0.15);
   padding: 16px 0;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  /* Prevent scroll from propagating to main page */
+  overscroll-behavior: contain;
+}
+
+.sidebar::-webkit-scrollbar {
+  display: none;
 }
 
 .sidebar.collapsed {
@@ -192,6 +201,8 @@ html,
   overflow-y: auto;
   scrollbar-width: none;
   -ms-overflow-style: none;
+  /* Prevent scroll from propagating */
+  overscroll-behavior: contain;
 }
 
 .sidebar-playlists::-webkit-scrollbar {
@@ -333,6 +344,7 @@ html,
   padding-bottom: 140px;
   min-height: 100vh;
   transition: margin-left 0.3s;
+  overscroll-behavior: contain;
 }
 
 .app-shell:has(.sidebar.expanded) .main-area {
