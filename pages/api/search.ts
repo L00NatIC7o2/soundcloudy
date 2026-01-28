@@ -12,14 +12,19 @@ export default async function handler(
     return res.status(400).json({ error: "Missing search query" });
   }
 
+  if (!token) {
+    return res.status(401).json({ error: "Not authenticated" });
+  }
+
   try {
     const response = await axios.get("https://api.soundcloud.com/tracks", {
-      headers: token ? { Authorization: `OAuth ${token}` } : {},
+      headers: {
+        Authorization: `OAuth ${token}`,
+      },
       params: {
         q,
         limit: 20,
         linked_partitioning: 1,
-        client_id: process.env.SOUNDCLOUD_CLIENT_ID,
       },
       timeout: 5000,
     });
