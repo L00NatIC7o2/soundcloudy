@@ -17,23 +17,18 @@ export default async function handler(
 
     console.log("🔍 Searching:", q);
 
-    const response = await axios.get(
-      "https://api-v2.soundcloud.com/search/tracks",
-      {
-        params: {
-          q,
-          offset: offsetNum,
-          limit: limitNum,
-          client_id: process.env.SOUNDCLOUD_CLIENT_ID,
-          app_version: "1696963967",
-          linked_partitioning: 1,
-        },
-        timeout: 10000,
+    const response = await axios.get("https://api.soundcloud.com/tracks", {
+      params: {
+        q,
+        offset: offsetNum,
+        limit: limitNum,
+        client_id: process.env.SOUNDCLOUD_CLIENT_ID,
       },
-    );
+      timeout: 10000,
+    });
 
-    const collection = response.data.collection || [];
-    const hasMore = !!response.data.next_href;
+    const collection = Array.isArray(response.data) ? response.data : [];
+    const hasMore = collection.length >= limitNum;
 
     res.json({ collection, hasMore });
   } catch (error: any) {
