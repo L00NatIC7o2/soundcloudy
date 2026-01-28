@@ -6,47 +6,47 @@ export default async function handler(
   res: NextApiResponse,
 ) {
   const { trackId } = req.query;
-  const token = req.cookies.soundcloud_token;
 
-  if (!token) {
-    return res.status(401).json({ error: "Not authenticated" });
-  }
-
-  if (!trackId) {
+  if (!trackId || typeof trackId !== "string") {
     return res.status(400).json({ error: "Missing trackId" });
   }
 
   try {
-    // Use SoundCloud's public API endpoint that doesn't require auth
-    const response = await axios.get(
+    // Get track info
+    const trackResponse = await axios.get(
       `https://api-v2.soundcloud.com/tracks/${trackId}`,
       {
-        params: { client_id: "uhlkXHnXoaAxIjoziy18peYV5eSwuMLz" },
+        params: { client_id: process.env.SOUNDCLOUD_CLIENT_ID },
+        timeout: 5000,
       },
     );
 
-    const track = response.data;
+    const track = trackResponse.data;
 
-    // Check if track has a stream URL
+    // Check if track has transcodings (stream URLs)
     if (track.media && track.media.transcodings) {
-      const m3u8 = track.media.transcodings.find(
+      const mp3 = track.media.transcodings.find(
         (t: any) => t.format.mime_type === "audio/mpeg",
       );
 
-      if (m3u8) {
-        // Get the actual stream URL
-        const streamRes = await axios.get(m3u8.url, {
-          params: { client_id: "uhlkXHnXoaAxIjoziy18peYV5eSwuMLz" },
+      if (mp3) {
+        const streamResponse = await axios.get(mp3.url, {
+          params: { client_id: process.env.SOUNDCLOUD_CLIENT_ID },
+          timeout: 5000,
         });
 
-        const streamUrl = streamRes.data.url;
-        return res.redirect(307, streamUrl);
+        if (streamResponse.data.url) {
+          return res.redirect(307, streamResponse.data.url);
+        }
       }
     }
 
-    // Fallback to HLS stream if available
+    // Fallback to direct stream if available
     if (track.stream_url) {
-      return res.redirect(307, track.stream_url);
+      return res.redirect(
+        307,
+        `${track.stream_url}?client_id=${process.env.SOUNDCLOUD_CLIENT_ID}`,
+      );
     }
 
     res.status(404).json({ error: "No stream available for this track" });

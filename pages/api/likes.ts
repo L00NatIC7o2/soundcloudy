@@ -12,27 +12,26 @@ export default async function handler(
   }
 
   try {
-    // Get current user info first
-    const meResp = await axios.get("https://api.soundcloud.com/me", {
+    // Get user's liked tracks using OAuth token
+    const response = await axios.get("https://api-v2.soundcloud.com/me/likes", {
       headers: { Authorization: `OAuth ${token}` },
+      params: {
+        limit: 200,
+        client_id: process.env.SOUNDCLOUD_CLIENT_ID,
+      },
+      timeout: 5000,
     });
 
-    const userId = meResp.data.id;
+    const tracks = response.data.collection
+      .map((item: any) => item.track || item)
+      .filter((item: any) => item.id);
 
-    // Get user's likes/favorites
-    const likesResp = await axios.get(
-      `https://api.soundcloud.com/users/${userId}/favorites`,
-      {
-        headers: { Authorization: `OAuth ${token}` },
-        params: { limit: 200 },
-      },
-    );
-
-    res.json({ tracks: likesResp.data });
+    res.json({ tracks });
   } catch (error: any) {
-    console.error("Likes error:", error.response?.data || error.message);
+    console.error("Likes error:", error.message);
     res.status(error.response?.status || 500).json({
-      error: error.response?.data?.message || error.message,
+      error: "Failed to fetch likes",
+      tracks: [],
     });
   }
 }

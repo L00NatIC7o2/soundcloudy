@@ -12,27 +12,29 @@ export default async function handler(
     return res.status(401).json({ error: "Not authenticated" });
   }
 
+  if (!id || typeof id !== "string") {
+    return res.status(400).json({ error: "Missing playlist ID" });
+  }
+
   try {
-    const playlistResp = await axios.get(
-      `https://api.soundcloud.com/playlists/${id}`,
+    // Get playlist tracks using OAuth token
+    const response = await axios.get(
+      `https://api-v2.soundcloud.com/playlists/${id}`,
       {
         headers: { Authorization: `OAuth ${token}` },
+        params: {
+          client_id: process.env.SOUNDCLOUD_CLIENT_ID,
+        },
+        timeout: 5000,
       },
     );
 
-    const tracks = playlistResp.data.tracks || [];
-
-    res.json({
-      tracks: tracks,
-      playlist: playlistResp.data,
-    });
+    res.json({ tracks: response.data.tracks || [] });
   } catch (error: any) {
-    console.error(
-      "Playlist detail error:",
-      error.response?.data || error.message,
-    );
+    console.error("Playlist error:", error.message);
     res.status(error.response?.status || 500).json({
-      error: error.response?.data?.message || error.message,
+      error: "Failed to fetch playlist",
+      tracks: [],
     });
   }
 }

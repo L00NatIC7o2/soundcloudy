@@ -21,28 +21,21 @@ export default async function handler(
   }
 
   try {
-    const trackUrn = `soundcloud:tracks:${trackId}`;
+    const method = like ? "put" : "delete";
 
-    if (like) {
-      // Like the track
-      await axios.post(
-        `https://api.soundcloud.com/likes/tracks/${trackUrn}`,
-        {},
-        { headers: { Authorization: `OAuth ${token}` } },
-      );
-    } else {
-      // Unlike the track
-      await axios.delete(
-        `https://api.soundcloud.com/likes/tracks/${trackUrn}`,
-        { headers: { Authorization: `OAuth ${token}` } },
-      );
-    }
+    await axios({
+      method,
+      url: `https://api-v2.soundcloud.com/me/likes/${trackId}`,
+      headers: { Authorization: `OAuth ${token}` },
+      params: { client_id: process.env.SOUNDCLOUD_CLIENT_ID },
+      timeout: 5000,
+    });
 
     res.json({ success: true });
   } catch (error: any) {
-    console.error("Like error:", error.response?.data || error.message);
+    console.error("Like error:", error.message);
     res.status(error.response?.status || 500).json({
-      error: error.response?.data?.message || error.message,
+      error: "Failed to update like",
     });
   }
 }

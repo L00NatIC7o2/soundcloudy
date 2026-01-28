@@ -12,36 +12,25 @@ export default async function handler(
   }
 
   try {
-    // Get current user info
-    const meResp = await axios.get("https://api.soundcloud.com/me", {
-      headers: { Authorization: `OAuth ${token}` },
-    });
-
-    const userId = meResp.data.id;
-
-    // Get user's playlists
-    const playlistsResp = await axios.get(
-      `https://api.soundcloud.com/users/${userId}/playlists`,
+    // Get user's playlists using OAuth token (this is allowed)
+    const response = await axios.get(
+      "https://api-v2.soundcloud.com/me/playlists",
       {
         headers: { Authorization: `OAuth ${token}` },
-        params: { limit: 200 },
+        params: {
+          limit: 50,
+          client_id: process.env.SOUNDCLOUD_CLIENT_ID,
+        },
+        timeout: 5000,
       },
     );
 
-    // Sort by most recently modified (most recently played)
-    const sorted = (playlistsResp.data || [])
-      .sort((a: any, b: any) => {
-        const dateA = new Date(a.modified_at || a.created_at || 0).getTime();
-        const dateB = new Date(b.modified_at || b.created_at || 0).getTime();
-        return dateB - dateA;
-      })
-      .slice(0, 5);
-
-    res.json({ playlists: sorted });
+    res.json({ playlists: response.data.collection || [] });
   } catch (error: any) {
-    console.error("Playlists error:", error.response?.data || error.message);
+    console.error("Playlists error:", error.message);
     res.status(error.response?.status || 500).json({
-      error: error.response?.data?.message || error.message,
+      error: "Failed to fetch playlists",
+      playlists: [],
     });
   }
 }

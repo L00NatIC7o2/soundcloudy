@@ -12,29 +12,29 @@ export default async function handler(
     return res.status(401).json({ error: "Not authenticated" });
   }
 
+  if (!trackId || typeof trackId !== "string") {
+    return res.status(400).json({ error: "Missing trackId" });
+  }
+
   try {
-    // Get user's likes and check if trackId is in there
-    const meResp = await axios.get("https://api.soundcloud.com/me", {
-      headers: { Authorization: `OAuth ${token}` },
-    });
-
-    const userId = meResp.data.id;
-
-    const likesResp = await axios.get(
-      `https://api.soundcloud.com/users/${userId}/favorites`,
+    // Check if track is in user's likes
+    const response = await axios.get(
+      `https://api-v2.soundcloud.com/me/likes/${trackId}`,
       {
         headers: { Authorization: `OAuth ${token}` },
-        params: { limit: 200 },
+        params: { client_id: process.env.SOUNDCLOUD_CLIENT_ID },
+        timeout: 5000,
       },
     );
 
-    const isLiked = likesResp.data.some(
-      (track: any) => track.id === parseInt(trackId as string),
-    );
-
-    res.json({ isLiked });
+    res.json({ isLiked: !!response.data });
   } catch (error: any) {
-    console.error("Check like error:", error.response?.data || error.message);
-    res.json({ isLiked: false });
+    // 404 means not liked
+    if (error.response?.status === 404) {
+      return res.json({ isLiked: false });
+    }
+
+    console.error("Check like error:", error.message);
+    res.json({ isLiked: false }); // Default to not liked on error
   }
 }

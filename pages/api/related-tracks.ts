@@ -6,36 +6,29 @@ export default async function handler(
   res: NextApiResponse,
 ) {
   const { trackId } = req.query;
-  const token = req.cookies.soundcloud_token;
 
-  if (!token) {
-    return res.status(401).json({ error: "Not authenticated" });
-  }
-
-  if (!trackId) {
+  if (!trackId || typeof trackId !== "string") {
     return res.status(400).json({ error: "Missing trackId" });
   }
 
   try {
-    // SoundCloud's related tracks endpoint
+    // Get related tracks - this endpoint is public
     const response = await axios.get(
       `https://api-v2.soundcloud.com/tracks/${trackId}/related`,
       {
-        headers: { Authorization: `OAuth ${token}` },
         params: {
           limit: 20,
+          client_id: process.env.SOUNDCLOUD_CLIENT_ID,
         },
+        timeout: 5000,
       },
     );
 
     res.json({ collection: response.data.collection || [] });
   } catch (error: any) {
-    console.error(
-      "Related tracks error:",
-      error.response?.data || error.message,
-    );
+    console.error("Related tracks error:", error.message);
     res.status(error.response?.status || 500).json({
-      error: error.response?.data?.message || error.message,
+      error: "Failed to fetch related tracks",
       collection: [],
     });
   }
