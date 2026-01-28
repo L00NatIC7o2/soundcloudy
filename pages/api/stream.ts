@@ -1,74 +1,54 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import axios from "axios";
 
-export const config = { api: { responseLimit: false, bodyParser: false } };
-
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
-  const { trackId } = req.query as { trackId?: string };
+  const { trackId } = req.query;
   const token = req.cookies.soundcloud_token;
-  if (!trackId) return res.status(400).json({ error: "Missing trackId" });
-  if (!token) return res.status(401).json({ error: "Not authenticated" });
+
+  if (!token) {
+    return res.status(401).json({ error: "Not authenticated" });
+  }
+
+  if (!trackId) {
+    return res.status(400).json({ error: "Missing trackId" });
+  }
 
   try {
-    const streamsResp = await axios.get(
-      `https://api.soundcloud.com/tracks/soundcloud:tracks:${trackId}/streams`,
+    // Get track info first
+    const trackResponse = await axios.get(
+      `https://api-v2.soundcloud.com/tracks/${trackId}`,
       {
         headers: { Authorization: `OAuth ${token}` },
-        validateStatus: () => true,
+        params: { client_id: process.env.SOUNDCLOUD_CLIENT_ID },
       },
     );
-    if (streamsResp.status !== 200) {
-      return res
-        .status(streamsResp.status)
-        .json({ error: "Failed to get streams" });
-    }
 
-    const streams = streamsResp.data;
-    const streamUrl =
-      streams.http_mp3_128_url ||
-      streams.hls_mp3_128_url ||
-      streams.preview_mp3_128_url;
-    if (!streamUrl)
-      return res.status(404).json({ error: "No stream URL available" });
+    const track = trackResponse.data;
 
-    // Fetch audio without auth; these URLs are pre-signed
-    let audioResp = await axios.get(streamUrl, {
-      responseType: "stream",
-      headers: { "User-Agent": "Mozilla/5.0" },
-      validateStatus: () => true,
-    });
-
-    // Fallback: retry with OAuth header if first attempt failed
-    if (audioResp.status === 401) {
-      audioResp = await axios.get(streamUrl, {
-        responseType: "stream",
-        headers: {
-          "User-Agent": "Mozilla/5.0",
-          Authorization: `OAuth ${token}`,
-        },
-        validateStatus: () => true,
-      });
-    }
-
-    if (audioResp.status !== 200) {
-      return res
-        .status(audioResp.status)
-        .json({ error: "Failed to fetch audio" });
-    }
-
-    res.setHeader(
-      "Content-Type",
-      audioResp.headers["content-type"] || "audio/mpeg",
+    // Get stream URL
+    const streamResponse = await axios.get(
+      `https://api-v2.soundcloud.com/tracks/${trackId}/stream`,
+      {
+        headers: { Authorization: `OAuth ${token}` },
+        params: { client_id: process.env.SOUNDCLOUD_CLIENT_ID },
+      },
     );
-    res.setHeader("Accept-Ranges", "bytes");
-    if (audioResp.headers["content-length"]) {
-      res.setHeader("Content-Length", audioResp.headers["content-length"]);
+
+    const streamUrl = streamResponse.data.url;
+
+    if (!streamUrl) {
+      throw new Error("No stream URL available");
     }
-    audioResp.data.pipe(res);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
+
+    // Redirect to the stream
+    res.redirect(307, streamUrl);
+  } catch (error: any) {
+    console.error("Stream error:", error.response?.data || error.message);
+    res.status(error.response?.status || 500).json({
+      error: error.response?.data?.message || error.message,
+    });
   }
 }
