@@ -5,13 +5,11 @@ export default function Login() {
   const router = useRouter();
 
   const handleLogin = () => {
-    const clientId =
-      process.env.NEXT_PUBLIC_SOUNDCLOUD_CLIENT_ID ||
-      "uhlkXHnXoaAxIjoziy18peYV5eSwuMLz";
+    const clientId = "uhlkXHnXoaAxIjoziy18peYV5eSwuMLz";
     const redirectUri = `${window.location.origin}/api/auth/callback`;
-    const scope = "non-expiring";
 
-    const authUrl = `https://api.soundcloud.com/connect?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${scope}`;
+    // Remove scope or set to empty string
+    const authUrl = `https://api.soundcloud.com/connect?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code`;
 
     window.location.href = authUrl;
   };

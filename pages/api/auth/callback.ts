@@ -8,11 +8,12 @@ export default async function handler(
   const { code, error } = req.query;
 
   if (error) {
-    return res.redirect(`/login?error=${error}`);
+    res.redirect(`/login?error=${error}`);
+    return;
   }
 
   if (!code || typeof code !== "string") {
-    return res.status(400).json({ error: "Missing authorization code" });
+    res.status(400).json({ error: "Missing authorization code" });
     return;
   }
 
@@ -27,21 +28,30 @@ export default async function handler(
         grant_type: "authorization_code",
         redirect_uri: redirectUri,
         code,
-        scope: "non-expiring",
+        // Remove scope: "non-expiring"
       },
     );
 
-    const { access_token } = response.data;
+    const { access_token, refresh_token, expires_in } = response.data;
 
     if (!access_token) {
       throw new Error("No access token in response");
     }
 
-    res.setHeader(
-      "Set-Cookie",
-      `soundcloud_token=${access_token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000`,
-    );
+    console.log("Token received, expires in:", expires_in);
 
+    // Store both access and refresh tokens
+    const cookies = [
+      `soundcloud_token=${access_token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${expires_in || 3600}`,
+    ];
+
+    if (refresh_token) {
+      cookies.push(
+        `soundcloud_refresh_token=${refresh_token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000`,
+      );
+    }
+
+    res.setHeader("Set-Cookie", cookies);
     res.redirect(302, "/");
   } catch (error: any) {
     console.error(
