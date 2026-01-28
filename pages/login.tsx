@@ -1,40 +1,36 @@
-import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
+import { useEffect } from "react";
 
-export default function LoginPage() {
+export default function Login() {
   const router = useRouter();
-  const [checking, setChecking] = useState(true);
-
-  useEffect(() => {
-    const checkAuth = async () => {
-      try {
-        const res = await fetch("/api/auth/check");
-        if (res.ok) {
-          router.push("/");
-        }
-      } catch (error) {
-        console.error("Auth check failed:", error);
-      } finally {
-        setChecking(false);
-      }
-    };
-    checkAuth();
-  }, [router]);
-
-  if (checking) {
-    return <div style={{ padding: "20px" }}>Loading...</div>;
-  }
 
   const handleLogin = () => {
-    window.location.href = "/api/auth/login";
+    const clientId = "uhlkXHnXoaAxIjoziy18peYV5eSwuMLz";
+    const redirectUri = `${window.location.origin}/api/auth/callback`;
+    const scope = "non-expiring";
+
+    const authUrl = new URL("https://soundcloud.com/oauth");
+    authUrl.searchParams.append("client_id", clientId);
+    authUrl.searchParams.append("redirect_uri", redirectUri);
+    authUrl.searchParams.append("response_type", "code");
+    authUrl.searchParams.append("scope", scope);
+
+    window.location.href = authUrl.toString();
   };
+
+  useEffect(() => {
+    const { error } = router.query;
+    if (error) {
+      alert(`Login error: ${error}`);
+    }
+  }, [router.query]);
 
   return (
     <div className="login-page">
       <div className="login-card">
-        <h1>SoundCloudy</h1>
-        <p>Stream your favorite music</p>
-        <button onClick={handleLogin} className="login-button">
+        <h1>🎵 Soundcloudy</h1>
+        <p>Your personal SoundCloud player</p>
+        <button className="login-button" onClick={handleLogin}>
           Login with SoundCloud
         </button>
       </div>
