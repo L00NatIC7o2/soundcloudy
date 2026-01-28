@@ -14,24 +14,31 @@ export default async function handler(
   }
 
   try {
-    const response = await axios.get("https://api-v2.soundcloud.com/me/likes", {
-      headers: { Authorization: `OAuth ${token}` },
-      params: {
-        limit: 200,
-        client_id: process.env.SOUNDCLOUD_CLIENT_ID,
+    // Use the v1 API endpoint which works with OAuth tokens
+    const response = await axios.get(
+      "https://api.soundcloud.com/me/favorites",
+      {
+        params: {
+          oauth_token: token,
+          limit: 200,
+          linked_partitioning: 1,
+        },
+        timeout: 10000,
       },
-      timeout: 10000,
-    });
+    );
 
     console.log("Likes count:", response.data.collection?.length || 0);
 
-    const tracks = response.data.collection
-      .map((item: any) => item.track || item)
-      .filter((item: any) => item && item.id);
+    const tracks = response.data.collection || [];
 
     res.json({ tracks });
   } catch (error: any) {
-    console.error("Likes error:", error.response?.status, error.message);
+    console.error(
+      "Likes error:",
+      error.response?.status,
+      error.response?.data,
+      error.message,
+    );
 
     if (error.response?.status === 401) {
       return res.status(401).json({

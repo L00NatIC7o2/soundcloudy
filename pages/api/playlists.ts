@@ -14,24 +14,34 @@ export default async function handler(
   }
 
   try {
+    // Use v1 API endpoint which works with OAuth tokens
     const response = await axios.get(
-      "https://api-v2.soundcloud.com/me/playlists",
+      "https://api.soundcloud.com/me/playlists",
       {
-        headers: { Authorization: `OAuth ${token}` },
         params: {
+          oauth_token: token,
           limit: 50,
-          client_id: process.env.SOUNDCLOUD_CLIENT_ID,
+          linked_partitioning: 1,
         },
         timeout: 10000,
       },
     );
 
     console.log("SoundCloud API response:", response.status);
-    console.log("Playlists count:", response.data.collection?.length || 0);
+    console.log(
+      "Playlists count:",
+      response.data.collection?.length || response.data.length || 0,
+    );
 
-    res.json({ playlists: response.data.collection || [] });
+    const playlists = response.data.collection || response.data || [];
+    res.json({ playlists });
   } catch (error: any) {
-    console.error("Playlists error:", error.response?.status, error.message);
+    console.error(
+      "Playlists error:",
+      error.response?.status,
+      error.response?.data,
+      error.message,
+    );
 
     if (error.response?.status === 401) {
       return res.status(401).json({

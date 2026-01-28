@@ -17,21 +17,26 @@ export default async function handler(
   }
 
   try {
-    // Get playlist tracks using OAuth token
+    // Use v1 API endpoint
     const response = await axios.get(
-      `https://api-v2.soundcloud.com/playlists/${id}`,
+      `https://api.soundcloud.com/playlists/${id}`,
       {
-        headers: { Authorization: `OAuth ${token}` },
         params: {
-          client_id: process.env.SOUNDCLOUD_CLIENT_ID,
+          oauth_token: token,
         },
-        timeout: 5000,
+        timeout: 10000,
       },
     );
 
     res.json({ tracks: response.data.tracks || [] });
   } catch (error: any) {
-    console.error("Playlist error:", error.message);
+    console.error(
+      "Playlist error:",
+      error.response?.status,
+      error.response?.data,
+      error.message,
+    );
+
     res.status(error.response?.status || 500).json({
       error: "Failed to fetch playlist",
       tracks: [],
