@@ -15,20 +15,33 @@ export default async function handler(
     const offsetNum = parseInt(offset as string) || 0;
     const limitNum = parseInt(limit as string) || 20;
 
-    const response = await axios.get("https://api.soundcloud.com/tracks", {
-      params: {
-        q,
-        offset: offsetNum,
-        limit: limitNum,
-        client_id: process.env.SOUNDCLOUD_CLIENT_ID,
-      },
-      timeout: 10000,
-    });
+    // Get token from cookies (set during OAuth login)
+    const token =
+      req.cookies.access_token || process.env.SOUNDCLOUD_OAUTH_TOKEN;
 
-    const collection = Array.isArray(response.data)
-      ? response.data
-      : response.data.collection || [];
-    const hasMore = collection.length >= limitNum;
+    if (!token) {
+      return res.status(401).json({ collection: [], hasMore: false });
+    }
+
+    console.log("🔍 Searching:", q);
+
+    const response = await axios.get(
+      "https://api-v2.soundcloud.com/search/tracks",
+      {
+        params: {
+          q,
+          offset: offsetNum,
+          limit: limitNum,
+        },
+        headers: {
+          Authorization: `OAuth ${token}`,
+        },
+        timeout: 10000,
+      },
+    );
+
+    const collection = response.data.collection || [];
+    const hasMore = !!response.data.next_href;
 
     res.json({ collection, hasMore });
   } catch (error: any) {
