@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/router";
 import Player from "../src/components/Player";
 
@@ -87,56 +87,59 @@ export default function Home() {
     }
   };
 
-  const handleSearch = async (offsetValue = 0) => {
-    if (!query.trim()) return;
-
-    if (offsetValue === 0) {
-      setLoading(true);
-    } else {
-      setIsLoadingMore(true);
-    }
-
-    setSelectedPlaylist(null);
-    setViewingLikes(false);
-
-    try {
-      console.log("Fetching search results with offset:", offsetValue);
-      const response = await fetch(
-        `/api/search?q=${encodeURIComponent(query)}&offset=${offsetValue}&limit=20`,
-      );
-      const data = await response.json();
-
-      console.log(
-        "Got results:",
-        data.collection?.length,
-        "Has more:",
-        data.hasMore,
-      );
+  const handleSearch = useCallback(
+    async (offsetValue = 0) => {
+      if (!query.trim()) return;
 
       if (offsetValue === 0) {
-        // New search - replace all results
-        setTracks(data.collection || []);
-        setSearchOffset(20);
+        setLoading(true);
       } else {
-        // Load more - append to existing results (avoid duplicates)
-        const newTracks = data.collection || [];
-        const existingIds = new Set(tracks.map((t: any) => t.id));
-        const uniqueNewTracks = newTracks.filter(
-          (t: any) => !existingIds.has(t.id),
-        );
-
-        setTracks((prev) => [...prev, ...uniqueNewTracks]);
-        setSearchOffset(offsetValue + 20);
+        setIsLoadingMore(true);
       }
 
-      setSearchHasMore(data.hasMore);
-    } catch (error) {
-      console.error("Search error:", error);
-    } finally {
-      setLoading(false);
-      setIsLoadingMore(false);
-    }
-  };
+      setSelectedPlaylist(null);
+      setViewingLikes(false);
+
+      try {
+        console.log("Fetching search results with offset:", offsetValue);
+        const response = await fetch(
+          `/api/search?q=${encodeURIComponent(query)}&offset=${offsetValue}&limit=20`,
+        );
+        const data = await response.json();
+
+        console.log(
+          "Got results:",
+          data.collection?.length,
+          "Has more:",
+          data.hasMore,
+        );
+
+        if (offsetValue === 0) {
+          // New search - replace all results
+          setTracks(data.collection || []);
+          setSearchOffset(20);
+        } else {
+          // Load more - append to existing results (avoid duplicates)
+          const newTracks = data.collection || [];
+          const existingIds = new Set(tracks.map((t: any) => t.id));
+          const uniqueNewTracks = newTracks.filter(
+            (t: any) => !existingIds.has(t.id),
+          );
+
+          setTracks((prev) => [...prev, ...uniqueNewTracks]);
+          setSearchOffset(offsetValue + 20);
+        }
+
+        setSearchHasMore(data.hasMore);
+      } catch (error) {
+        console.error("Search error:", error);
+      } finally {
+        setLoading(false);
+        setIsLoadingMore(false);
+      }
+    },
+    [query, tracks],
+  );
 
   const handleSearchInput = (value: string) => {
     setQuery(value);
@@ -566,7 +569,7 @@ export default function Home() {
             <div className="tracks-grid">
               {tracks.map((t: any) => (
                 <div
-                  key={t.id}
+                  key={`${t.id}-search`} // Add -search suffix to ensure unique keys
                   className="track-card"
                   onClick={() => handleTrackClick(t, "search", tracks)}
                 >
@@ -586,14 +589,24 @@ export default function Home() {
               ))}
             </div>
 
-            {/* Infinite scroll trigger */}
+            {/* Infinite scroll trigger - MUST be visible and have height */}
             <div
               ref={observerTarget}
-              style={{ padding: "20px", textAlign: "center" }}
+              style={{
+                padding: "40px 20px",
+                textAlign: "center",
+                minHeight: "100px",
+                visibility: "visible", // Make sure it's visible
+              }}
             >
-              {isLoadingMore && <div className="loading">Loading more...</div>}
+              {isLoadingMore && (
+                <div className="loading">Loading more results...</div>
+              )}
               {!searchHasMore && tracks.length > 0 && (
                 <div className="end-message">No more results</div>
+              )}
+              {tracks.length === 0 && !loading && (
+                <div className="end-message">No results found</div>
               )}
             </div>
           </>
