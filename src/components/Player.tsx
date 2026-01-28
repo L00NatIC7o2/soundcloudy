@@ -37,31 +37,75 @@ export default function Player({
         ],
       });
 
-      // Set action handlers
+      // Set action handlers for media keys
       navigator.mediaSession.setActionHandler("play", () => {
-        audioRef.current?.play();
-        setIsPlaying(true);
+        if (audioRef.current) {
+          audioRef.current.play();
+          setIsPlaying(true);
+        }
       });
 
       navigator.mediaSession.setActionHandler("pause", () => {
-        audioRef.current?.pause();
-        setIsPlaying(false);
+        if (audioRef.current) {
+          audioRef.current.pause();
+          setIsPlaying(false);
+        }
       });
 
       navigator.mediaSession.setActionHandler("previoustrack", () => {
-        onPrevious?.();
+        if (onPrevious) onPrevious();
       });
 
       navigator.mediaSession.setActionHandler("nexttrack", () => {
-        onNext?.();
+        if (onNext) onNext();
+      });
+
+      navigator.mediaSession.setActionHandler("seekbackward", (details) => {
+        if (audioRef.current) {
+          audioRef.current.currentTime = Math.max(
+            audioRef.current.currentTime - (details.seekOffset || 10),
+            0,
+          );
+        }
+      });
+
+      navigator.mediaSession.setActionHandler("seekforward", (details) => {
+        if (audioRef.current) {
+          audioRef.current.currentTime = Math.min(
+            audioRef.current.currentTime + (details.seekOffset || 10),
+            audioRef.current.duration,
+          );
+        }
       });
 
       navigator.mediaSession.setActionHandler("seekto", (details) => {
-        if (audioRef.current && details.seekTime) {
+        if (audioRef.current && details.seekTime !== undefined) {
           audioRef.current.currentTime = details.seekTime;
         }
       });
+
+      navigator.mediaSession.setActionHandler("stop", () => {
+        if (audioRef.current) {
+          audioRef.current.pause();
+          audioRef.current.currentTime = 0;
+          setIsPlaying(false);
+        }
+      });
     }
+
+    return () => {
+      // Clean up handlers
+      if ("mediaSession" in navigator) {
+        navigator.mediaSession.setActionHandler("play", null);
+        navigator.mediaSession.setActionHandler("pause", null);
+        navigator.mediaSession.setActionHandler("previoustrack", null);
+        navigator.mediaSession.setActionHandler("nexttrack", null);
+        navigator.mediaSession.setActionHandler("seekbackward", null);
+        navigator.mediaSession.setActionHandler("seekforward", null);
+        navigator.mediaSession.setActionHandler("seekto", null);
+        navigator.mediaSession.setActionHandler("stop", null);
+      }
+    };
   }, [currentTrack, onPrevious, onNext]);
 
   // Update playback state
