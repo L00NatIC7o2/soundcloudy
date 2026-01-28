@@ -44,10 +44,19 @@ export default function Home() {
 
   const fetchLastPlayedTrack = async () => {
     try {
-      const response = await fetch("/api/recent-tracks");
+      const response = await fetch("/api/likes");
+
+      if (!response.ok) {
+        console.error("Failed to fetch last played track:", response.status);
+        return;
+      }
+
       const data = await response.json();
-      if (data.track) {
-        setCurrentTrack(data.track);
+
+      if (data.likes && data.likes.length > 0) {
+        setCurrentTrack(data.likes[0]);
+        setQueue(data.likes);
+        setQueueIndex(0);
       }
     } catch (error) {
       console.error("Failed to fetch last played track:", error);
