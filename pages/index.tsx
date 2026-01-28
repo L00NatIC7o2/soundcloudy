@@ -428,100 +428,99 @@ export default function Home() {
       : null;
 
   return (
-    <div className="app-shell">
-      <aside
-        className={`sidebar ${sidebarExpanded ? "expanded" : "collapsed"}`}
-      >
-        <button
-          className="sidebar-toggle"
-          onClick={() => setSidebarExpanded(!sidebarExpanded)}
-        >
-          {sidebarExpanded ? "◀" : "▶"}
-        </button>
+    <div className="app-container">
+      <Sidebar
+        playlists={playlists}
+        selectedPlaylist={selectedPlaylist}
+        onPlaylistClick={handlePlaylistClick}
+        onLikesClick={() => {
+          setViewingLikes(true);
+          setSelectedPlaylist(null);
+        }}
+      />
 
-        <nav className="sidebar-nav">
-          <button
-            className="nav-item"
-            onClick={() => {
-              setSelectedPlaylist(null);
-              setViewingLikes(false);
-            }}
-          >
-            <span className="nav-icon">🏠</span>
-            {sidebarExpanded && <span className="nav-label">Home</span>}
-          </button>
-
-          <button
-            className="nav-item"
-            onClick={() => {
-              window.open("https://soundcloud.com/you", "_blank");
-            }}
-          >
-            <span className="nav-icon">👤</span>
-            {sidebarExpanded && <span className="nav-label">Profile</span>}
-          </button>
-
-          <button className="nav-item" onClick={handleLikesClick}>
-            <span className="nav-icon">❤️</span>
-            {sidebarExpanded && <span className="nav-label">Liked Songs</span>}
-          </button>
-
-          <button className="nav-item">
-            <span className="nav-icon">🆕</span>
-            {sidebarExpanded && <span className="nav-label">New Releases</span>}
-          </button>
-        </nav>
-
-        <div className="sidebar-divider" />
-
-        <div className="sidebar-playlists">
-          {sidebarExpanded && (
-            <div className="section-title">Recent Playlists</div>
-          )}
-          <div className="playlist-thumbs">
-            {playlists.length > 0 ? (
-              playlists.map((playlist) => (
-                <div
-                  key={playlist.id}
-                  className="playlist-item"
-                  onClick={() => handlePlaylistClick(playlist)}
-                >
-                  <img
-                    src={getPlaylistCover(playlist)}
-                    alt={playlist.title}
-                    className="playlist-thumb"
-                  />
-                  {sidebarExpanded && (
-                    <div className="playlist-title-sidebar">
-                      {playlist.title}
-                    </div>
-                  )}
-                </div>
-              ))
-            ) : (
-              <div className="empty-state">
-                {sidebarExpanded ? "No playlists yet" : "—"}
-              </div>
-            )}
-          </div>
-        </div>
-      </aside>
-
-      <div className="top-bar">
-        <div className="search-box">
+      <div className="main-area">
+        <div className="search-container">
           <input
             type="text"
+            className="search-input"
             placeholder="Search for songs..."
             value={query}
             onChange={(e) => handleSearchInput(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleSearch(0)}
           />
-          <button onClick={() => handleSearch(0)}>Search</button>
         </div>
-      </div>
 
-      <main className="main-area">
-        {selectedPlaylist || viewingLikes ? (
+        {/* SEARCH RESULTS VIEW */}
+        {!selectedPlaylist && !viewingLikes && query.trim() ? (
+          <div className="search-results-container">
+            {loading && tracks.length === 0 ? (
+              <div style={{ textAlign: "center", padding: "60px 20px" }}>
+                <div className="loading">🔍 Searching...</div>
+              </div>
+            ) : tracks.length > 0 ? (
+              <>
+                <div className="tracks-grid">
+                  {tracks.map((t: any) => (
+                    <div
+                      key={`search-${t.id}-${tracks.indexOf(t)}`}
+                      className="track-card"
+                      onClick={() => handleTrackClick(t, "search", tracks)}
+                    >
+                      <img
+                        src={
+                          t.artwork_url?.replace("-large", "-t500x500") ||
+                          "/placeholder.png"
+                        }
+                        alt={t.title}
+                        className="track-cover"
+                      />
+                      <div className="track-info">
+                        <div className="track-title">{t.title}</div>
+                        <div className="track-artist">{t.user?.username}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* OBSERVER TARGET - MUST BE HERE */}
+                <div
+                  ref={observerTarget}
+                  style={{
+                    padding: "60px 20px",
+                    textAlign: "center",
+                    width: "100%",
+                    backgroundColor: "rgba(255,255,255,0.02)",
+                    borderTop: "1px solid rgba(255,255,255,0.1)",
+                    marginTop: "40px",
+                  }}
+                >
+                  {isLoadingMore && (
+                    <div style={{ fontSize: "16px", opacity: 0.7 }}>
+                      ⏳ Loading more results...
+                    </div>
+                  )}
+                  {!isLoadingMore && searchHasMore && (
+                    <div style={{ fontSize: "14px", opacity: 0.5 }}>
+                      ↓ Scroll to load more
+                    </div>
+                  )}
+                  {!searchHasMore && tracks.length > 0 && (
+                    <div style={{ fontSize: "14px", opacity: 0.5 }}>
+                      ✓ No more results
+                    </div>
+                  )}
+                </div>
+              </>
+            ) : (
+              <div style={{ textAlign: "center", padding: "60px 20px" }}>
+                <div className="end-message">
+                  No results found for "{query}"
+                </div>
+              </div>
+            )}
+          </div>
+        ) : selectedPlaylist ? (
+          // PLAYLIST VIEW
           <div className="playlist-view">
             <div
               className={`playlist-header-sticky ${headerScrolled ? "scrolled" : ""}`}
@@ -574,85 +573,73 @@ export default function Home() {
               ))}
             </div>
           </div>
-        ) : (
-          <>
-            {!selectedPlaylist && !viewingLikes && query.trim() ? (
-              <>
-                <div className="main-content">
-                  {loading && tracks.length === 0 ? (
-                    <div style={{ textAlign: "center", padding: "40px" }}>
-                      <div className="loading">Searching...</div>
+        ) : viewingLikes ? (
+          // LIKES VIEW
+          <div className="likes-view">
+            <div className="playlist-header-sticky">
+              <img
+                src={getLikedSongsCover()}
+                alt="Liked Songs"
+                className="playlist-header-cover"
+              />
+              <h2 className="playlist-header-title">Liked Songs</h2>
+            </div>
+            <div className="track-list">
+              {playlistTracks.map((track: any, index: number) => (
+                <div
+                  key={track.id || index}
+                  className="track-row"
+                  onClick={() =>
+                    handleTrackClick(track, "playlist", playlistTracks)
+                  }
+                >
+                  <img
+                    src={
+                      track.artwork_url?.replace("-large", "-t200x200") ||
+                      "/placeholder.png"
+                    }
+                    alt={track.title}
+                    className="track-row-cover"
+                  />
+                  <div className="track-row-info">
+                    <div className="track-row-title">{track.title}</div>
+                    <div className="track-row-artist">
+                      {track.user?.username || "Unknown"}
                     </div>
-                  ) : tracks.length > 0 ? (
-                    <>
-                      <div className="tracks-grid">
-                        {tracks.map((t: any) => (
-                          <div
-                            key={`track-${t.id}`}
-                            className="track-card"
-                            onClick={() =>
-                              handleTrackClick(t, "search", tracks)
-                            }
-                          >
-                            <img
-                              src={
-                                t.artwork_url?.replace("-large", "-t500x500") ||
-                                "/placeholder.png"
-                              }
-                              alt={t.title}
-                              className="track-cover"
-                            />
-                            <div className="track-info">
-                              <div className="track-title">{t.title}</div>
-                              <div className="track-artist">
-                                {t.user?.username}
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-
-                      {/* Load more trigger */}
-                      <div
-                        ref={observerTarget}
-                        style={{
-                          padding: "40px 20px",
-                          textAlign: "center",
-                          width: "100%",
-                          minHeight: "120px",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                        }}
-                      >
-                        {isLoadingMore ? (
-                          <div className="loading">
-                            📥 Loading more results...
-                          </div>
-                        ) : searchHasMore ? (
-                          <div style={{ opacity: 0.5 }}>Scroll for more...</div>
-                        ) : tracks.length > 0 ? (
-                          <div className="end-message">✅ No more results</div>
-                        ) : null}
-                      </div>
-                    </>
-                  ) : (
-                    <div style={{ textAlign: "center", padding: "40px" }}>
-                      <div className="end-message">No results found</div>
-                    </div>
-                  )}
+                  </div>
+                  <div className="track-row-duration">
+                    {formatDuration(track.duration)}
+                  </div>
+                  <div className="track-row-year">
+                    {geniusCache[track.id]?.releaseYear ||
+                      (track.created_at ? getYear(track.created_at) : "—")}
+                  </div>
+                  <div className="track-row-added">
+                    {track.added_at
+                      ? formatTimeAgo(track.added_at)
+                      : track.created_at
+                        ? formatTimeAgo(track.created_at)
+                        : "—"}
+                  </div>
                 </div>
-              </>
-            ) : null}
-          </>
+              ))}
+            </div>
+          </div>
+        ) : (
+          // DEFAULT VIEW
+          <div style={{ textAlign: "center", padding: "60px 20px" }}>
+            <div className="end-message">Search for a song to get started</div>
+          </div>
         )}
-      </main>
+      </div>
 
       <Player
         currentTrack={currentTrack}
-        onTrackEnd={handleTrackEnd}
-        onPrevious={handlePrevious}
+        isPlaying={isPlaying}
+        onPlayPause={() => setIsPlaying(!isPlaying)}
         onNext={handleNext}
+        onPrev={handlePrev}
+        queue={queue}
       />
     </div>
   );

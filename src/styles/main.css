@@ -1219,3 +1219,56 @@ html,
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* Add these styles at the end */
+
+.search-results-container {
+  width: 100%;
+  padding-bottom: 120px; /* Space for player */
+}
+
+.tracks-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 20px;
+  padding: 20px;
+}
+
+.track-card {
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+
+.track-card:hover {
+  transform: scale(1.05);
+}
+
+.track-cover {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.track-info {
+  padding: 12px 0;
+  min-width: 0;
+}
+
+.track-title {
+  font-size: 14px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.track-artist {
+  font-size: 12px;
+  opacity: 0.7;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-top: 4px;
+}
