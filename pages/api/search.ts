@@ -1,57 +1,38 @@
 import type { NextApiRequest, NextApiResponse } from "next";
-import axios from "axios";
 
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
-  const { q, offset = "0", limit = "20" } = req.query;
-  const token = req.cookies.soundcloud_token;
-
-  console.log("Search API - query:", q, "offset:", offset, "limit:", limit);
-
-  if (!q || typeof q !== "string") {
-    return res.status(400).json({ error: "Missing search query" });
-  }
-
-  if (!token) {
-    return res.status(401).json({ error: "Not authenticated" });
-  }
-
   try {
-    const response = await axios.get("https://api.soundcloud.com/tracks", {
-      headers: {
-        Authorization: `OAuth ${token}`,
-      },
-      params: {
-        q,
-        limit: parseInt(limit as string) || 20,
-        offset: parseInt(offset as string) || 0,
-        linked_partitioning: 1,
-      },
-      timeout: 10000,
+    const { q, offset = 0, limit = 20 } = req.query;
+
+    if (!q || typeof q !== "string") {
+      return res.status(400).json({ error: "Query parameter required" });
+    }
+
+    // Make sure you're calling the SoundCloud API correctly
+    const url = `https://api-v2.soundcloud.com/search/tracks?q=${encodeURIComponent(q)}&offset=${offset}&limit=${limit}&client_id=${process.env.SOUNDCLOUD_CLIENT_ID}`;
+
+    const response = await fetch(url);
+
+    if (!response.ok) {
+      return res.status(response.status).json({
+        error: "Failed to fetch from SoundCloud",
+      });
+    }
+
+    const data = await response.json();
+
+    return res.status(200).json({
+      collection: data.collection || [],
+      hasMore: data.collection?.length === parseInt(limit as string),
     });
-
-    const collection = response.data.collection || response.data || [];
-    const nextHref = response.data.next_href;
-
-    console.log(
-      "API Response - results:",
-      collection.length,
-      "next_href:",
-      !!nextHref,
-    );
-
-    res.json({
-      collection,
-      nextHref,
-      hasMore: !!nextHref,
-    });
-  } catch (error: any) {
-    console.error("Search error:", error.response?.status, error.message);
-    res.status(error.response?.status || 500).json({
-      error: "Search failed",
-      collection: [],
+  } catch (error) {
+    console.error("Search error:", error);
+    return res.status(500).json({
+      error: "Internal server error",
+      message: error instanceof Error ? error.message : "Unknown error",
     });
   }
 }
