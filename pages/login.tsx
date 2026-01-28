@@ -1,5 +1,6 @@
 import { useRouter } from "next/router";
 import { useEffect } from "react";
+import "../src/styles/main.css";
 
 export default function Login() {
   const router = useRouter();
@@ -7,13 +8,13 @@ export default function Login() {
   const handleLogin = () => {
     const clientId = "uhlkXHnXoaAxIjoziy18peYV5eSwuMLz";
     const redirectUri = `${window.location.origin}/api/auth/callback`;
-    const scope = "non-expiring";
 
     const authUrl = new URL("https://soundcloud.com/oauth");
     authUrl.searchParams.append("client_id", clientId);
     authUrl.searchParams.append("redirect_uri", redirectUri);
     authUrl.searchParams.append("response_type", "code");
-    authUrl.searchParams.append("scope", scope);
+    authUrl.searchParams.append("scope", "non-expiring");
+    authUrl.searchParams.append("display", "popup");
 
     window.location.href = authUrl.toString();
   };

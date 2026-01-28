@@ -17,38 +17,43 @@ export default async function handler(
   }
 
   try {
-    // Get track info first
-    const trackResponse = await axios.get(
+    // Use SoundCloud's public API endpoint that doesn't require auth
+    const response = await axios.get(
       `https://api-v2.soundcloud.com/tracks/${trackId}`,
       {
-        headers: { Authorization: `OAuth ${token}` },
-        params: { client_id: process.env.SOUNDCLOUD_CLIENT_ID },
+        params: { client_id: "uhlkXHnXoaAxIjoziy18peYV5eSwuMLz" },
       },
     );
 
-    const track = trackResponse.data;
+    const track = response.data;
 
-    // Get stream URL
-    const streamResponse = await axios.get(
-      `https://api-v2.soundcloud.com/tracks/${trackId}/stream`,
-      {
-        headers: { Authorization: `OAuth ${token}` },
-        params: { client_id: process.env.SOUNDCLOUD_CLIENT_ID },
-      },
-    );
+    // Check if track has a stream URL
+    if (track.media && track.media.transcodings) {
+      const m3u8 = track.media.transcodings.find(
+        (t: any) => t.format.mime_type === "audio/mpeg",
+      );
 
-    const streamUrl = streamResponse.data.url;
+      if (m3u8) {
+        // Get the actual stream URL
+        const streamRes = await axios.get(m3u8.url, {
+          params: { client_id: "uhlkXHnXoaAxIjoziy18peYV5eSwuMLz" },
+        });
 
-    if (!streamUrl) {
-      throw new Error("No stream URL available");
+        const streamUrl = streamRes.data.url;
+        return res.redirect(307, streamUrl);
+      }
     }
 
-    // Redirect to the stream
-    res.redirect(307, streamUrl);
+    // Fallback to HLS stream if available
+    if (track.stream_url) {
+      return res.redirect(307, track.stream_url);
+    }
+
+    res.status(404).json({ error: "No stream available for this track" });
   } catch (error: any) {
-    console.error("Stream error:", error.response?.data || error.message);
+    console.error("Stream error:", error.message);
     res.status(error.response?.status || 500).json({
-      error: error.response?.data?.message || error.message,
+      error: "Failed to get stream",
     });
   }
 }
