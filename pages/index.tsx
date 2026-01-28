@@ -301,27 +301,22 @@ export default function Home() {
 
   useEffect(() => {
     let ticking = false;
-    let lastScrollY = 0;
 
     const handleScroll = () => {
       if (!ticking) {
         window.requestAnimationFrame(() => {
           const scrollY = window.scrollY;
 
-          // Add hysteresis - different thresholds for scrolling up vs down
-          if (scrollY > lastScrollY) {
-            // Scrolling down
-            if (scrollY > 120) {
-              setHeaderScrolled(true);
-            }
-          } else {
-            // Scrolling up
-            if (scrollY < 80) {
-              setHeaderScrolled(false);
-            }
-          }
+          // Calculate progress from 0 to 1 based on scroll (0-150px range)
+          const scrollProgress = Math.min(Math.max(scrollY / 150, 0), 1);
+          setHeaderScrolled(scrollProgress > 0);
 
-          lastScrollY = scrollY;
+          // Set CSS variable for smooth interpolation
+          document.documentElement.style.setProperty(
+            "--scroll-progress",
+            scrollProgress.toString(),
+          );
+
           ticking = false;
         });
         ticking = true;
