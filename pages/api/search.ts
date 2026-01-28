@@ -5,8 +5,10 @@ export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
-  const { q, offset = 0, limit = 20 } = req.query;
+  const { q, offset = "0", limit = "20" } = req.query;
   const token = req.cookies.soundcloud_token;
+
+  console.log("Search API - query:", q, "offset:", offset, "limit:", limit);
 
   if (!q || typeof q !== "string") {
     return res.status(400).json({ error: "Missing search query" });
@@ -34,9 +36,9 @@ export default async function handler(
     const nextHref = response.data.next_href;
 
     console.log(
-      "Search results:",
+      "API Response - results:",
       collection.length,
-      "Next available:",
+      "next_href:",
       !!nextHref,
     );
 

@@ -100,21 +100,30 @@ export default function Home() {
     setViewingLikes(false);
 
     try {
+      console.log("Fetching search results with offset:", offset); // Debug log
       const response = await fetch(
         `/api/search?q=${encodeURIComponent(query)}&offset=${offset}&limit=20`,
       );
       const data = await response.json();
 
+      console.log(
+        "Got results:",
+        data.collection?.length,
+        "Has more:",
+        data.hasMore,
+      ); // Debug log
+
       if (offset === 0) {
-        // New search
+        // New search - replace all results
         setTracks(data.collection || []);
+        setSearchOffset(20); // Set next offset to 20
       } else {
-        // Load more
+        // Load more - append to existing results
         setTracks((prev) => [...prev, ...(data.collection || [])]);
+        setSearchOffset((prev) => prev + 20); // Increment offset
       }
 
       setSearchHasMore(data.hasMore);
-      setSearchOffset(offset + 20);
     } catch (error) {
       console.error("Search error:", error);
     } finally {
