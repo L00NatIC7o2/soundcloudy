@@ -116,7 +116,7 @@ export default function Player({
     }
   }, [isPlaying]);
 
-  // Load track - FIXED: Fetch stream URL with credentials
+  // Load track - Get stream URL from API
   useEffect(() => {
     const loadTrack = async () => {
       if (!currentTrack || !audioRef.current) return;
@@ -126,22 +126,23 @@ export default function Player({
       try {
         console.log("Loading track:", currentTrack.id);
 
-        // Fetch the stream URL with cookies included
+        // Fetch the stream URL from our API
         const response = await fetch(`/api/stream?trackId=${currentTrack.id}`, {
-          credentials: "include", // Critical: include cookies
-          redirect: "follow",
+          credentials: "include",
         });
 
         if (!response.ok) {
-          throw new Error(`Stream failed: ${response.status}`);
+          const error = await response.json();
+          throw new Error(error.error || `Stream failed: ${response.status}`);
         }
 
-        // Get the final URL after redirects
-        const finalUrl = response.url;
+        // Get the stream URL from JSON response
+        const data = await response.json();
         console.log("Stream URL received");
 
-        if (audioRef.current) {
-          audioRef.current.src = finalUrl;
+        if (audioRef.current && data.streamUrl) {
+          // Now set the direct stream URL (no credentials needed)
+          audioRef.current.src = data.streamUrl;
           audioRef.current.load();
 
           // Check like status

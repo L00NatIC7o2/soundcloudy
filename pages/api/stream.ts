@@ -39,54 +39,62 @@ export default async function handler(
       });
     }
 
-    // v1 API provides stream_url directly
-    if (track.stream_url) {
-      console.log("Redirecting to stream_url");
-      res.redirect(307, track.stream_url);
-      return; // Don't return the result of redirect
-    }
+    let finalStreamUrl = null;
 
-    // Fallback: Try the /stream endpoint
-    console.log("Trying /stream endpoint...");
-    try {
-      const streamResponse = await axios.get(
-        `https://api.soundcloud.com/tracks/${trackId}/stream`,
-        {
+    // Method 1: Try stream_url
+    if (track.stream_url) {
+      try {
+        console.log("Following stream_url redirect...");
+        const streamResponse = await axios.get(track.stream_url, {
           headers: {
             Authorization: `OAuth ${token}`,
           },
-          maxRedirects: 0,
+          maxRedirects: 5,
           validateStatus: (status) => status >= 200 && status < 400,
-        },
-      );
+        });
 
-      if (streamResponse.headers.location) {
-        console.log("Got redirect from /stream");
-        res.redirect(307, streamResponse.headers.location);
-        return;
+        // After following redirects, get the final URL
+        finalStreamUrl =
+          streamResponse.request.res.responseUrl || streamResponse.config.url;
+        console.log("Got final stream URL");
+      } catch (error: any) {
+        console.error("stream_url failed:", error.message);
       }
-
-      if (streamResponse.data && typeof streamResponse.data === "string") {
-        console.log("Got stream URL from response");
-        res.redirect(307, streamResponse.data);
-        return;
-      }
-    } catch (streamError: any) {
-      if (
-        streamError.response?.status === 302 &&
-        streamError.response?.headers?.location
-      ) {
-        console.log("Got redirect from error response");
-        res.redirect(307, streamError.response.headers.location);
-        return;
-      }
-      console.error("Stream endpoint failed:", streamError.message);
     }
 
-    console.error("No stream URL found");
-    res.status(404).json({
-      error: "No stream URL available",
-    });
+    // Method 2: Try /stream endpoint
+    if (!finalStreamUrl) {
+      try {
+        console.log("Trying /stream endpoint...");
+        const streamResponse = await axios.get(
+          `https://api.soundcloud.com/tracks/${trackId}/stream`,
+          {
+            headers: {
+              Authorization: `OAuth ${token}`,
+            },
+            maxRedirects: 5,
+            validateStatus: (status) => status >= 200 && status < 400,
+          },
+        );
+
+        finalStreamUrl =
+          streamResponse.request.res.responseUrl || streamResponse.config.url;
+        console.log("Got final stream URL from /stream");
+      } catch (error: any) {
+        console.error("Stream endpoint failed:", error.message);
+      }
+    }
+
+    if (!finalStreamUrl) {
+      console.error("No stream URL found");
+      return res.status(404).json({
+        error: "No stream URL available",
+      });
+    }
+
+    // Return the final stream URL as JSON instead of redirecting
+    console.log("Returning stream URL");
+    res.json({ streamUrl: finalStreamUrl });
   } catch (error: any) {
     console.error(
       "Stream error:",
