@@ -1,0 +1,30 @@
+[33m00dcd9e[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m)[m Add handlePrev and handleNext navigation functions
+[33mc4f62b7[m Add missing isPlaying state
+[33m85d22d7[m Fix Sidebar component error - revert to inline JSX
+[33mc1093b8[m Revert sidebar changes
+[33md3935e9[m Revert sidebar changes
+[33mf84da63[m Revert sidebar changes
+[33m7232d2a[m Replace Sidebar component with inline JSX
+[33m683e344[m Fix search results display and observer target visibility
+[33m90cc8dd[m Add debugging logs and improve observer target visibility
+[33m8627087[m Fix infinite scroll - add useCallback and improve observer logic
+[33mce05818[m Fix search pagination - prevent duplicate keys and event passing
+[33m934da90[m Fix search pagination - correctly pass offset and track state
+[33m1d90198[m Add handleSearchInput and update handleSearch with pagination
+[33m2e218ff[m Add useRef import
+[33me232f35[m Integrate search pagination into main app
+[33mdacf5f7[m Add pagination and infinite scroll to search results
+[33mbcdedab[m Add overscroll-behavior to contain scrolling - separate sidebar and main page scroll
+[33mbec4c07[m Fix playlist layout - show title beside thumbnail when expanded
+[33m6158a88[m Fix playlist cover art size - force 40x40px with flex-shrink
+[33mf96f121[m Update sidebar playlists - keep cover art size fixed, show name when expanded
+[33mad4deb3[m Add automatic token refresh - extend session beyond 1 hour
+[33md670526[m Fix CSS - complete sidebar rule and improve mobile responsive design
+[33m0bb9b21[m Style changes
+[33mdb0083d[m Changes to style
+[33m4d5cd36[m Add mobile responsive design
+[33m99882e0[m Hide scrollbar in sidebar playlists section
+[33m0835fbd[m Hide scrollbar in sidebar playlists section
+[33m52e350c[m Revert scrollbar changes
+[33mb99cd21[m Fix streaming - server-side URL resolution to avoid CORS issues
+[33m2400ff8[m Fix CORS - return stream URL as JSON instead of redirect

@@ -5,12 +5,10 @@ export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
-  const { q, offset = "0", limit = "20" } = req.query;
+  const { q } = req.query as { q?: string };
   const token = req.cookies.soundcloud_token;
 
-  console.log("Search API - query:", q, "offset:", offset, "limit:", limit);
-
-  if (!q || typeof q !== "string") {
+  if (!q) {
     return res.status(400).json({ error: "Missing search query" });
   }
 
@@ -20,38 +18,14 @@ export default async function handler(
 
   try {
     const response = await axios.get("https://api.soundcloud.com/tracks", {
-      headers: {
-        Authorization: `OAuth ${token}`,
-      },
-      params: {
-        q,
-        limit: parseInt(limit as string) || 20,
-        offset: parseInt(offset as string) || 0,
-        linked_partitioning: 1,
-      },
-      timeout: 10000,
+      params: { q, limit: 50 },
+      headers: { Authorization: `OAuth ${token}` },
     });
-
-    const collection = response.data.collection || response.data || [];
-    const nextHref = response.data.next_href;
-
-    console.log(
-      "API Response - results:",
-      collection.length,
-      "next_href:",
-      !!nextHref,
-    );
-
-    res.json({
-      collection,
-      nextHref,
-      hasMore: !!nextHref,
-    });
+    res.json({ collection: response.data });
   } catch (error: any) {
-    console.error("Search error:", error.response?.status, error.message);
+    console.error("Search error:", error.response?.data || error.message);
     res.status(error.response?.status || 500).json({
-      error: "Search failed",
-      collection: [],
+      error: error.response?.data?.message || error.message,
     });
   }
 }
