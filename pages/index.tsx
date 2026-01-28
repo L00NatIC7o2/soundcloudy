@@ -329,6 +329,28 @@ export default function Home() {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
+  useEffect(() => {
+    // Refresh token every 50 minutes (token expires at 60 minutes)
+    const refreshInterval = setInterval(
+      async () => {
+        try {
+          console.log("Auto-refreshing token...");
+          const response = await fetch("/api/auth/refresh");
+          if (response.ok) {
+            console.log("Token refreshed successfully");
+          } else {
+            console.error("Token refresh failed");
+          }
+        } catch (error) {
+          console.error("Token refresh error:", error);
+        }
+      },
+      50 * 60 * 1000,
+    ); // 50 minutes
+
+    return () => clearInterval(refreshInterval);
+  }, []);
+
   if (authChecking) {
     return <div style={{ padding: "20px", color: "white" }}>Loading...</div>;
   }

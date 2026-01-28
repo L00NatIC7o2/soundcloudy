@@ -15,7 +15,6 @@ export default async function handler(
       "refresh exists:",
       !!refreshToken,
     );
-    console.log("Token value:", token?.substring(0, 20) + "...");
 
     if (!token) {
       return res.status(401).json({ error: "Not authenticated" });
@@ -23,22 +22,16 @@ export default async function handler(
 
     // Verify token by calling a simple endpoint
     try {
-      const meResponse = await axios.get("https://api.soundcloud.com/me", {
+      await axios.get("https://api.soundcloud.com/me", {
         headers: { Authorization: `OAuth ${token}` },
         timeout: 5000,
       });
 
-      console.log("Auth check passed - user:", meResponse.data.username);
-      res.json({ authenticated: true, user: meResponse.data });
+      console.log("Auth check passed - token still valid");
+      res.json({ authenticated: true });
     } catch (error: any) {
-      console.error(
-        "Token verification failed:",
-        error.response?.status,
-        error.response?.data,
-      );
-
       if (error.response?.status === 401 && refreshToken) {
-        // Try to refresh token
+        // Token expired, try to refresh
         console.log("Token expired, attempting refresh...");
         try {
           const params = new URLSearchParams({
@@ -59,25 +52,35 @@ export default async function handler(
           );
 
           const newToken = refreshResponse.data.access_token;
+          const newRefreshToken =
+            refreshResponse.data.refresh_token || refreshToken;
           const expiresIn = refreshResponse.data.expires_in || 3600;
 
-          res.setHeader(
-            "Set-Cookie",
-            `soundcloud_token=${newToken}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${expiresIn}`,
-          );
+          console.log("Token refreshed successfully - expires in:", expiresIn);
 
-          console.log("Token refreshed successfully");
+          // Set new tokens
+          const cookies = [
+            `soundcloud_token=${newToken}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${expiresIn}`,
+            `soundcloud_refresh_token=${newRefreshToken}; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000`,
+          ];
+
+          res.setHeader("Set-Cookie", cookies);
           res.json({ authenticated: true });
-        } catch (refreshError) {
-          console.error("Token refresh failed:", refreshError);
+        } catch (refreshError: any) {
+          console.error(
+            "Token refresh failed:",
+            refreshError.response?.data || refreshError.message,
+          );
           res.setHeader("Set-Cookie", [
             "soundcloud_token=; Path=/; Max-Age=0",
             "soundcloud_refresh_token=; Path=/; Max-Age=0",
           ]);
-          res.status(401).json({ error: "Token expired" });
+          res
+            .status(401)
+            .json({ error: "Token expired - please log in again" });
         }
       } else {
-        console.error("Auth verification failed - clearing cookies");
+        console.error("Auth verification failed");
         res.setHeader("Set-Cookie", "soundcloud_token=; Path=/; Max-Age=0");
         res.status(401).json({ error: "Not authenticated" });
       }
