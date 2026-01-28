@@ -3,9 +3,16 @@ import { useEffect, useRef, useState } from "react";
 interface PlayerProps {
   currentTrack: any;
   onTrackEnd?: () => void;
+  onPrevious?: () => void;
+  onNext?: () => void;
 }
 
-export default function Player({ currentTrack, onTrackEnd }: PlayerProps) {
+export default function Player({
+  currentTrack,
+  onTrackEnd,
+  onPrevious,
+  onNext,
+}: PlayerProps) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -42,12 +49,11 @@ export default function Player({ currentTrack, onTrackEnd }: PlayerProps) {
       });
 
       navigator.mediaSession.setActionHandler("previoustrack", () => {
-        // Will be handled by parent component
-        onTrackEnd?.();
+        onPrevious?.();
       });
 
       navigator.mediaSession.setActionHandler("nexttrack", () => {
-        onTrackEnd?.();
+        onNext?.();
       });
 
       navigator.mediaSession.setActionHandler("seekto", (details) => {
@@ -56,7 +62,7 @@ export default function Player({ currentTrack, onTrackEnd }: PlayerProps) {
         }
       });
     }
-  }, [currentTrack, onTrackEnd]);
+  }, [currentTrack, onPrevious, onNext]);
 
   // Update playback state
   useEffect(() => {
@@ -203,6 +209,14 @@ export default function Player({ currentTrack, onTrackEnd }: PlayerProps) {
     onTrackEnd?.();
   };
 
+  const handlePrevious = () => {
+    onPrevious?.();
+  };
+
+  const handleNext = () => {
+    onNext?.();
+  };
+
   if (!currentTrack) {
     return null;
   }
@@ -245,14 +259,22 @@ export default function Player({ currentTrack, onTrackEnd }: PlayerProps) {
 
           <div className="player-center">
             <div className="player-controls">
-              <button className="player-btn">⏮</button>
+              <button
+                className="player-btn"
+                onClick={handlePrevious}
+                title="Previous"
+              >
+                ⏮
+              </button>
               <button
                 className="player-btn player-btn-play"
                 onClick={togglePlayPause}
               >
                 {isPlaying ? "⏸" : "▶"}
               </button>
-              <button className="player-btn">⏭</button>
+              <button className="player-btn" onClick={handleNext} title="Next">
+                ⏭
+              </button>
             </div>
             <div className="player-progress">
               <span className="player-time">{formatTime(currentTime)}</span>

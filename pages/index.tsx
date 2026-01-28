@@ -146,6 +146,31 @@ export default function Home() {
     }
   };
 
+  const handlePrevious = () => {
+    if (currentQueueIndex > 0) {
+      const prevIndex = currentQueueIndex - 1;
+      setCurrentQueueIndex(prevIndex);
+      setCurrentTrack(queue[prevIndex]);
+    }
+  };
+
+  const handleNext = () => {
+    if (currentQueueIndex < queue.length - 1) {
+      const nextIndex = currentQueueIndex + 1;
+      setCurrentQueueIndex(nextIndex);
+      setCurrentTrack(queue[nextIndex]);
+    } else if (queueSource === "search" && currentTrack) {
+      // Fetch more related tracks
+      fetchRelatedTracks(currentTrack.id).then((related) => {
+        if (related.length > 0) {
+          setQueue([...queue, ...related]);
+          setCurrentQueueIndex(queue.length);
+          setCurrentTrack(related[0]);
+        }
+      });
+    }
+  };
+
   const formatTimeAgo = (dateString: string) => {
     const now = new Date();
     const date = new Date(dateString);
@@ -474,7 +499,12 @@ export default function Home() {
         )}
       </main>
 
-      <Player currentTrack={currentTrack} onTrackEnd={handleTrackEnd} />
+      <Player
+        currentTrack={currentTrack}
+        onTrackEnd={handleTrackEnd}
+        onPrevious={handlePrevious}
+        onNext={handleNext}
+      />
     </div>
   );
 }
