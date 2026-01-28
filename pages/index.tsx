@@ -240,8 +240,7 @@ export default function Home() {
       clearTimeout(timeoutId);
 
       if (!response.ok) {
-        console.warn(`Genius API error: ${response.status}`);
-        return null;
+        return null; // Silent fail
       }
 
       const data = await response.json();
@@ -254,11 +253,8 @@ export default function Home() {
         return metadata;
       }
     } catch (error: any) {
-      if (error.name === "AbortError") {
-        console.warn("Genius fetch timeout for track:", track.id);
-      } else {
-        console.error("Genius fetch failed:", error);
-      }
+      // Silent fail - Genius metadata is optional
+      return null;
     }
 
     return null;
@@ -289,10 +285,11 @@ export default function Home() {
 
   useEffect(() => {
     if (playlistTracks.length > 0) {
-      playlistTracks.forEach((track) => {
+      // Only fetch for first 10 tracks to avoid spamming API
+      playlistTracks.slice(0, 10).forEach((track) => {
         if (track.id && !geniusCache[track.id]) {
-          fetchGeniusMetadata(track).catch((err) => {
-            console.warn(`Failed to fetch Genius data for ${track.id}:`, err);
+          fetchGeniusMetadata(track).catch(() => {
+            // Silently fail - not critical
           });
         }
       });

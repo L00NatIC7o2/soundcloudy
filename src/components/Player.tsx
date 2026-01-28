@@ -123,8 +123,19 @@ export default function Player({
 
       checkIfLiked();
 
-      audioRef.current.play().catch(console.error);
-      setIsPlaying(true);
+      // Use a small delay to avoid interruption errors
+      const playPromise = audioRef.current.play();
+      if (playPromise !== undefined) {
+        playPromise
+          .then(() => {
+            setIsPlaying(true);
+          })
+          .catch((error) => {
+            if (error.name !== "AbortError") {
+              console.error("Play error:", error);
+            }
+          });
+      }
     }
   }, [currentTrack]);
 
