@@ -362,6 +362,33 @@ html,
   min-height: 248px; /* Prevents layout shift */
 }
 
+/* Playlist header with dynamic sizing */
+.playlist-header-sticky {
+  position: sticky;
+  top: 0;
+  background: linear-gradient(
+    135deg,
+    rgba(245, 124, 60, 0.95) 0%,
+    rgba(61, 63, 69, 0.95) 100%
+  );
+  backdrop-filter: blur(10px);
+  z-index: 10;
+  --header-padding-y: calc(24px - (12px * var(--scroll-progress)));
+  --header-padding-x: 24px;
+  --header-gap: calc(24px - (8px * var(--scroll-progress)));
+  padding: var(--header-padding-y) var(--header-padding-x);
+  display: flex;
+  align-items: center;
+  gap: var(--header-gap);
+  border-radius: 0 0 16px 16px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  margin-bottom: 24px;
+  transition: none;
+  /* Dynamic height based on content */
+  height: auto;
+  min-height: unset;
+}
+
 .playlist-header-cover {
   --cover-size: calc(200px - (144px * var(--scroll-progress)));
   width: var(--cover-size);
@@ -380,6 +407,7 @@ html,
   color: white;
   text-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
   line-height: 1.2;
+  flex: 1;
 }
 
 .track-list {
