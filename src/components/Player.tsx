@@ -20,6 +20,7 @@ export default function Player({
   const [volume, setVolume] = useState(1);
   const [isMuted, setIsMuted] = useState(false);
   const [isLiked, setIsLiked] = useState(false);
+  const [loading, setLoading] = useState(false);
 
   // Update Media Session metadata
   useEffect(() => {
@@ -115,28 +116,62 @@ export default function Player({
     }
   }, [isPlaying]);
 
+  // Load track - FIXED: Fetch stream URL with credentials
   useEffect(() => {
-    if (currentTrack && audioRef.current) {
-      const streamUrl = `/api/stream?trackId=${currentTrack.id}`;
-      audioRef.current.src = streamUrl;
-      audioRef.current.load();
+    const loadTrack = async () => {
+      if (!currentTrack || !audioRef.current) return;
 
-      checkIfLiked();
+      setLoading(true);
 
-      // Use a small delay to avoid interruption errors
-      const playPromise = audioRef.current.play();
-      if (playPromise !== undefined) {
-        playPromise
-          .then(() => {
-            setIsPlaying(true);
-          })
-          .catch((error) => {
-            if (error.name !== "AbortError") {
-              console.error("Play error:", error);
-            }
-          });
+      try {
+        console.log("Loading track:", currentTrack.id);
+
+        // Fetch the stream URL with cookies included
+        const response = await fetch(`/api/stream?trackId=${currentTrack.id}`, {
+          credentials: "include", // Critical: include cookies
+          redirect: "follow",
+        });
+
+        if (!response.ok) {
+          throw new Error(`Stream failed: ${response.status}`);
+        }
+
+        // Get the final URL after redirects
+        const finalUrl = response.url;
+        console.log("Stream URL received");
+
+        if (audioRef.current) {
+          audioRef.current.src = finalUrl;
+          audioRef.current.load();
+
+          // Check like status
+          checkIfLiked();
+
+          // Play after a short delay
+          const playPromise = audioRef.current.play();
+          if (playPromise !== undefined) {
+            playPromise
+              .then(() => {
+                setIsPlaying(true);
+              })
+              .catch((error) => {
+                if (error.name !== "AbortError") {
+                  console.error("Play error:", error);
+                }
+              });
+          }
+        }
+      } catch (error) {
+        console.error("Load track error:", error);
+        alert(
+          `Failed to load track: ${error instanceof Error ? error.message : "Unknown error"}`,
+        );
+      } finally {
+        setLoading(false);
       }
-    }
+    };
+
+    loadTrack();
   }, [currentTrack]);
 
   const checkIfLiked = async () => {
@@ -285,6 +320,7 @@ export default function Player({
         onEnded={handleTrackEnd}
       />
       <div className="player-container">
+        {loading && <div className="player-loading">Loading track...</div>}
         <div className="player-content">
           <div className="player-left">
             <img
@@ -324,8 +360,9 @@ export default function Player({
               <button
                 className="player-btn player-btn-play"
                 onClick={togglePlayPause}
+                disabled={loading}
               >
-                {isPlaying ? "⏸" : "▶"}
+                {loading ? "⏳" : isPlaying ? "⏸" : "▶"}
               </button>
               <button className="player-btn" onClick={handleNext} title="Next">
                 ⏭
