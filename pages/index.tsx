@@ -263,8 +263,6 @@ export default function Home() {
           } catch (err) {
             console.warn("Failed to fetch playlists:", err);
           }
-
-          // Removed fetchLastPlayedTrack - user will select a track manually
         }
       } catch (error) {
         console.error("Auth check failed:", error);
