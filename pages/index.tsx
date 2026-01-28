@@ -17,6 +17,10 @@ export default function Home() {
   const [viewingLikes, setViewingLikes] = useState(false);
   const [geniusCache, setGeniusCache] = useState<Record<string, any>>({});
   const [headerScrolled, setHeaderScrolled] = useState(false);
+  const [searchOffset, setSearchOffset] = useState(0);
+  const [searchHasMore, setSearchHasMore] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const observerTarget = useRef<HTMLDivElement>(null);
 
   // Queue management
   const [queue, setQueue] = useState<any[]>([]);
@@ -83,21 +87,39 @@ export default function Home() {
     }
   };
 
-  const handleSearch = async () => {
+  const handleSearch = async (offset = 0) => {
     if (!query.trim()) return;
-    setLoading(true);
+
+    if (offset === 0) {
+      setLoading(true);
+    } else {
+      setIsLoadingMore(true);
+    }
+
     setSelectedPlaylist(null);
     setViewingLikes(false);
+
     try {
       const response = await fetch(
-        `/api/search?q=${encodeURIComponent(query)}`,
+        `/api/search?q=${encodeURIComponent(query)}&offset=${offset}&limit=20`,
       );
       const data = await response.json();
-      setTracks(data.collection || []);
+
+      if (offset === 0) {
+        // New search
+        setTracks(data.collection || []);
+      } else {
+        // Load more
+        setTracks((prev) => [...prev, ...(data.collection || [])]);
+      }
+
+      setSearchHasMore(data.hasMore);
+      setSearchOffset(offset + 20);
     } catch (error) {
       console.error("Search error:", error);
     } finally {
       setLoading(false);
+      setIsLoadingMore(false);
     }
   };
 
@@ -452,8 +474,8 @@ export default function Home() {
             type="text"
             placeholder="Search for songs..."
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+            onChange={(e) => handleSearchInput(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleSearch(0)}
           />
           <button onClick={handleSearch}>Search</button>
         </div>
@@ -514,30 +536,41 @@ export default function Home() {
             </div>
           </div>
         ) : (
-          <div className="tracks-grid">
-            {tracks.map((t: any) => (
-              <div
-                key={t.id}
-                className="track-card"
-                onClick={() => handleTrackClick(t, "search")}
-              >
-                <img
-                  src={
-                    t.artwork_url?.replace("-large", "-t500x500") ||
-                    "/placeholder.png"
-                  }
-                  alt={t.title}
-                  className="track-cover"
-                />
-                <div className="track-info">
-                  <div className="track-title">{t.title}</div>
-                  <div className="track-artist">
-                    {t.user?.username || "Unknown"}
+          <>
+            <div className="tracks-grid">
+              {tracks.map((t: any) => (
+                <div
+                  key={t.id}
+                  className="track-card"
+                  onClick={() => handleTrackClick(t, "search", tracks)}
+                >
+                  <img
+                    src={
+                      t.artwork_url?.replace("-large", "-t500x500") ||
+                      "/placeholder.png"
+                    }
+                    alt={t.title}
+                    className="track-cover"
+                  />
+                  <div className="track-info">
+                    <div className="track-title">{t.title}</div>
+                    <div className="track-artist">{t.user?.username}</div>
                   </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+
+            {/* Infinite scroll trigger */}
+            <div
+              ref={observerTarget}
+              style={{ padding: "20px", textAlign: "center" }}
+            >
+              {isLoadingMore && <div className="loading">Loading more...</div>}
+              {!searchHasMore && tracks.length > 0 && (
+                <div className="end-message">No more results</div>
+              )}
+            </div>
+          </>
         )}
       </main>
 
