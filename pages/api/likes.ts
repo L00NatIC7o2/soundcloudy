@@ -6,23 +6,14 @@ export default async function handler(
   res: NextApiResponse,
 ) {
   try {
-    // Get token from cookies (set during OAuth login)
-    const token =
-      req.cookies.access_token || process.env.SOUNDCLOUD_OAUTH_TOKEN;
-
-    if (!token) {
-      console.error("❌ No OAuth token found");
-      return res.status(401).json({ error: "Not authenticated", likes: [] });
-    }
-
-    console.log("Fetching likes with token...");
+    console.log("Fetching likes...");
 
     const response = await axios.get("https://api-v2.soundcloud.com/me/likes", {
-      headers: {
-        Authorization: `OAuth ${token}`,
-      },
       params: {
         limit: 50,
+        client_id: process.env.SOUNDCLOUD_CLIENT_ID,
+        app_version: "1696963967",
+        linked_partitioning: 1,
       },
       timeout: 10000,
     });

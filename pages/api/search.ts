@@ -15,14 +15,6 @@ export default async function handler(
     const offsetNum = parseInt(offset as string) || 0;
     const limitNum = parseInt(limit as string) || 20;
 
-    // Get token from cookies (set during OAuth login)
-    const token =
-      req.cookies.access_token || process.env.SOUNDCLOUD_OAUTH_TOKEN;
-
-    if (!token) {
-      return res.status(401).json({ collection: [], hasMore: false });
-    }
-
     console.log("🔍 Searching:", q);
 
     const response = await axios.get(
@@ -32,9 +24,9 @@ export default async function handler(
           q,
           offset: offsetNum,
           limit: limitNum,
-        },
-        headers: {
-          Authorization: `OAuth ${token}`,
+          client_id: process.env.SOUNDCLOUD_CLIENT_ID,
+          app_version: "1696963967",
+          linked_partitioning: 1,
         },
         timeout: 10000,
       },
