@@ -7,25 +7,22 @@ export default async function handler(
 ) {
   const { code, error } = req.query;
 
+  console.log("Callback received - code exists:", !!code, "error:", error);
+
   if (error) {
-    res.redirect(`/login?error=${error}`);
-    return;
+    return res.redirect(`/login?error=${error}`);
   }
 
   if (!code || typeof code !== "string") {
-    res.status(400).json({ error: "Missing authorization code" });
-    return;
+    return res.status(400).json({ error: "Missing authorization code" });
   }
 
   try {
     const redirectUri = `${process.env.NEXTAUTH_URL}/api/auth/callback`;
 
-    console.log("Exchanging code for token with:", {
-      client_id: process.env.SOUNDCLOUD_CLIENT_ID,
-      redirect_uri: redirectUri,
-    });
+    console.log("Exchanging code for token...");
+    console.log("Redirect URI:", redirectUri);
 
-    // Use application/x-www-form-urlencoded format
     const params = new URLSearchParams({
       client_id: process.env.SOUNDCLOUD_CLIENT_ID!,
       client_secret: process.env.SOUNDCLOUD_CLIENT_SECRET!,
@@ -46,13 +43,16 @@ export default async function handler(
 
     const { access_token, refresh_token, expires_in } = response.data;
 
+    console.log("Token received!");
+    console.log("Access token:", access_token?.substring(0, 20) + "...");
+    console.log("Expires in:", expires_in);
+    console.log("Has refresh token:", !!refresh_token);
+
     if (!access_token) {
       throw new Error("No access token in response");
     }
 
-    console.log("Token received successfully, expires in:", expires_in);
-
-    // Store both access and refresh tokens
+    // Store both tokens
     const cookies = [
       `soundcloud_token=${access_token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${expires_in || 3600}`,
     ];
@@ -63,6 +63,7 @@ export default async function handler(
       );
     }
 
+    console.log("Setting cookies and redirecting...");
     res.setHeader("Set-Cookie", cookies);
     res.redirect(302, "/");
   } catch (error: any) {
@@ -71,7 +72,6 @@ export default async function handler(
       error.response?.data || error.message,
     );
 
-    // Show more detailed error
     const errorMsg =
       error.response?.data?.error_description ||
       error.response?.data?.error ||

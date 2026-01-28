@@ -15,6 +15,7 @@ export default async function handler(
       "refresh exists:",
       !!refreshToken,
     );
+    console.log("Token value:", token?.substring(0, 20) + "...");
 
     if (!token) {
       return res.status(401).json({ error: "Not authenticated" });
@@ -22,32 +23,44 @@ export default async function handler(
 
     // Verify token by calling a simple endpoint
     try {
-      await axios.get("https://api.soundcloud.com/me", {
+      const meResponse = await axios.get("https://api.soundcloud.com/me", {
         headers: { Authorization: `OAuth ${token}` },
         timeout: 5000,
       });
 
-      console.log("Auth check passed");
-      res.json({ authenticated: true });
+      console.log("Auth check passed - user:", meResponse.data.username);
+      res.json({ authenticated: true, user: meResponse.data });
     } catch (error: any) {
+      console.error(
+        "Token verification failed:",
+        error.response?.status,
+        error.response?.data,
+      );
+
       if (error.response?.status === 401 && refreshToken) {
         // Try to refresh token
         console.log("Token expired, attempting refresh...");
         try {
+          const params = new URLSearchParams({
+            client_id: process.env.SOUNDCLOUD_CLIENT_ID!,
+            client_secret: process.env.SOUNDCLOUD_CLIENT_SECRET!,
+            grant_type: "refresh_token",
+            refresh_token: refreshToken,
+          });
+
           const refreshResponse = await axios.post(
             "https://api.soundcloud.com/oauth2/token",
+            params.toString(),
             {
-              client_id: process.env.SOUNDCLOUD_CLIENT_ID,
-              client_secret: process.env.SOUNDCLOUD_CLIENT_SECRET,
-              grant_type: "refresh_token",
-              refresh_token: refreshToken,
+              headers: {
+                "Content-Type": "application/x-www-form-urlencoded",
+              },
             },
           );
 
           const newToken = refreshResponse.data.access_token;
           const expiresIn = refreshResponse.data.expires_in || 3600;
 
-          // Set new token
           res.setHeader(
             "Set-Cookie",
             `soundcloud_token=${newToken}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${expiresIn}`,
@@ -56,12 +69,15 @@ export default async function handler(
           console.log("Token refreshed successfully");
           res.json({ authenticated: true });
         } catch (refreshError) {
-          console.error("Token refresh failed");
-          res.setHeader("Set-Cookie", "soundcloud_token=; Path=/; Max-Age=0");
+          console.error("Token refresh failed:", refreshError);
+          res.setHeader("Set-Cookie", [
+            "soundcloud_token=; Path=/; Max-Age=0",
+            "soundcloud_refresh_token=; Path=/; Max-Age=0",
+          ]);
           res.status(401).json({ error: "Token expired" });
         }
       } else {
-        console.error("Auth verification failed");
+        console.error("Auth verification failed - clearing cookies");
         res.setHeader("Set-Cookie", "soundcloud_token=; Path=/; Max-Age=0");
         res.status(401).json({ error: "Not authenticated" });
       }
