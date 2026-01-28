@@ -17,6 +17,9 @@ export default function Home() {
   const [viewingLikes, setViewingLikes] = useState(false);
   const [geniusCache, setGeniusCache] = useState<Record<string, any>>({});
   const [headerScrolled, setHeaderScrolled] = useState(false);
+  const [searchOffset, setSearchOffset] = useState(0);
+  const [searchHasMore, setSearchHasMore] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
 
   // Queue management
   const [queue, setQueue] = useState<any[]>([]);
@@ -88,21 +91,46 @@ export default function Home() {
     }
   };
 
-  const handleSearch = async () => {
+  const handleSearch = async (offset = 0) => {
     if (!query.trim()) return;
-    setLoading(true);
+
+    if (offset === 0) {
+      setLoading(true);
+    } else {
+      setIsLoadingMore(true);
+    }
+
     setSelectedPlaylist(null);
     setViewingLikes(false);
+
     try {
       const response = await fetch(
-        `/api/search?q=${encodeURIComponent(query)}`,
+        `/api/search?q=${encodeURIComponent(query)}&offset=${offset}&limit=20`,
       );
       const data = await response.json();
-      setTracks(data.collection || []);
+
+      if (offset === 0) {
+        // New search
+        setTracks(data.collection || []);
+        setSearchOffset(20);
+      } else {
+        // Load more - append results
+        const newTracks = data.collection || [];
+        const existingIds = new Set(tracks.map((t: any) => t.id));
+        const uniqueNewTracks = newTracks.filter(
+          (t: any) => !existingIds.has(t.id),
+        );
+
+        setTracks((prev) => [...prev, ...uniqueNewTracks]);
+        setSearchOffset(offset + 20);
+      }
+
+      setSearchHasMore(data.hasMore || false);
     } catch (error) {
       console.error("Search error:", error);
     } finally {
       setLoading(false);
+      setIsLoadingMore(false);
     }
   };
 
