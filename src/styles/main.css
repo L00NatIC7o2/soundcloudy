@@ -793,6 +793,39 @@ html,
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
 }
 
+/* Find the sidebar styles and add these scrollbar styles */
+
+.sidebar {
+  width: 250px;
+  background: linear-gradient(180deg, #1a1a1a 0%, #0a0a0a 100%);
+  padding: 20px;
+  overflow-y: auto;
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
+  /* Remove these lines:
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  */
+}
+
+/* Remove this block:
+.sidebar::-webkit-scrollbar {
+  display: none;
+}
+*/
+
+/* Remove this block:
+.playlists-list {
+  max-height: 400px;
+  overflow-y: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.playlists-list::-webkit-scrollbar {
+  display: none;
+}
+*/
+
 /* Responsive */
 @media (max-width: 1024px) {
   .player-content {
