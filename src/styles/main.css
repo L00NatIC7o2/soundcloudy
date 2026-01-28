@@ -75,6 +75,27 @@ html,
   transform: translateY(0);
 }
 
+.login-error {
+  background: #fee;
+  border: 1px solid #fcc;
+  color: #c00;
+  padding: 12px 16px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+  font-size: 14px;
+}
+
+.login-note {
+  font-size: 12px;
+  color: #999;
+  margin-top: 20px;
+}
+
+.login-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 /* App Shell */
 .app-shell {
   min-height: 100vh;

@@ -1,19 +1,20 @@
 import { useRouter } from "next/router";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 export default function Login() {
   const router = useRouter();
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleLogin = () => {
     const clientId = "uhlkXHnXoaAxIjoziy18peYV5eSwuMLz";
-    const redirectUri = `${window.location.origin}/api/auth/callback`;
+    const redirectUri = `${window.location.origin}/oauth-callback`;
 
     const authUrl = new URL("https://soundcloud.com/oauth");
     authUrl.searchParams.append("client_id", clientId);
     authUrl.searchParams.append("redirect_uri", redirectUri);
-    authUrl.searchParams.append("response_type", "code");
+    authUrl.searchParams.append("response_type", "token");
     authUrl.searchParams.append("scope", "non-expiring");
-    authUrl.searchParams.append("display", "popup");
 
     window.location.href = authUrl.toString();
   };
@@ -21,7 +22,7 @@ export default function Login() {
   useEffect(() => {
     const { error } = router.query;
     if (error) {
-      alert(`Login error: ${error}`);
+      setError(`Login error: ${error}`);
     }
   }, [router.query]);
 
@@ -30,9 +31,20 @@ export default function Login() {
       <div className="login-card">
         <h1>🎵 Soundcloudy</h1>
         <p>Your personal SoundCloud player</p>
-        <button className="login-button" onClick={handleLogin}>
-          Login with SoundCloud
+
+        {error && <div className="login-error">{error}</div>}
+
+        <button
+          className="login-button"
+          onClick={handleLogin}
+          disabled={loading}
+        >
+          {loading ? "Logging in..." : "Login with SoundCloud"}
         </button>
+
+        <p className="login-note">
+          You'll be redirected to SoundCloud to authorize access
+        </p>
       </div>
     </div>
   );
