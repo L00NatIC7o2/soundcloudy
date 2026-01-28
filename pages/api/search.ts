@@ -17,24 +17,30 @@ export default async function handler(
     const offsetNum = parseInt(offset as string) || 0;
     const limitNum = parseInt(limit as string) || 20;
 
-    // Correct v1 API search endpoint
-    const url = `https://api.soundcloud.com/tracks?q=${encodeURIComponent(q)}&offset=${offsetNum}&limit=${limitNum}&client_id=${process.env.SOUNDCLOUD_CLIENT_ID}&app_version=1696963967`;
+    // Get the access token from cookies
+    const token = req.cookies.access_token;
+
+    if (!token) {
+      console.error("❌ No access token found");
+      return res.status(401).json({
+        error: "Not authenticated",
+        collection: [],
+        hasMore: false,
+      });
+    }
+
+    const url = `https://api-v2.soundcloud.com/search/tracks?q=${encodeURIComponent(q)}&offset=${offsetNum}&limit=${limitNum}`;
 
     console.log("🔍 Searching:", q, "offset:", offsetNum);
-    console.log(
-      "API URL (without client_id):",
-      url.replace(/client_id=[^&]*/, "client_id=***"),
-    );
 
     const response = await fetch(url, {
       headers: {
+        Authorization: `OAuth ${token}`,
         Accept: "application/json",
-        "User-Agent": "Mozilla/5.0",
       },
     });
 
     console.log("Response status:", response.status);
-    console.log("Response content-type:", response.headers.get("content-type"));
 
     if (!response.ok) {
       const text = await response.text();
@@ -49,21 +55,11 @@ export default async function handler(
       });
     }
 
-    const contentType = response.headers.get("content-type");
-    if (!contentType?.includes("application/json")) {
-      const text = await response.text();
-      console.error("❌ Response is not JSON:", text.substring(0, 200));
-      return res.status(200).json({
-        collection: [],
-        hasMore: false,
-      });
-    }
-
     const data = await response.json();
 
     return res.status(200).json({
-      collection: data || [],
-      hasMore: (data?.length || 0) >= limitNum,
+      collection: data.collection || [],
+      hasMore: data.next_href ? true : false,
     });
   } catch (error) {
     console.error(
