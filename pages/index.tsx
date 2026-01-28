@@ -17,9 +17,9 @@ export default function Home() {
   const [viewingLikes, setViewingLikes] = useState(false);
   const [geniusCache, setGeniusCache] = useState<Record<string, any>>({});
   const [headerScrolled, setHeaderScrolled] = useState(false);
-  const [searchOffset, setSearchOffset] = useState(0);
-  const [searchHasMore, setSearchHasMore] = useState(false);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [searchOffset, setSearchOffset] = useState<number>(0);
+  const [searchHasMore, setSearchHasMore] = useState<boolean>(false);
+  const [isLoadingMore, setIsLoadingMore] = useState<boolean>(false);
 
   // Queue management
   const [queue, setQueue] = useState<any[]>([]);
@@ -100,7 +100,7 @@ export default function Home() {
     }
   };
 
-  const handleSearch = async (offset = 0) => {
+  const handleSearch = async (offset: number = 0) => {
     if (!query.trim()) return;
 
     if (offset === 0) {
@@ -113,9 +113,17 @@ export default function Home() {
     setViewingLikes(false);
 
     try {
+      // Ensure offset is a number
+      const offsetNum = Number(offset) || 0;
+
       const response = await fetch(
-        `/api/search?q=${encodeURIComponent(query)}&offset=${offset}&limit=20`,
+        `/api/search?q=${encodeURIComponent(query)}&offset=${offsetNum}&limit=20`,
       );
+
+      if (!response.ok) {
+        throw new Error(`API error: ${response.status}`);
+      }
+
       const data = await response.json();
 
       if (offset === 0) {
@@ -131,7 +139,7 @@ export default function Home() {
         );
 
         setTracks((prev) => [...prev, ...uniqueNewTracks]);
-        setSearchOffset(offset + 20);
+        setSearchOffset(offsetNum + 20);
       }
 
       setSearchHasMore(data.hasMore || false);
@@ -141,6 +149,13 @@ export default function Home() {
       setLoading(false);
       setIsLoadingMore(false);
     }
+  };
+
+  const handleSearchInput = (value: string) => {
+    setQuery(value);
+    setSearchOffset(0);
+    setTracks([]);
+    setSearchHasMore(false);
   };
 
   const handleTrackClick = async (

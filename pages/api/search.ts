@@ -5,20 +5,31 @@ export default async function handler(
   res: NextApiResponse,
 ) {
   try {
-    const { q, offset = 0, limit = 20 } = req.query;
+    const { q, offset = "0", limit = "20" } = req.query;
 
     if (!q || typeof q !== "string") {
       return res.status(400).json({ error: "Query parameter required" });
     }
 
-    // Make sure you're calling the SoundCloud API correctly
-    const url = `https://api-v2.soundcloud.com/search/tracks?q=${encodeURIComponent(q)}&offset=${offset}&limit=${limit}&client_id=${process.env.SOUNDCLOUD_CLIENT_ID}`;
+    const offsetNum = parseInt(offset as string) || 0;
+    const limitNum = parseInt(limit as string) || 20;
+
+    const url = `https://api-v2.soundcloud.com/search/tracks?q=${encodeURIComponent(q)}&offset=${offsetNum}&limit=${limitNum}&client_id=${process.env.SOUNDCLOUD_CLIENT_ID}`;
+
+    console.log("Searching:", url);
 
     const response = await fetch(url);
 
     if (!response.ok) {
+      console.error(
+        "SoundCloud API error:",
+        response.status,
+        response.statusText,
+      );
       return res.status(response.status).json({
         error: "Failed to fetch from SoundCloud",
+        collection: [],
+        hasMore: false,
       });
     }
 
@@ -26,13 +37,14 @@ export default async function handler(
 
     return res.status(200).json({
       collection: data.collection || [],
-      hasMore: data.collection?.length === parseInt(limit as string),
+      hasMore: (data.collection?.length || 0) >= limitNum,
     });
   } catch (error) {
     console.error("Search error:", error);
     return res.status(500).json({
       error: "Internal server error",
-      message: error instanceof Error ? error.message : "Unknown error",
+      collection: [],
+      hasMore: false,
     });
   }
 }
