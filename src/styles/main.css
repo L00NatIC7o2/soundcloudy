@@ -349,13 +349,15 @@ html,
   backdrop-filter: blur(10px);
   z-index: 10;
   --header-padding: calc(24px - (12px * var(--scroll-progress)));
+  --header-gap: calc(24px - (8px * var(--scroll-progress)));
   padding: var(--header-padding);
   display: flex;
   align-items: center;
-  gap: 24px;
+  gap: var(--header-gap);
   border-radius: 0 0 16px 16px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   margin-bottom: 24px;
+  transition: none;
   will-change: padding, height;
   min-height: 248px; /* Prevents layout shift */
 }
