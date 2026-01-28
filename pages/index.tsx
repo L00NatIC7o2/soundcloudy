@@ -11,6 +11,7 @@ export default function Home() {
   const [playlistTracks, setPlaylistTracks] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [currentTrack, setCurrentTrack] = useState<any>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
   const [sidebarExpanded, setSidebarExpanded] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [authChecking, setAuthChecking] = useState(true);
@@ -24,7 +25,7 @@ export default function Home() {
 
   // Queue management
   const [queue, setQueue] = useState<any[]>([]);
-  const [currentQueueIndex, setCurrentQueueIndex] = useState(-1);
+  const [queueIndex, setQueueIndex] = useState(0);
   const [queueSource, setQueueSource] = useState<
     "playlist" | "search" | "related"
   >("playlist");
