@@ -1,42 +1,25 @@
 import { useRouter } from "next/router";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 
 export default function Login() {
   const router = useRouter();
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const handleLogin = () => {
-    setLoading(true);
-    setError(null);
+    const clientId =
+      process.env.NEXT_PUBLIC_SOUNDCLOUD_CLIENT_ID ||
+      "uhlkXHnXoaAxIjoziy18peYV5eSwuMLz";
+    const redirectUri = `${window.location.origin}/api/auth/callback`;
+    const scope = "non-expiring";
 
-    try {
-      const clientId = "uhlkXHnXoaAxIjoziy18peYV5eSwuMLz";
-      const redirectUri = `${window.location.origin}/api/auth/callback`;
+    const authUrl = `https://api.soundcloud.com/connect?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${scope}`;
 
-      // Use URLSearchParams to properly encode parameters
-      const params = new URLSearchParams({
-        client_id: clientId,
-        redirect_uri: redirectUri,
-        response_type: "code",
-        scope: "non-expiring",
-      });
-
-      const authUrl = `https://soundcloud.com/oauth?${params.toString()}`;
-
-      console.log("Redirecting to:", authUrl);
-      window.location.href = authUrl;
-    } catch (err: any) {
-      setError(err.message);
-      setLoading(false);
-    }
+    window.location.href = authUrl;
   };
 
   useEffect(() => {
     const { error } = router.query;
     if (error) {
-      setError(`Login error: ${error}`);
-      setLoading(false);
+      alert(`Login error: ${error}`);
     }
   }, [router.query]);
 
@@ -45,20 +28,9 @@ export default function Login() {
       <div className="login-card">
         <h1>🎵 Soundcloudy</h1>
         <p>Your personal SoundCloud player</p>
-
-        {error && <div className="login-error">{error}</div>}
-
-        <button
-          className="login-button"
-          onClick={handleLogin}
-          disabled={loading}
-        >
-          {loading ? "Logging in..." : "Login with SoundCloud"}
+        <button className="login-button" onClick={handleLogin}>
+          Login with SoundCloud
         </button>
-
-        <p className="login-note">
-          You'll be redirected to SoundCloud to authorize access
-        </p>
       </div>
     </div>
   );
