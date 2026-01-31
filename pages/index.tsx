@@ -17,6 +17,9 @@ export default function Home() {
   const [viewingLikes, setViewingLikes] = useState(false);
   const [viewingProfile, setViewingProfile] = useState(false);
   const [userProfile, setUserProfile] = useState<any>(null);
+  const [viewingArtist, setViewingArtist] = useState(false);
+  const [selectedArtist, setSelectedArtist] = useState<any>(null);
+  const [artistTracks, setArtistTracks] = useState<any[]>([]);
   const [geniusCache, setGeniusCache] = useState<Record<string, any>>({});
   const [searchOffset, setSearchOffset] = useState<number>(0);
   const [searchHasMore, setSearchHasMore] = useState<boolean>(false);
@@ -72,6 +75,9 @@ export default function Home() {
   const handlePlaylistClick = async (playlist: any) => {
     setSelectedPlaylist(playlist);
     setViewingLikes(false);
+    setViewingProfile(false);
+    setViewingArtist(false);
+    setSelectedArtist(null);
     setTracks([]);
     try {
       const response = await fetch(`/api/playlist/${playlist.id}`);
@@ -86,6 +92,9 @@ export default function Home() {
   const handleLikesClick = async () => {
     setViewingLikes(true);
     setSelectedPlaylist(null);
+    setViewingProfile(false);
+    setViewingArtist(false);
+    setSelectedArtist(null);
     setTracks([]);
     try {
       const response = await fetch("/api/likes");
@@ -114,6 +123,28 @@ export default function Home() {
     }
   };
 
+  // Handle artist click
+  const handleArtistClick = async (artist: any) => {
+    setViewingArtist(true);
+    setSelectedPlaylist(null);
+    setViewingProfile(false);
+    setViewingLikes(false);
+    setTracks([]);
+    setSelectedArtist(artist);
+
+    try {
+      const response = await fetch(`/api/artist/${artist.id}`);
+      if (!response.ok) {
+        console.error("Artist fetch failed:", response.status);
+        return;
+      }
+      const data = await response.json();
+      setArtistTracks(data.tracks || []);
+    } catch (error) {
+      console.error("Failed to fetch artist tracks:", error);
+    }
+  };
+
   // Handle search with pagination
   const handleSearch = async (nextPageHref: string | null = null) => {
     if (!query.trim() && !nextPageHref) {
@@ -137,6 +168,9 @@ export default function Home() {
 
     setSelectedPlaylist(null);
     setViewingLikes(false);
+    setViewingProfile(false);
+    setViewingArtist(false);
+    setSelectedArtist(null);
 
     try {
       let url = "/api/search";
@@ -308,7 +342,7 @@ export default function Home() {
         } else {
           setIsAuthenticated(true);
           fetchPlaylists();
-          fetchLastPlayedTrack();
+          // fetchLastPlayedTrack(); // Removed autoplay on login
         }
       } catch (error) {
         console.error("Auth check failed:", error);
@@ -336,12 +370,17 @@ export default function Home() {
 
   // Infinite scroll for search results
   useEffect(() => {
+    // Only enable infinite scroll when viewing search results
     if (
       !scrollTriggerRef.current ||
       !searchHasMore ||
       isLoadingMore ||
       loading ||
-      !searchNextHref
+      !searchNextHref ||
+      selectedPlaylist ||
+      viewingLikes ||
+      viewingProfile ||
+      viewingArtist
     ) {
       return;
     }
@@ -358,7 +397,16 @@ export default function Home() {
     observer.observe(scrollTriggerRef.current);
 
     return () => observer.disconnect();
-  }, [searchHasMore, isLoadingMore, loading, searchNextHref]);
+  }, [
+    searchHasMore,
+    isLoadingMore,
+    loading,
+    searchNextHref,
+    selectedPlaylist,
+    viewingLikes,
+    viewingProfile,
+    viewingArtist,
+  ]);
 
   if (authChecking) {
     return <div style={{ padding: "20px", color: "white" }}>Loading...</div>;
@@ -391,8 +439,7 @@ export default function Home() {
           <button
             className="nav-item"
             onClick={() => {
-              setSelectedPlaylist(null);
-              setViewingLikes(false);
+              // TODO: Implement home page
             }}
           >
             <span className="nav-icon">🏠</span>
@@ -474,14 +521,14 @@ export default function Home() {
       </div>
 
       <main className="main-area">
-        {selectedPlaylist || viewingLikes || viewingProfile ? (
+        {selectedPlaylist || viewingLikes || viewingProfile || viewingArtist ? (
           <div className="playlist-view">
             <div
               className="playlist-header-sticky"
               style={
-                viewingProfile
+                viewingProfile || viewingArtist
                   ? {
-                      backgroundImage: `url(${userProfile?.banner_url?.replace("-large", "-t500x500") || "linear-gradient(135deg, #667eea 0%, #764ba2 100%)"})`,
+                      backgroundImage: `url(${(viewingProfile ? userProfile?.banner_url : selectedArtist?.banner_url)?.replace("-large", "-t500x500") || "linear-gradient(135deg, #667eea 0%, #764ba2 100%)"})`,
                       backgroundSize: "cover",
                       backgroundPosition: "center",
                     }
@@ -490,57 +537,71 @@ export default function Home() {
             >
               <img
                 src={
-                  viewingProfile
-                    ? userProfile?.avatar_url?.replace("-large", "-t500x500") ||
-                      "/placeholder.png"
+                  viewingProfile || viewingArtist
+                    ? (viewingProfile
+                        ? userProfile?.avatar_url
+                        : selectedArtist?.avatar_url
+                      )?.replace("-large", "-t500x500") || "/placeholder.png"
                     : displayCover
                 }
-                alt={viewingProfile ? userProfile?.username : displayTitle}
+                alt={
+                  viewingProfile || viewingArtist
+                    ? viewingProfile
+                      ? userProfile?.username
+                      : selectedArtist?.username
+                    : displayTitle
+                }
                 className="playlist-header-cover"
               />
               <h2 className="playlist-header-title">
-                {viewingProfile ? userProfile?.username : displayTitle}
+                {viewingProfile || viewingArtist
+                  ? viewingProfile
+                    ? userProfile?.username
+                    : selectedArtist?.username
+                  : displayTitle}
               </h2>
             </div>
             <div className="track-list">
-              {playlistTracks.map((track: any, index: number) => (
-                <div
-                  key={track.id || index}
-                  className="track-row"
-                  onClick={() =>
-                    handleTrackClick(track, "playlist", playlistTracks)
-                  }
-                >
-                  <img
-                    src={
-                      track.artwork_url?.replace("-large", "-t200x200") ||
-                      "/placeholder.png"
+              {(viewingArtist ? artistTracks : playlistTracks).map(
+                (track: any, index: number) => (
+                  <div
+                    key={track.id || index}
+                    className="track-row"
+                    onClick={() =>
+                      handleTrackClick(track, "playlist", playlistTracks)
                     }
-                    alt={track.title}
-                    className="track-row-cover"
-                  />
-                  <div className="track-row-info">
-                    <div className="track-row-title">{track.title}</div>
-                    <div className="track-row-artist">
-                      {track.user?.username || "Unknown"}
+                  >
+                    <img
+                      src={
+                        track.artwork_url?.replace("-large", "-t200x200") ||
+                        "/placeholder.png"
+                      }
+                      alt={track.title}
+                      className="track-row-cover"
+                    />
+                    <div className="track-row-info">
+                      <div className="track-row-title">{track.title}</div>
+                      <div className="track-row-artist">
+                        {track.user?.username || "Unknown"}
+                      </div>
+                    </div>
+                    <div className="track-row-duration">
+                      {formatDuration(track.duration)}
+                    </div>
+                    <div className="track-row-year">
+                      {geniusCache[track.id]?.releaseYear ||
+                        (track.created_at ? getYear(track.created_at) : "—")}
+                    </div>
+                    <div className="track-row-added">
+                      {track.added_at
+                        ? formatTimeAgo(track.added_at)
+                        : track.created_at
+                          ? formatTimeAgo(track.created_at)
+                          : "—"}
                     </div>
                   </div>
-                  <div className="track-row-duration">
-                    {formatDuration(track.duration)}
-                  </div>
-                  <div className="track-row-year">
-                    {geniusCache[track.id]?.releaseYear ||
-                      (track.created_at ? getYear(track.created_at) : "—")}
-                  </div>
-                  <div className="track-row-added">
-                    {track.added_at
-                      ? formatTimeAgo(track.added_at)
-                      : track.created_at
-                        ? formatTimeAgo(track.created_at)
-                        : "—"}
-                  </div>
-                </div>
-              ))}
+                ),
+              )}
             </div>
           </div>
         ) : (
@@ -561,7 +622,14 @@ export default function Home() {
                 />
                 <div className="track-info">
                   <div className="track-title">{t.title}</div>
-                  <div className="track-artist">
+                  <div
+                    className="track-artist"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleArtistClick(t.user);
+                    }}
+                    style={{ cursor: "pointer", textDecoration: "underline" }}
+                  >
                     {t.user?.username || "Unknown"}
                   </div>
                 </div>
