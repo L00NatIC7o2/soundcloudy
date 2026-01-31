@@ -86,6 +86,7 @@ export default function Home() {
     } catch (error) {
       console.error("Failed to fetch playlist tracks:", error);
     }
+    pushTabState("playlist", { playlistId: playlist.id });
   };
 
   // Handle likes click
@@ -103,14 +104,19 @@ export default function Home() {
     } catch (error) {
       console.error("Failed to fetch liked songs:", error);
     }
+    pushTabState("likes");
   };
 
   // Handle profile click
   const handleProfileClick = async () => {
     setViewingProfile(true);
+    setViewingArtist(false); // <-- Reset artist view
+    setSelectedArtist(null); // <-- Clear selected artist
     setSelectedPlaylist(null);
     setViewingLikes(false);
     setTracks([]);
+    setArtistTracks([]); // <-- Clear artist tracks
+
     try {
       const response = await fetch("/api/auth/me");
       const data = await response.json();
@@ -121,6 +127,7 @@ export default function Home() {
     } catch (error) {
       console.error("Failed to fetch profile:", error);
     }
+    pushTabState("profile");
   };
 
   // Handle artist click
@@ -143,6 +150,7 @@ export default function Home() {
     } catch (error) {
       console.error("Failed to fetch artist tracks:", error);
     }
+    pushTabState("artist", { artistId: artist.id });
   };
 
   // Handle search with pagination
@@ -408,6 +416,54 @@ export default function Home() {
     viewingArtist,
   ]);
 
+  // Popstate handler for browser back/forward
+  useEffect(() => {
+    const onPopState = (event) => {
+      const state = event.state || {};
+      switch (state.tab) {
+        case "profile":
+          handleProfileClick();
+          break;
+        case "likes":
+          handleLikesClick();
+          break;
+        case "playlist":
+          if (state.playlistId) {
+            const playlist = playlists.find((p) => p.id === state.playlistId);
+            if (playlist) handlePlaylistClick(playlist);
+          }
+          break;
+        case "artist":
+          if (state.artistId) {
+            handleArtistClick({ id: state.artistId });
+          }
+          break;
+        case "search":
+          setSelectedPlaylist(null);
+          setViewingLikes(false);
+          setViewingProfile(false);
+          setViewingArtist(false);
+          setSelectedArtist(null);
+          setQuery(state.query || "");
+          handleSearch();
+          break;
+        default:
+          setSelectedPlaylist(null);
+          setViewingLikes(false);
+          setViewingProfile(false);
+          setViewingArtist(false);
+          setSelectedArtist(null);
+          break;
+      }
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [playlists]);
+
+  const pushTabState = (tab, data = {}) => {
+    window.history.pushState({ tab, ...data }, "", "");
+  };
+
   if (authChecking) {
     return <div style={{ padding: "20px", color: "white" }}>Loading...</div>;
   }
@@ -562,46 +618,53 @@ export default function Home() {
               </h2>
             </div>
             <div className="track-list">
-              {(viewingArtist ? artistTracks : playlistTracks).map(
-                (track: any, index: number) => (
-                  <div
-                    key={track.id || index}
-                    className="track-row"
-                    onClick={() =>
-                      handleTrackClick(track, "playlist", playlistTracks)
+              {(viewingProfile
+                ? playlistTracks
+                : viewingArtist
+                  ? artistTracks
+                  : playlistTracks
+              ).map((track: any, index: number) => (
+                <div
+                  key={track.id || index}
+                  className="track-row"
+                  onClick={() =>
+                    handleTrackClick(
+                      track,
+                      "playlist",
+                      viewingProfile ? playlistTracks : artistTracks,
+                    )
+                  }
+                >
+                  <img
+                    src={
+                      track.artwork_url?.replace("-large", "-t200x200") ||
+                      "/placeholder.png"
                     }
-                  >
-                    <img
-                      src={
-                        track.artwork_url?.replace("-large", "-t200x200") ||
-                        "/placeholder.png"
-                      }
-                      alt={track.title}
-                      className="track-row-cover"
-                    />
-                    <div className="track-row-info">
-                      <div className="track-row-title">{track.title}</div>
-                      <div className="track-row-artist">
-                        {track.user?.username || "Unknown"}
-                      </div>
-                    </div>
-                    <div className="track-row-duration">
-                      {formatDuration(track.duration)}
-                    </div>
-                    <div className="track-row-year">
-                      {geniusCache[track.id]?.releaseYear ||
-                        (track.created_at ? getYear(track.created_at) : "—")}
-                    </div>
-                    <div className="track-row-added">
-                      {track.added_at
-                        ? formatTimeAgo(track.added_at)
-                        : track.created_at
-                          ? formatTimeAgo(track.created_at)
-                          : "—"}
+                    alt={track.title}
+                    className="track-row-cover"
+                  />
+                  <div className="track-row-info">
+                    <div className="track-row-title">{track.title}</div>
+                    <div className="track-row-artist">
+                      {track.user?.username || "Unknown"}
                     </div>
                   </div>
-                ),
-              )}
+                  <div className="track-row-duration">
+                    {formatDuration(track.duration)}
+                  </div>
+                  <div className="track-row-year">
+                    {geniusCache[track.id]?.releaseYear ||
+                      (track.created_at ? getYear(track.created_at) : "—")}
+                  </div>
+                  <div className="track-row-added">
+                    {track.added_at
+                      ? formatTimeAgo(track.added_at)
+                      : track.created_at
+                        ? formatTimeAgo(track.created_at)
+                        : "—"}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         ) : (
