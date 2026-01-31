@@ -94,10 +94,17 @@ export default function Home() {
 
   // Handle search with pagination
   const handleSearch = async (offset: number = 0) => {
-    if (!query.trim()) return;
+    if (!query.trim()) {
+      setTracks([]);
+      setSearchHasMore(false);
+      return;
+    }
 
     if (offset === 0) {
       setLoading(true);
+      setTracks([]);
+      setSearchOffset(0);
+      setSearchHasMore(false);
       if (document.activeElement instanceof HTMLElement) {
         document.activeElement.blur();
       }
@@ -138,6 +145,8 @@ export default function Home() {
       setSearchHasMore(data.hasMore || false);
     } catch (error) {
       console.error("Search error:", error);
+      setTracks([]);
+      setSearchHasMore(false);
     } finally {
       setLoading(false);
       setIsLoadingMore(false);
