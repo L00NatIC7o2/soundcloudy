@@ -375,9 +375,33 @@ export default function Home() {
             {sidebarExpanded && <span className="nav-label">Home</span>}
           </button>
 
+          <button
+            className="nav-item"
+            onClick={() => {
+              setSelectedPlaylist(null);
+              setViewingLikes(false);
+            }}
+          >
+            <span className="nav-icon">👤</span>
+            {sidebarExpanded && <span className="nav-label">Profile</span>}
+          </button>
+
           <button className="nav-item" onClick={handleLikesClick}>
             <span className="nav-icon">❤️</span>
             {sidebarExpanded && <span className="nav-label">Liked Songs</span>}
+          </button>
+
+          <button
+            className="nav-item"
+            onClick={() => {
+              setSelectedPlaylist(null);
+              setViewingLikes(false);
+            }}
+          >
+            <span className="nav-icon">🆕</span>
+            {sidebarExpanded && (
+              <span className="nav-label">Newly Released</span>
+            )}
           </button>
         </nav>
 
