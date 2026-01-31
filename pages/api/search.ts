@@ -41,6 +41,7 @@ export default async function handler(
           limit: limitNum,
           linked_partitioning: 1,
           filter: "streamable",
+          order: "hotness",
         },
         timeout: 10000,
       });
@@ -71,6 +72,7 @@ export default async function handler(
               q,
               limit: limitNum,
               filter: "streamable",
+              order: "hotness",
             },
             timeout: 10000,
           },
