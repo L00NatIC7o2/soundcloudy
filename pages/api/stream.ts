@@ -53,7 +53,6 @@ export default async function handler(
           validateStatus: (status) => status >= 200 && status < 400,
         });
 
-        // After following redirects, get the final URL
         finalStreamUrl =
           streamResponse.request.res.responseUrl || streamResponse.config.url;
         console.log("Got final stream URL");
@@ -92,7 +91,6 @@ export default async function handler(
       });
     }
 
-    // Return the final stream URL as JSON instead of redirecting
     console.log("Returning stream URL");
     res.json({ streamUrl: finalStreamUrl });
   } catch (error: any) {
