@@ -31,6 +31,7 @@ export default async function handler(
         q,
         offset: offsetNum,
         limit: limitNum,
+        linked_partitioning: 1,
       },
       timeout: 10000,
     });
@@ -40,6 +41,7 @@ export default async function handler(
       "📦 Response data type:",
       Array.isArray(response.data) ? "array" : "object",
     );
+    console.log("🔗 Full response keys:", Object.keys(response.data || {}));
 
     const collection = Array.isArray(response.data)
       ? response.data
