@@ -280,7 +280,7 @@ export default function Player({
   };
 
   const handleTrackEnd = () => {
-    onTrackEnd?.();
+    if (onTrackEnd) onTrackEnd();
   };
 
   const handlePrevious = () => {

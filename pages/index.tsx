@@ -658,6 +658,7 @@ export default function Home() {
         currentTrack={currentTrack}
         onPrevious={handlePrevious}
         onNext={handleNext}
+        onTrackEnd={handleNext} // <-- ensures next song plays automatically
       />
     </div>
   );
