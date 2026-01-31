@@ -15,9 +15,12 @@ export default function Home() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [authChecking, setAuthChecking] = useState(true);
   const [viewingLikes, setViewingLikes] = useState(false);
+  const [viewingProfile, setViewingProfile] = useState(false);
+  const [userProfile, setUserProfile] = useState<any>(null);
   const [geniusCache, setGeniusCache] = useState<Record<string, any>>({});
   const [searchOffset, setSearchOffset] = useState<number>(0);
   const [searchHasMore, setSearchHasMore] = useState<boolean>(false);
+  const [searchNextHref, setSearchNextHref] = useState<string | null>(null);
   const [isLoadingMore, setIsLoadingMore] = useState<boolean>(false);
   const [queue, setQueue] = useState<any[]>([]);
   const [currentQueueIndex, setCurrentQueueIndex] = useState(-1);
@@ -93,18 +96,36 @@ export default function Home() {
     }
   };
 
+  // Handle profile click
+  const handleProfileClick = async () => {
+    setViewingProfile(true);
+    setSelectedPlaylist(null);
+    setViewingLikes(false);
+    setTracks([]);
+    try {
+      const response = await fetch("/api/auth/me");
+      const data = await response.json();
+      setUserProfile(data);
+      if (data.tracks) {
+        setPlaylistTracks(data.tracks);
+      }
+    } catch (error) {
+      console.error("Failed to fetch profile:", error);
+    }
+  };
+
   // Handle search with pagination
-  const handleSearch = async (offset: number = 0) => {
-    if (!query.trim()) {
+  const handleSearch = async (nextPageHref: string | null = null) => {
+    if (!query.trim() && !nextPageHref) {
       setTracks([]);
       setSearchHasMore(false);
       return;
     }
 
-    if (offset === 0) {
+    if (!nextPageHref) {
       setLoading(true);
       setTracks([]);
-      setSearchOffset(0);
+      setSearchNextHref(null);
       setSearchHasMore(false);
       if (document.activeElement instanceof HTMLElement) {
         document.activeElement.blur();
@@ -118,10 +139,14 @@ export default function Home() {
     setViewingLikes(false);
 
     try {
-      const offsetNum = Number(offset) || 0;
-      const response = await fetch(
-        `/api/search?q=${encodeURIComponent(query)}&offset=${offsetNum}&limit=32`,
-      );
+      let url = "/api/search";
+      if (nextPageHref) {
+        url += `?nextHref=${encodeURIComponent(nextPageHref)}`;
+      } else {
+        url += `?q=${encodeURIComponent(query)}`;
+      }
+
+      const response = await fetch(url);
 
       if (!response.ok) {
         throw new Error(`API error: ${response.status}`);
@@ -131,14 +156,12 @@ export default function Home() {
 
       console.log("Search response:", {
         query,
-        offset: offsetNum,
         resultsCount: (data.collection || []).length,
         hasMore: data.hasMore,
       });
 
-      if (offset === 0) {
+      if (!nextPageHref) {
         setTracks(data.collection || []);
-        setSearchOffset(32);
         scrollToTop();
       } else {
         const newTracks = data.collection || [];
@@ -147,10 +170,10 @@ export default function Home() {
           (t: any) => !existingIds.has(t.id),
         );
         setTracks((prev) => [...prev, ...uniqueNewTracks]);
-        setSearchOffset(offsetNum + 32);
       }
 
       setSearchHasMore(data.hasMore || false);
+      setSearchNextHref(data.nextHref || null);
     } catch (error) {
       console.error("Search error:", error);
       setTracks([]);
@@ -317,7 +340,8 @@ export default function Home() {
       !scrollTriggerRef.current ||
       !searchHasMore ||
       isLoadingMore ||
-      loading
+      loading ||
+      !searchNextHref
     ) {
       return;
     }
@@ -325,7 +349,7 @@ export default function Home() {
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries[0].isIntersecting && searchHasMore && !isLoadingMore) {
-          handleSearch(searchOffset);
+          handleSearch(searchNextHref);
         }
       },
       { threshold: 0.1, rootMargin: "100px" },
@@ -334,7 +358,7 @@ export default function Home() {
     observer.observe(scrollTriggerRef.current);
 
     return () => observer.disconnect();
-  }, [searchHasMore, isLoadingMore, loading, searchOffset]);
+  }, [searchHasMore, isLoadingMore, loading, searchNextHref]);
 
   if (authChecking) {
     return <div style={{ padding: "20px", color: "white" }}>Loading...</div>;
@@ -375,13 +399,7 @@ export default function Home() {
             {sidebarExpanded && <span className="nav-label">Home</span>}
           </button>
 
-          <button
-            className="nav-item"
-            onClick={() => {
-              setSelectedPlaylist(null);
-              setViewingLikes(false);
-            }}
-          >
+          <button className="nav-item" onClick={handleProfileClick}>
             <span className="nav-icon">👤</span>
             {sidebarExpanded && <span className="nav-label">Profile</span>}
           </button>
@@ -456,15 +474,33 @@ export default function Home() {
       </div>
 
       <main className="main-area">
-        {selectedPlaylist || viewingLikes ? (
+        {selectedPlaylist || viewingLikes || viewingProfile ? (
           <div className="playlist-view">
-            <div className="playlist-header-sticky">
+            <div
+              className="playlist-header-sticky"
+              style={
+                viewingProfile
+                  ? {
+                      backgroundImage: `url(${userProfile?.banner_url?.replace("-large", "-t500x500") || "linear-gradient(135deg, #667eea 0%, #764ba2 100%)"})`,
+                      backgroundSize: "cover",
+                      backgroundPosition: "center",
+                    }
+                  : undefined
+              }
+            >
               <img
-                src={displayCover}
-                alt={displayTitle}
+                src={
+                  viewingProfile
+                    ? userProfile?.avatar_url?.replace("-large", "-t500x500") ||
+                      "/placeholder.png"
+                    : displayCover
+                }
+                alt={viewingProfile ? userProfile?.username : displayTitle}
                 className="playlist-header-cover"
               />
-              <h2 className="playlist-header-title">{displayTitle}</h2>
+              <h2 className="playlist-header-title">
+                {viewingProfile ? userProfile?.username : displayTitle}
+              </h2>
             </div>
             <div className="track-list">
               {playlistTracks.map((track: any, index: number) => (
