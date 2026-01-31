@@ -798,6 +798,31 @@ html,
   transform: scale(1.1);
 }
 
+/* Player Attribution - SoundCloud Terms Compliance */
+.player-attribution {
+  padding-top: 8px;
+  text-align: center;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.7);
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.player-attribution-divider {
+  margin: 0 8px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.player-attribution-link {
+  color: rgba(255, 255, 255, 0.9);
+  text-decoration: none;
+  transition: color 0.2s;
+}
+
+.player-attribution-link:hover {
+  color: #ffffff;
+  text-decoration: underline;
+}
+
 .player-volume-slider {
   width: 150px;
   height: 4px;

@@ -124,31 +124,14 @@ export default function Player({
       setLoading(true);
 
       try {
-        console.log("Loading track:", currentTrack.id);
-
-        // Fetch the stream URL from our API
-        const response = await fetch(`/api/stream?trackId=${currentTrack.id}`, {
-          credentials: "include",
-        });
-
-        if (!response.ok) {
-          const error = await response.json();
-          throw new Error(error.error || `Stream failed: ${response.status}`);
-        }
-
-        // Get the stream URL from JSON response
-        const data = await response.json();
-        console.log("Stream URL received");
-
-        if (audioRef.current && data.streamUrl) {
-          // Now set the direct stream URL (no credentials needed)
-          audioRef.current.src = data.streamUrl;
+        if (audioRef.current) {
+          // Stream directly via proxy to reduce startup latency
+          audioRef.current.src = `/api/stream?trackId=${currentTrack.id}&proxy=1`;
           audioRef.current.load();
 
           // Check like status
           checkIfLiked();
 
-          // Play after a short delay
           const playPromise = audioRef.current.play();
           if (playPromise !== undefined) {
             playPromise
@@ -397,6 +380,33 @@ export default function Player({
               onChange={handleVolumeChange}
             />
           </div>
+        </div>
+
+        {/* Attribution - Required by SoundCloud Terms */}
+        <div className="player-attribution">
+          <span>
+            By{" "}
+            <a
+              href={`https://soundcloud.com/${currentTrack.user?.permalink || "#"}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="player-attribution-link"
+            >
+              {currentTrack.user?.username || "Unknown"}
+            </a>
+          </span>
+          <span className="player-attribution-divider">•</span>
+          <span>
+            Powered by{" "}
+            <a
+              href="https://soundcloud.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="player-attribution-link"
+            >
+              SoundCloud
+            </a>
+          </span>
         </div>
       </div>
     </div>
