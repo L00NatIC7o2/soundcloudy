@@ -25,6 +25,12 @@ export default function Home() {
     "playlist",
   );
 
+  const scrollToTop = () => {
+    if (typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "auto" });
+    }
+  };
+
   // Fetch playlists
   const fetchPlaylists = async () => {
     try {
@@ -92,6 +98,10 @@ export default function Home() {
 
     if (offset === 0) {
       setLoading(true);
+      if (document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur();
+      }
+      scrollToTop();
     } else {
       setIsLoadingMore(true);
     }
@@ -114,6 +124,7 @@ export default function Home() {
       if (offset === 0) {
         setTracks(data.collection || []);
         setSearchOffset(32);
+        scrollToTop();
       } else {
         const newTracks = data.collection || [];
         const existingIds = new Set(tracks.map((t: any) => t.id));
