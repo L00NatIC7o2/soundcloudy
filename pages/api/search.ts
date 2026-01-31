@@ -42,6 +42,14 @@ export default async function handler(
       Array.isArray(response.data) ? "array" : "object",
     );
     console.log("🔗 Full response keys:", Object.keys(response.data || {}));
+    console.log(
+      "📝 Collection content:",
+      JSON.stringify(response.data?.collection || response.data).substring(
+        0,
+        200,
+      ),
+    );
+    console.log("🔗 next_href:", response.data?.next_href);
 
     const collection = Array.isArray(response.data)
       ? response.data
