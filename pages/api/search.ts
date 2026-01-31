@@ -23,68 +23,84 @@ export default async function handler(
     const limitNum = parseInt(limit as string) || 32;
 
     console.log("🔍 Searching:", q, "offset:", offsetNum, "limit:", limitNum);
-    const response = await axios.get("https://api.soundcloud.com/tracks", {
-      headers: {
-        Authorization: `OAuth ${token}`,
-      },
-      params: {
-        q,
-        offset: offsetNum,
-        limit: limitNum,
-        linked_partitioning: 1,
-      },
-      timeout: 10000,
-    });
 
-    console.log("✅ Search response status:", response.status);
-    console.log(
-      "📦 Response data type:",
-      Array.isArray(response.data) ? "array" : "object",
-    );
-    console.log("🔗 Full response keys:", Object.keys(response.data || {}));
-    console.log(
-      "📝 Collection content:",
-      JSON.stringify(response.data?.collection || response.data).substring(
-        0,
-        200,
-      ),
-    );
-    console.log("🔗 next_href:", response.data?.next_href);
+    // Try multiple search strategies
+    let response;
+    let collection = [];
+    let hasMore = false;
 
-    let collection = Array.isArray(response.data)
-      ? response.data
-      : response.data?.collection || [];
+    // Strategy 1: Standard search with linked_partitioning
+    try {
+      response = await axios.get("https://api.soundcloud.com/tracks", {
+        headers: {
+          Authorization: `OAuth ${token}`,
+        },
+        params: {
+          q,
+          offset: offsetNum,
+          limit: limitNum,
+          linked_partitioning: 1,
+          filter: "streamable",
+        },
+        timeout: 10000,
+      });
 
-    // If first page is empty but has next_href, try fetching from offset 32
-    if (
-      collection.length === 0 &&
-      response.data?.next_href &&
-      offsetNum === 0
-    ) {
-      console.log("⚠️ First page empty, trying next page automatically...");
-      try {
-        const nextResponse = await axios.get(response.data.next_href, {
-          headers: {
-            Authorization: `OAuth ${token}`,
+      console.log("✅ Search response status:", response.status);
+      console.log(
+        "📦 Response data type:",
+        Array.isArray(response.data) ? "array" : "object",
+      );
+      console.log("🔗 Full response keys:", Object.keys(response.data || {}));
+
+      collection = Array.isArray(response.data)
+        ? response.data
+        : response.data?.collection || [];
+
+      console.log("📊 Strategy 1 results:", collection.length);
+
+      // If empty, try without linked_partitioning
+      if (collection.length === 0 && offsetNum === 0) {
+        console.log("⚠️ Trying without linked_partitioning...");
+        const altResponse = await axios.get(
+          "https://api.soundcloud.com/tracks",
+          {
+            headers: {
+              Authorization: `OAuth ${token}`,
+            },
+            params: {
+              q,
+              limit: limitNum,
+              filter: "streamable",
+            },
+            timeout: 10000,
           },
-          timeout: 10000,
-        });
-        collection = Array.isArray(nextResponse.data)
-          ? nextResponse.data
-          : nextResponse.data?.collection || [];
-        console.log("✅ Next page results:", collection.length);
-      } catch (err) {
-        console.error("Failed to fetch next page:", err);
+        );
+
+        collection = Array.isArray(altResponse.data)
+          ? altResponse.data
+          : altResponse.data?.collection || [];
+        console.log("📊 Alternative strategy results:", collection.length);
+
+        if (collection.length > 0) {
+          response = altResponse;
+        }
       }
+
+      hasMore = Array.isArray(response.data)
+        ? collection.length >= limitNum
+        : Boolean(response.data?.next_href);
+
+      console.log(
+        "📊 Final results count:",
+        collection.length,
+        "hasMore:",
+        hasMore,
+      );
+
+      return res.json({ collection, hasMore });
+    } catch (searchError) {
+      throw searchError;
     }
-
-    const hasMore = Array.isArray(response.data)
-      ? collection.length >= limitNum
-      : Boolean(response.data?.next_href);
-
-    console.log("📊 Results count:", collection.length, "hasMore:", hasMore);
-
-    return res.json({ collection, hasMore });
   } catch (error: any) {
     console.error(
       "Search error:",

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/router";
 import Player from "../src/components/Player";
 
@@ -24,6 +24,7 @@ export default function Home() {
   const [queueSource, setQueueSource] = useState<"playlist" | "search">(
     "playlist",
   );
+  const scrollTriggerRef = useRef<HTMLDivElement>(null);
 
   const scrollToTop = () => {
     if (typeof window !== "undefined") {
@@ -310,6 +311,31 @@ export default function Home() {
     }
   }, [playlistTracks, geniusCache]);
 
+  // Infinite scroll for search results
+  useEffect(() => {
+    if (
+      !scrollTriggerRef.current ||
+      !searchHasMore ||
+      isLoadingMore ||
+      loading
+    ) {
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && searchHasMore && !isLoadingMore) {
+          handleSearch(searchOffset);
+        }
+      },
+      { threshold: 0.1, rootMargin: "100px" },
+    );
+
+    observer.observe(scrollTriggerRef.current);
+
+    return () => observer.disconnect();
+  }, [searchHasMore, isLoadingMore, loading, searchOffset]);
+
   if (authChecking) {
     return <div style={{ padding: "20px", color: "white" }}>Loading...</div>;
   }
@@ -484,27 +510,16 @@ export default function Home() {
 
             {searchHasMore && (
               <div
+                ref={scrollTriggerRef}
                 style={{
                   textAlign: "center",
                   padding: "40px",
                   gridColumn: "1 / -1",
+                  color: "rgba(255,255,255,0.5)",
+                  fontSize: "14px",
                 }}
               >
-                <button
-                  onClick={() => handleSearch(searchOffset)}
-                  disabled={isLoadingMore}
-                  style={{
-                    padding: "12px 32px",
-                    backgroundColor: "rgba(255,255,255,0.15)",
-                    border: "1px solid rgba(255,255,255,0.3)",
-                    borderRadius: "8px",
-                    color: "white",
-                    fontSize: "16px",
-                    cursor: isLoadingMore ? "not-allowed" : "pointer",
-                  }}
-                >
-                  {isLoadingMore ? "⏳ Loading..." : "📥 Load More Results"}
-                </button>
+                {isLoadingMore ? "⏳ Loading more..." : ""}
               </div>
             )}
           </div>
