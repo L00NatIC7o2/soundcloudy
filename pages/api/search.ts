@@ -29,6 +29,15 @@ export default async function handler(
     let collection = [];
     let hasMore = false;
 
+    const scoreByRecencyLikes = (track: any) => {
+      const likes =
+        Number(track.favoritings_count ?? track.likes_count ?? 0) || 0;
+      const createdAt = track.created_at ? Date.parse(track.created_at) : 0;
+      const ageMs = createdAt > 0 ? Date.now() - createdAt : 0;
+      const ageDays = Math.max(ageMs / (1000 * 60 * 60 * 24), 1);
+      return (likes + 1) / Math.pow(ageDays, 1.5);
+    };
+
     // Strategy 1: Standard search with linked_partitioning
     try {
       response = await axios.get("https://api.soundcloud.com/tracks", {
@@ -86,6 +95,12 @@ export default async function handler(
         if (collection.length > 0) {
           response = altResponse;
         }
+      }
+
+      if (collection.length > 1) {
+        collection = [...collection].sort(
+          (a: any, b: any) => scoreByRecencyLikes(b) - scoreByRecencyLikes(a),
+        );
       }
 
       hasMore = Array.isArray(response.data)
