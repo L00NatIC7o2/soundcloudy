@@ -21,22 +21,47 @@ export default async function handler(
   }
 
   try {
-    const method = like ? "put" : "delete";
-
-    await axios({
-      method,
-      url: `https://api.soundcloud.com/me/favorites/${trackId}`,
-      headers: {
-        Authorization: `OAuth ${token}`,
-      },
-      timeout: 5000,
-    });
-
+    if (like) {
+      // Like: POST to /likes/tracks/{trackId}
+      await axios.post(
+        `https://api.soundcloud.com/likes/tracks/${trackId}`,
+        {},
+        {
+          headers: { Authorization: `OAuth ${token}` },
+          timeout: 5000,
+        },
+      );
+    } else {
+      // Unlike: DELETE to /likes/tracks/{trackId}
+      await axios.delete(`https://api.soundcloud.com/likes/tracks/${trackId}`, {
+        headers: { Authorization: `OAuth ${token}` },
+        timeout: 5000,
+      });
+    }
     res.json({ success: true });
   } catch (error: any) {
-    console.error("Like error:", error.message);
+    // Log full error response for debugging
+    console.error(
+      "Like error:",
+      error?.response?.status,
+      error?.response?.data,
+      error.message,
+    );
+    let errorMsg = "Failed to update like";
+    if (
+      error?.response?.data?.errors &&
+      Array.isArray(error.response.data.errors)
+    ) {
+      errorMsg = error.response.data.errors
+        .map((e: any) => e.error_message || e)
+        .join("; ");
+    } else if (typeof error?.response?.data === "string") {
+      errorMsg = error.response.data;
+    } else if (error?.response?.data?.error) {
+      errorMsg = error.response.data.error;
+    }
     res.status(error.response?.status || 500).json({
-      error: "Failed to update like",
+      error: errorMsg,
     });
   }
 }

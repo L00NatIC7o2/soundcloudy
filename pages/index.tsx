@@ -1,6 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/router";
 import Player from "../src/components/Player";
+import dynamic from "next/dynamic";
+
+const HomePage = dynamic(() => import("./homepage"), { ssr: false });
 
 export default function Home() {
   const router = useRouter();
@@ -20,7 +23,8 @@ export default function Home() {
   const [viewingArtist, setViewingArtist] = useState(false);
   const [selectedArtist, setSelectedArtist] = useState<any>(null);
   const [artistTracks, setArtistTracks] = useState<any[]>([]);
-  const [geniusCache, setGeniusCache] = useState<Record<string, any>>({});
+  const [viewingHomepage, setViewingHomepage] = useState(true);
+  // Removed Genius cache state
   const [searchOffset, setSearchOffset] = useState<number>(0);
   const [searchHasMore, setSearchHasMore] = useState<boolean>(false);
   const [searchNextHref, setSearchNextHref] = useState<string | null>(null);
@@ -83,6 +87,7 @@ export default function Home() {
       const response = await fetch(`/api/playlist/${playlist.id}`);
       const data = await response.json();
       setPlaylistTracks(data.tracks || []);
+      // Do NOT set queue, queueSource, currentQueueIndex, or currentTrack here
     } catch (error) {
       console.error("Failed to fetch playlist tracks:", error);
     }
@@ -100,7 +105,12 @@ export default function Home() {
     try {
       const response = await fetch("/api/likes");
       const data = await response.json();
-      setPlaylistTracks(data.likes || data.tracks || []);
+      const likes = data.likes || data.tracks || [];
+      setPlaylistTracks(likes);
+      setQueue(likes);
+      setQueueSource("playlist");
+      setCurrentQueueIndex(0);
+      setCurrentTrack(likes[0] || null);
     } catch (error) {
       console.error("Failed to fetch liked songs:", error);
     }
@@ -232,29 +242,48 @@ export default function Home() {
     source: "playlist" | "search",
     trackList: any[] = [],
   ) => {
-    setCurrentTrack(track);
-    setQueueSource(source);
-
     if (source === "playlist") {
+      setCurrentTrack(track);
+      setQueueSource("playlist");
       const trackIndex = trackList.findIndex((t) => t.id === track.id);
       if (trackIndex !== -1) {
         setQueue(trackList);
         setCurrentQueueIndex(trackIndex);
       }
     } else if (source === "search") {
-      setQueue(trackList);
-      const trackIndex = trackList.findIndex((t) => t.id === track.id);
-      setCurrentQueueIndex(trackIndex !== -1 ? trackIndex : 0);
+      // Fetch related tracks for the clicked song and set queue to [clickedSong, ...relatedTracks]
+      (async () => {
+        setCurrentTrack(track);
+        setQueueSource("search-related");
+        try {
+          const res = await fetch(`/api/related-tracks?trackId=${track.id}`);
+          const data = await res.json();
+          const related = Array.isArray(data.tracks) ? data.tracks : [];
+          // Remove the clicked track if present in related
+          const filteredRelated = related.filter((t: any) => t.id !== track.id);
+          setQueue([track, ...filteredRelated]);
+          setCurrentQueueIndex(0);
+        } catch (e) {
+          setQueue([track]);
+          setCurrentQueueIndex(0);
+        }
+      })();
     }
   };
 
   // Handle next track
-  const handleNext = () => {
-    if (currentQueueIndex < queue.length - 1) {
+  const handleNext = async () => {
+    // For playlist/likes or search-related: advance in queue
+    if (
+      (queueSource === "playlist" || queueSource === "search-related") &&
+      currentQueueIndex < queue.length - 1
+    ) {
       const nextIndex = currentQueueIndex + 1;
       setCurrentQueueIndex(nextIndex);
       setCurrentTrack(queue[nextIndex]);
+      return;
     }
+    // fallback: do nothing
   };
 
   // Handle previous track
@@ -313,31 +342,7 @@ export default function Home() {
     return new Date(dateString).getFullYear();
   };
 
-  const fetchGeniusMetadata = async (track: any) => {
-    const cacheKey = `${track.id}`;
-    if (geniusCache[cacheKey]) {
-      return geniusCache[cacheKey];
-    }
-
-    try {
-      const response = await fetch(
-        `/api/genius-metadata?title=${encodeURIComponent(track.title)}&artist=${encodeURIComponent(track.user?.username || "")}`,
-      );
-      const data = await response.json();
-
-      if (data.found && data.releaseDate) {
-        const metadata = {
-          releaseYear: new Date(data.releaseDate).getFullYear(),
-        };
-        setGeniusCache((prev) => ({ ...prev, [cacheKey]: metadata }));
-        return metadata;
-      }
-    } catch (error) {
-      console.error("Genius fetch failed:", error);
-    }
-
-    return null;
-  };
+  // Removed fetchGeniusMetadata
 
   // Auth check
   useEffect(() => {
@@ -363,18 +368,7 @@ export default function Home() {
     checkAuth();
   }, [router]);
 
-  // Fetch genius metadata for playlist tracks
-  useEffect(() => {
-    if (playlistTracks.length > 0) {
-      playlistTracks.forEach((track) => {
-        if (track.id && !geniusCache[track.id]) {
-          fetchGeniusMetadata(track).catch((err) => {
-            console.warn(`Failed to fetch Genius data for ${track.id}:`, err);
-          });
-        }
-      });
-    }
-  }, [playlistTracks, geniusCache]);
+  // Removed Genius metadata effect
 
   // Infinite scroll for search results
   useEffect(() => {
@@ -421,24 +415,37 @@ export default function Home() {
     const onPopState = (event) => {
       const state = event.state || {};
       switch (state.tab) {
+        case "homepage":
+          setViewingHomepage(true);
+          setSelectedPlaylist(null);
+          setViewingLikes(false);
+          setViewingProfile(false);
+          setViewingArtist(false);
+          setSelectedArtist(null);
+          break;
         case "profile":
+          setViewingHomepage(false);
           handleProfileClick();
           break;
         case "likes":
+          setViewingHomepage(false);
           handleLikesClick();
           break;
         case "playlist":
+          setViewingHomepage(false);
           if (state.playlistId) {
             const playlist = playlists.find((p) => p.id === state.playlistId);
             if (playlist) handlePlaylistClick(playlist);
           }
           break;
         case "artist":
+          setViewingHomepage(false);
           if (state.artistId) {
             handleArtistClick({ id: state.artistId });
           }
           break;
         case "search":
+          setViewingHomepage(false);
           setSelectedPlaylist(null);
           setViewingLikes(false);
           setViewingProfile(false);
@@ -448,6 +455,7 @@ export default function Home() {
           handleSearch();
           break;
         default:
+          setViewingHomepage(true);
           setSelectedPlaylist(null);
           setViewingLikes(false);
           setViewingProfile(false);
@@ -462,6 +470,8 @@ export default function Home() {
 
   const pushTabState = (tab, data = {}) => {
     window.history.pushState({ tab, ...data }, "", "");
+    if (tab === "homepage") setViewingHomepage(true);
+    else setViewingHomepage(false);
   };
 
   if (authChecking) {
@@ -495,19 +505,37 @@ export default function Home() {
           <button
             className="nav-item"
             onClick={() => {
-              // TODO: Implement home page
+              setViewingHomepage(true);
+              setSelectedPlaylist(null);
+              setViewingLikes(false);
+              setViewingProfile(false);
+              setViewingArtist(false);
+              setSelectedArtist(null);
+              pushTabState("homepage");
             }}
           >
             <span className="nav-icon">🏠</span>
             {sidebarExpanded && <span className="nav-label">Home</span>}
           </button>
 
-          <button className="nav-item" onClick={handleProfileClick}>
+          <button
+            className="nav-item"
+            onClick={() => {
+              setViewingHomepage(false);
+              handleProfileClick();
+            }}
+          >
             <span className="nav-icon">👤</span>
             {sidebarExpanded && <span className="nav-label">Profile</span>}
           </button>
 
-          <button className="nav-item" onClick={handleLikesClick}>
+          <button
+            className="nav-item"
+            onClick={() => {
+              setViewingHomepage(false);
+              handleLikesClick();
+            }}
+          >
             <span className="nav-icon">❤️</span>
             {sidebarExpanded && <span className="nav-label">Liked Songs</span>}
           </button>
@@ -515,6 +543,7 @@ export default function Home() {
           <button
             className="nav-item"
             onClick={() => {
+              setViewingHomepage(false);
               setSelectedPlaylist(null);
               setViewingLikes(false);
             }}
@@ -538,7 +567,10 @@ export default function Home() {
                 <div
                   key={playlist.id}
                   className="playlist-item"
-                  onClick={() => handlePlaylistClick(playlist)}
+                  onClick={() => {
+                    setViewingHomepage(false);
+                    handlePlaylistClick(playlist);
+                  }}
                 >
                   <img
                     src={getPlaylistCover(playlist)}
@@ -577,7 +609,18 @@ export default function Home() {
       </div>
 
       <main className="main-area">
-        {selectedPlaylist || viewingLikes || viewingProfile || viewingArtist ? (
+        {viewingHomepage ? (
+          <HomePage
+            onTrackClick={handleTrackClick}
+            currentTrack={currentTrack}
+            onPrevious={handlePrevious}
+            onNext={handleNext}
+            onTrackEnd={handleNext}
+          />
+        ) : selectedPlaylist ||
+          viewingLikes ||
+          viewingProfile ||
+          viewingArtist ? (
           <div className="playlist-view">
             <div
               className="playlist-header-sticky"
@@ -653,8 +696,7 @@ export default function Home() {
                     {formatDuration(track.duration)}
                   </div>
                   <div className="track-row-year">
-                    {geniusCache[track.id]?.releaseYear ||
-                      (track.created_at ? getYear(track.created_at) : "—")}
+                    {track.created_at ? getYear(track.created_at) : "—"}
                   </div>
                   <div className="track-row-added">
                     {track.added_at
