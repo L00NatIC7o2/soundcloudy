@@ -51,9 +51,33 @@ export default async function handler(
     );
     console.log("🔗 next_href:", response.data?.next_href);
 
-    const collection = Array.isArray(response.data)
+    let collection = Array.isArray(response.data)
       ? response.data
       : response.data?.collection || [];
+
+    // If first page is empty but has next_href, try fetching from offset 32
+    if (
+      collection.length === 0 &&
+      response.data?.next_href &&
+      offsetNum === 0
+    ) {
+      console.log("⚠️ First page empty, trying next page automatically...");
+      try {
+        const nextResponse = await axios.get(response.data.next_href, {
+          headers: {
+            Authorization: `OAuth ${token}`,
+          },
+          timeout: 10000,
+        });
+        collection = Array.isArray(nextResponse.data)
+          ? nextResponse.data
+          : nextResponse.data?.collection || [];
+        console.log("✅ Next page results:", collection.length);
+      } catch (err) {
+        console.error("Failed to fetch next page:", err);
+      }
+    }
+
     const hasMore = Array.isArray(response.data)
       ? collection.length >= limitNum
       : Boolean(response.data?.next_href);
