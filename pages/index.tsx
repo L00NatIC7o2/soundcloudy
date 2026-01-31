@@ -128,6 +128,13 @@ export default function Home() {
 
       const data = await response.json();
 
+      console.log("Search response:", {
+        query,
+        offset: offsetNum,
+        resultsCount: (data.collection || []).length,
+        hasMore: data.hasMore,
+      });
+
       if (offset === 0) {
         setTracks(data.collection || []);
         setSearchOffset(32);

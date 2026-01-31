@@ -22,7 +22,7 @@ export default async function handler(
     const offsetNum = parseInt(offset as string) || 0;
     const limitNum = parseInt(limit as string) || 32;
 
-    console.log("🔍 Searching:", q);
+    console.log("🔍 Searching:", q, "offset:", offsetNum, "limit:", limitNum);
     const response = await axios.get("https://api.soundcloud.com/tracks", {
       headers: {
         Authorization: `OAuth ${token}`,
@@ -35,12 +35,20 @@ export default async function handler(
       timeout: 10000,
     });
 
+    console.log("✅ Search response status:", response.status);
+    console.log(
+      "📦 Response data type:",
+      Array.isArray(response.data) ? "array" : "object",
+    );
+
     const collection = Array.isArray(response.data)
       ? response.data
       : response.data?.collection || [];
     const hasMore = Array.isArray(response.data)
       ? collection.length >= limitNum
       : Boolean(response.data?.next_href);
+
+    console.log("📊 Results count:", collection.length, "hasMore:", hasMore);
 
     return res.json({ collection, hasMore });
   } catch (error: any) {
