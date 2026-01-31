@@ -102,7 +102,7 @@ export default function Home() {
     try {
       const offsetNum = Number(offset) || 0;
       const response = await fetch(
-        `/api/search?q=${encodeURIComponent(query)}&offset=${offsetNum}&limit=20`,
+        `/api/search?q=${encodeURIComponent(query)}&offset=${offsetNum}&limit=32`,
       );
 
       if (!response.ok) {
@@ -113,7 +113,7 @@ export default function Home() {
 
       if (offset === 0) {
         setTracks(data.collection || []);
-        setSearchOffset(20);
+        setSearchOffset(32);
       } else {
         const newTracks = data.collection || [];
         const existingIds = new Set(tracks.map((t: any) => t.id));
@@ -121,7 +121,7 @@ export default function Home() {
           (t: any) => !existingIds.has(t.id),
         );
         setTracks((prev) => [...prev, ...uniqueNewTracks]);
-        setSearchOffset(offsetNum + 20);
+        setSearchOffset(offsetNum + 32);
       }
 
       setSearchHasMore(data.hasMore || false);

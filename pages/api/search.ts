@@ -5,7 +5,7 @@ export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
-  const { q, offset = "0", limit = "20" } = req.query;
+  const { q, offset = "0", limit = "32" } = req.query;
   const token = req.cookies.soundcloud_token;
 
   if (!q) {
@@ -20,7 +20,7 @@ export default async function handler(
 
   try {
     const offsetNum = parseInt(offset as string) || 0;
-    const limitNum = parseInt(limit as string) || 20;
+    const limitNum = parseInt(limit as string) || 32;
 
     console.log("🔍 Searching:", q);
     const response = await axios.get("https://api.soundcloud.com/tracks", {
