@@ -31,9 +31,9 @@ export default function Home() {
   const [isLoadingMore, setIsLoadingMore] = useState<boolean>(false);
   const [queue, setQueue] = useState<any[]>([]);
   const [currentQueueIndex, setCurrentQueueIndex] = useState(-1);
-  const [queueSource, setQueueSource] = useState<"playlist" | "search">(
-    "playlist",
-  );
+  const [queueSource, setQueueSource] = useState<
+    "playlist" | "search" | "search-related"
+  >("playlist");
   const scrollTriggerRef = useRef<HTMLDivElement>(null);
 
   const scrollToTop = () => {
@@ -244,7 +244,7 @@ export default function Home() {
   // Handle track click
   const handleTrackClick = (
     track: any,
-    source: "playlist" | "search",
+    source: "playlist" | "search" | "search-related",
     trackList: any[] = [],
   ) => {
     if (source === "playlist") {
@@ -417,7 +417,7 @@ export default function Home() {
 
   // Popstate handler for browser back/forward
   useEffect(() => {
-    const onPopState = (event) => {
+    const onPopState = (event: PopStateEvent) => {
       const state = event.state || {};
       switch (state.tab) {
         case "homepage":
@@ -473,7 +473,7 @@ export default function Home() {
     return () => window.removeEventListener("popstate", onPopState);
   }, [playlists]);
 
-  const pushTabState = (tab, data = {}) => {
+  const pushTabState = (tab: string, data: Record<string, any> = {}) => {
     window.history.pushState({ tab, ...data }, "", "");
     if (tab === "homepage") setViewingHomepage(true);
     else setViewingHomepage(false);
@@ -607,7 +607,7 @@ export default function Home() {
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleSearch()}
           />
-          <button onClick={() => handleSearch(0)} disabled={loading}>
+          <button onClick={() => handleSearch()} disabled={loading}>
             {loading ? "..." : "Search"}
           </button>
         </div>

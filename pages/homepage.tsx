@@ -6,11 +6,21 @@ export default function HomePage({
   onPrevious,
   onNext,
   onTrackEnd,
+}: {
+  onTrackClick: (
+    track: any,
+    source: "playlist" | "search" | "search-related",
+    trackList: any[],
+  ) => void;
+  currentTrack: any;
+  onPrevious: () => void;
+  onNext: () => void;
+  onTrackEnd: () => void;
 }) {
-  const [recentlyPlayed, setRecentlyPlayed] = useState([]);
-  const [moreOfWhatYouLike, setMoreOfWhatYouLike] = useState([]);
-  const [recentlyReleased, setRecentlyReleased] = useState([]);
-  const [recommendedAlbums, setRecommendedAlbums] = useState([]);
+  const [recentlyPlayed, setRecentlyPlayed] = useState<any[]>([]);
+  const [moreOfWhatYouLike, setMoreOfWhatYouLike] = useState<any[]>([]);
+  const [recentlyReleased, setRecentlyReleased] = useState<any[]>([]);
+  const [recommendedAlbums, setRecommendedAlbums] = useState<any[]>([]);
 
   useEffect(() => {
     // Fetch recently played tracks

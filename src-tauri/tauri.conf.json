@@ -5,8 +5,7 @@
   "build": {
     "beforeBuildCommand": "npm run build",
     "beforeDevCommand": "npm run dev",
-    "devUrl": "http://localhost:3000",
-    "frontendDist": ".next"
+    "devUrl": "http://localhost:3000"
   },
   "app": {
     "windows": [
@@ -26,6 +25,8 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["msi"]
+    "targets": ["msi"],
+    "icon": ["icons/icon.ico"],
+    "resources": ["../.next/standalone/**"]
   }
 }
