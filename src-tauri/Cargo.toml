@@ -2,17 +2,22 @@
 name = "soundcloudy"
 version = "1.0.0"
 description = "A SoundCloud music player"
-authors = ["You"]
+authors = ["You <you@example.com>"]
 edition = "2021"
 
 [build-dependencies]
-tauri-build = { version = "1", features = [] }
+tauri-build = { version = "2.0.0-rc", features = [] }
 
 [dependencies]
-tauri = { version = "1", features = ["shell-execute", "shell-open", "window-create"] }
+tauri = { version = "2.0.0-rc", features = ["shell-open"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
-[features]
-default = ["custom-protocol"]
-custom-protocol = ["tauri/custom-protocol"]
+[[bin]]
+name = "soundcloudy"
+path = "src/main.rs"
+
+[profile.release]
+strip = true
+opt-level = "z"
+lto = true
