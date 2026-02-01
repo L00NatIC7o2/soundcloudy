@@ -78,6 +78,7 @@ export default function Home() {
   // Handle playlist click
   const handlePlaylistClick = async (playlist: any) => {
     setSelectedPlaylist(playlist);
+    setViewingHomepage(false);
     setViewingLikes(false);
     setViewingProfile(false);
     setViewingArtist(false);
@@ -189,6 +190,7 @@ export default function Home() {
     setViewingProfile(false);
     setViewingArtist(false);
     setSelectedArtist(null);
+    setViewingHomepage(false);
 
     try {
       let url = "/api/search";
@@ -226,6 +228,9 @@ export default function Home() {
 
       setSearchHasMore(data.hasMore || false);
       setSearchNextHref(data.nextHref || null);
+      if (!nextPageHref) {
+        pushTabState("search", { query });
+      }
     } catch (error) {
       console.error("Search error:", error);
       setTracks([]);
