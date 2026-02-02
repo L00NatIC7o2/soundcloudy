@@ -666,45 +666,50 @@ export default function Home() {
               <div className="playlist-loading">Loading...</div>
             ) : (
               <>
-                <div
-                  className="playlist-header-sticky"
-                  style={
-                    viewingProfile || viewingArtist
-                      ? {
-                          backgroundImage: `url(${(viewingProfile ? userProfile?.banner_url : selectedArtist?.banner_url)?.replace("-large", "-t500x500") || "linear-gradient(135deg, #667eea 0%, #764ba2 100%)"})`,
-                          backgroundSize: "cover",
-                          backgroundPosition: "center",
-                        }
-                      : undefined
-                  }
-                >
-                  <img
-                    src={
-                      viewingProfile || viewingArtist
-                        ? (viewingProfile
-                            ? userProfile?.avatar_url
-                            : selectedArtist?.avatar_url
-                          )?.replace("-large", "-t500x500") ||
-                          "/placeholder.png"
-                        : displayCover
-                    }
-                    alt={
-                      viewingProfile || viewingArtist
-                        ? viewingProfile
+                {viewingProfile || viewingArtist ? (
+                  <div
+                    className="profile-header"
+                    style={{
+                      backgroundImage: `url(${(viewingProfile ? userProfile?.banner_url : selectedArtist?.banner_url)?.replace("-large", "-t500x500") || "linear-gradient(135deg, #667eea 0%, #764ba2 100%)"})`,
+                      backgroundSize: "cover",
+                      backgroundPosition: "center",
+                    }}
+                  >
+                    <img
+                      src={
+                        viewingProfile
+                          ? userProfile?.avatar_url?.replace(
+                              "-large",
+                              "-t500x500",
+                            ) || "/placeholder.png"
+                          : selectedArtist?.avatar_url?.replace(
+                              "-large",
+                              "-t500x500",
+                            ) || "/placeholder.png"
+                      }
+                      alt={
+                        viewingProfile
                           ? userProfile?.username
                           : selectedArtist?.username
-                        : displayTitle
-                    }
-                    className="playlist-header-cover"
-                  />
-                  <h2 className="playlist-header-title">
-                    {viewingProfile || viewingArtist
-                      ? viewingProfile
+                      }
+                      className="profile-header-avatar"
+                    />
+                    <h2 className="profile-header-title">
+                      {viewingProfile
                         ? userProfile?.username
-                        : selectedArtist?.username
-                      : displayTitle}
-                  </h2>
-                </div>
+                        : selectedArtist?.username}
+                    </h2>
+                  </div>
+                ) : (
+                  <div className="playlist-header-sticky">
+                    <img
+                      src={displayCover}
+                      alt={displayTitle}
+                      className="playlist-header-cover"
+                    />
+                    <h2 className="playlist-header-title">{displayTitle}</h2>
+                  </div>
+                )}
                 <div className="track-list">
                   {(viewingProfile
                     ? playlistTracks

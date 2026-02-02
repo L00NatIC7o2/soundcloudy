@@ -508,9 +508,62 @@ html,
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   margin-bottom: 24px;
   transition: none;
-  /* Dynamic height based on content */
   height: auto;
   min-height: unset;
+}
+
+/* Profile/Artist Header */
+.profile-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  padding: 40px 24px;
+  display: flex;
+  align-items: flex-end;
+  gap: 24px;
+  border-radius: 0 0 16px 16px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  margin-bottom: 24px;
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+  min-height: 280px;
+  position: relative;
+}
+
+.profile-header::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(135deg, rgba(0,0,0,0.4) 0%, rgba(0,0,0,0.5) 100%);
+  pointer-events: none;
+  border-radius: 0 0 16px 16px;
+}
+
+.profile-header-avatar {
+  width: 200px;
+  height: 200px;
+  border-radius: 12px;
+  object-fit: cover;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  flex-shrink: 0;
+  position: relative;
+  z-index: 1;
+}
+
+.profile-header-title {
+  font-size: 48px;
+  font-weight: 700;
+  margin: 0;
+  color: white;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+  line-height: 1.2;
+  position: relative;
+  z-index: 1;
+  flex: 1;
 }
 
 .playlist-header-cover {
@@ -584,6 +637,7 @@ html,
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  width: fit-content;
 }
 
 .track-row-duration,
