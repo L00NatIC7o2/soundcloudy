@@ -24,6 +24,7 @@ export default function Home() {
   const [selectedArtist, setSelectedArtist] = useState<any>(null);
   const [artistTracks, setArtistTracks] = useState<any[]>([]);
   const [viewingHomepage, setViewingHomepage] = useState(true);
+  const [sectionLoading, setSectionLoading] = useState(false);
   // Removed Genius cache state
   const [searchOffset, setSearchOffset] = useState<number>(0);
   const [searchHasMore, setSearchHasMore] = useState<boolean>(false);
@@ -34,6 +35,7 @@ export default function Home() {
   const [queueSource, setQueueSource] = useState<
     "playlist" | "search" | "search-related"
   >("playlist");
+  const [isShuffle, setIsShuffle] = useState(false);
   const scrollTriggerRef = useRef<HTMLDivElement>(null);
 
   const scrollToTop = () => {
@@ -83,7 +85,9 @@ export default function Home() {
     setViewingProfile(false);
     setViewingArtist(false);
     setSelectedArtist(null);
+    setSectionLoading(true);
     setTracks([]);
+    setPlaylistTracks([]);
     try {
       const response = await fetch(`/api/playlist/${playlist.id}`);
       const data = await response.json();
@@ -91,6 +95,8 @@ export default function Home() {
       // Do NOT set queue, queueSource, currentQueueIndex, or currentTrack here
     } catch (error) {
       console.error("Failed to fetch playlist tracks:", error);
+    } finally {
+      setSectionLoading(false);
     }
     pushTabState("playlist", { playlistId: playlist.id });
   };
@@ -98,22 +104,29 @@ export default function Home() {
   // Handle likes click
   const handleLikesClick = async () => {
     setViewingLikes(true);
+    setViewingHomepage(false);
     setSelectedPlaylist(null);
     setViewingProfile(false);
     setViewingArtist(false);
     setSelectedArtist(null);
+    setSectionLoading(true);
     setTracks([]);
+    setPlaylistTracks([]);
     try {
       const response = await fetch("/api/likes");
       const data = await response.json();
       const likes = data.likes || data.tracks || [];
       setPlaylistTracks(likes);
-      setQueue(likes);
-      setQueueSource("playlist");
-      setCurrentQueueIndex(0);
-      setCurrentTrack(likes[0] || null);
+      if (!currentTrack) {
+        setQueue(likes);
+        setQueueSource("playlist");
+        setCurrentQueueIndex(-1);
+        setCurrentTrack(null);
+      }
     } catch (error) {
       console.error("Failed to fetch liked songs:", error);
+    } finally {
+      setSectionLoading(false);
     }
     pushTabState("likes");
   };
@@ -121,12 +134,15 @@ export default function Home() {
   // Handle profile click
   const handleProfileClick = async () => {
     setViewingProfile(true);
+    setViewingHomepage(false);
     setViewingArtist(false); // <-- Reset artist view
     setSelectedArtist(null); // <-- Clear selected artist
     setSelectedPlaylist(null);
     setViewingLikes(false);
+    setSectionLoading(true);
     setTracks([]);
     setArtistTracks([]); // <-- Clear artist tracks
+    setPlaylistTracks([]);
 
     try {
       const response = await fetch("/api/auth/me");
@@ -137,6 +153,8 @@ export default function Home() {
       }
     } catch (error) {
       console.error("Failed to fetch profile:", error);
+    } finally {
+      setSectionLoading(false);
     }
     pushTabState("profile");
   };
@@ -144,22 +162,26 @@ export default function Home() {
   // Handle artist click
   const handleArtistClick = async (artist: any) => {
     setViewingArtist(true);
+    setViewingHomepage(false);
     setSelectedPlaylist(null);
     setViewingProfile(false);
     setViewingLikes(false);
     setTracks([]);
     setSelectedArtist(artist);
+    setSectionLoading(true);
+    setArtistTracks([]);
 
     try {
       const response = await fetch(`/api/artist/${artist.id}`);
       if (!response.ok) {
-        console.error("Artist fetch failed:", response.status);
-        return;
+        throw new Error(`Artist fetch failed: ${response.status}`);
       }
       const data = await response.json();
       setArtistTracks(data.tracks || []);
     } catch (error) {
       console.error("Failed to fetch artist tracks:", error);
+    } finally {
+      setSectionLoading(false);
     }
     pushTabState("artist", { artistId: artist.id });
   };
@@ -281,9 +303,22 @@ export default function Home() {
     // For playlist/likes or search-related: advance in queue
     if (
       (queueSource === "playlist" || queueSource === "search-related") &&
-      currentQueueIndex < queue.length - 1
+      queue.length > 0
     ) {
-      const nextIndex = currentQueueIndex + 1;
+      let nextIndex: number;
+
+      if (isShuffle) {
+        // Pick random track from queue
+        nextIndex = Math.floor(Math.random() * queue.length);
+      } else {
+        // Play next track in sequence
+        if (currentQueueIndex < queue.length - 1) {
+          nextIndex = currentQueueIndex + 1;
+        } else {
+          return; // End of queue
+        }
+      }
+
       setCurrentQueueIndex(nextIndex);
       setCurrentTrack(queue[nextIndex]);
       return;
@@ -627,92 +662,113 @@ export default function Home() {
           viewingProfile ||
           viewingArtist ? (
           <div className="playlist-view">
-            <div
-              className="playlist-header-sticky"
-              style={
-                viewingProfile || viewingArtist
-                  ? {
-                      backgroundImage: `url(${(viewingProfile ? userProfile?.banner_url : selectedArtist?.banner_url)?.replace("-large", "-t500x500") || "linear-gradient(135deg, #667eea 0%, #764ba2 100%)"})`,
-                      backgroundSize: "cover",
-                      backgroundPosition: "center",
-                    }
-                  : undefined
-              }
-            >
-              <img
-                src={
-                  viewingProfile || viewingArtist
-                    ? (viewingProfile
-                        ? userProfile?.avatar_url
-                        : selectedArtist?.avatar_url
-                      )?.replace("-large", "-t500x500") || "/placeholder.png"
-                    : displayCover
-                }
-                alt={
-                  viewingProfile || viewingArtist
-                    ? viewingProfile
-                      ? userProfile?.username
-                      : selectedArtist?.username
-                    : displayTitle
-                }
-                className="playlist-header-cover"
-              />
-              <h2 className="playlist-header-title">
-                {viewingProfile || viewingArtist
-                  ? viewingProfile
-                    ? userProfile?.username
-                    : selectedArtist?.username
-                  : displayTitle}
-              </h2>
-            </div>
-            <div className="track-list">
-              {(viewingProfile
-                ? playlistTracks
-                : viewingArtist
-                  ? artistTracks
-                  : playlistTracks
-              ).map((track: any, index: number) => (
+            {sectionLoading ? (
+              <div className="playlist-loading">Loading...</div>
+            ) : (
+              <>
                 <div
-                  key={track.id || index}
-                  className="track-row"
-                  onClick={() =>
-                    handleTrackClick(
-                      track,
-                      "playlist",
-                      viewingProfile ? playlistTracks : artistTracks,
-                    )
+                  className="playlist-header-sticky"
+                  style={
+                    viewingProfile || viewingArtist
+                      ? {
+                          backgroundImage: `url(${(viewingProfile ? userProfile?.banner_url : selectedArtist?.banner_url)?.replace("-large", "-t500x500") || "linear-gradient(135deg, #667eea 0%, #764ba2 100%)"})`,
+                          backgroundSize: "cover",
+                          backgroundPosition: "center",
+                        }
+                      : undefined
                   }
                 >
                   <img
                     src={
-                      track.artwork_url?.replace("-large", "-t200x200") ||
-                      "/placeholder.png"
+                      viewingProfile || viewingArtist
+                        ? (viewingProfile
+                            ? userProfile?.avatar_url
+                            : selectedArtist?.avatar_url
+                          )?.replace("-large", "-t500x500") ||
+                          "/placeholder.png"
+                        : displayCover
                     }
-                    alt={track.title}
-                    className="track-row-cover"
+                    alt={
+                      viewingProfile || viewingArtist
+                        ? viewingProfile
+                          ? userProfile?.username
+                          : selectedArtist?.username
+                        : displayTitle
+                    }
+                    className="playlist-header-cover"
                   />
-                  <div className="track-row-info">
-                    <div className="track-row-title">{track.title}</div>
-                    <div className="track-row-artist">
-                      {track.user?.username || "Unknown"}
-                    </div>
-                  </div>
-                  <div className="track-row-duration">
-                    {formatDuration(track.duration)}
-                  </div>
-                  <div className="track-row-year">
-                    {track.created_at ? getYear(track.created_at) : "—"}
-                  </div>
-                  <div className="track-row-added">
-                    {track.added_at
-                      ? formatTimeAgo(track.added_at)
-                      : track.created_at
-                        ? formatTimeAgo(track.created_at)
-                        : "—"}
-                  </div>
+                  <h2 className="playlist-header-title">
+                    {viewingProfile || viewingArtist
+                      ? viewingProfile
+                        ? userProfile?.username
+                        : selectedArtist?.username
+                      : displayTitle}
+                  </h2>
                 </div>
-              ))}
-            </div>
+                <div className="track-list">
+                  {(viewingProfile
+                    ? playlistTracks
+                    : viewingArtist
+                      ? artistTracks
+                      : playlistTracks
+                  ).map((track: any, index: number) => (
+                    <div
+                      key={track.id || index}
+                      className="track-row"
+                      onClick={() =>
+                        handleTrackClick(
+                          track,
+                          "playlist",
+                          viewingProfile
+                            ? playlistTracks
+                            : viewingArtist
+                              ? artistTracks
+                              : playlistTracks,
+                        )
+                      }
+                    >
+                      <img
+                        src={
+                          track.artwork_url?.replace("-large", "-t200x200") ||
+                          "/placeholder.png"
+                        }
+                        alt={track.title}
+                        className="track-row-cover"
+                      />
+                      <div className="track-row-info">
+                        <div className="track-row-title">{track.title}</div>
+                        <div
+                          className="track-row-artist"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleArtistClick(track.user);
+                          }}
+                          style={{
+                            cursor: "pointer",
+                            textDecoration: "underline",
+                          }}
+                        >
+                          {track.user?.username || "Unknown"}
+                        </div>
+                      </div>
+                      <div className="track-row-duration">
+                        {formatDuration(track.duration)}
+                      </div>
+                      <div className="track-row-year">
+                        {track.created_at ? getYear(track.created_at) : "—"}
+                      </div>
+                      <div className="track-row-added">
+                        {track.added_at
+                          ? formatTimeAgo(track.added_at)
+                          : track.created_at
+                            ? formatTimeAgo(track.created_at)
+                            : "—"}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
         ) : (
           <div className="tracks-grid">
@@ -768,7 +824,10 @@ export default function Home() {
         currentTrack={currentTrack}
         onPrevious={handlePrevious}
         onNext={handleNext}
-        onTrackEnd={handleNext} // <-- ensures next song plays automatically
+        onTrackEnd={handleNext}
+        onArtistClick={handleArtistClick}
+        isShuffle={isShuffle}
+        onShuffleChange={setIsShuffle}
       />
     </div>
   );

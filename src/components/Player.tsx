@@ -5,6 +5,9 @@ interface PlayerProps {
   onTrackEnd?: () => void;
   onPrevious?: () => void;
   onNext?: () => void;
+  onArtistClick?: (artist: any) => void;
+  isShuffle?: boolean;
+  onShuffleChange?: (shuffle: boolean) => void;
 }
 
 export default function Player({
@@ -12,6 +15,9 @@ export default function Player({
   onTrackEnd,
   onPrevious,
   onNext,
+  onArtistClick,
+  isShuffle = false,
+  onShuffleChange,
 }: PlayerProps) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -316,7 +322,14 @@ export default function Player({
               className="player-artwork"
             />
             <div className="player-info">
-              <div className="player-artist">
+              <div
+                className="player-artist"
+                onClick={() => onArtistClick?.(currentTrack.user)}
+                style={{
+                  cursor: onArtistClick ? "pointer" : "default",
+                  textDecoration: onArtistClick ? "underline" : "none",
+                }}
+              >
                 {currentTrack.user?.username || "Unknown"}
               </div>
               <div className="player-title">
@@ -328,7 +341,27 @@ export default function Player({
               onClick={toggleLike}
               title={isLiked ? "Unlike" : "Like"}
             >
-              {isLiked ? "❤️" : "🤍"}
+              <span className="player-like-icon">{isLiked ? "♥" : "♡"}</span>
+            </button>
+            <button
+              className={`player-shuffle ${isShuffle ? "active" : ""}`}
+              onClick={() => onShuffleChange?.(!isShuffle)}
+              title={isShuffle ? "Shuffle Off" : "Shuffle On"}
+            >
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <polyline points="16 3 21 3 21 8"></polyline>
+                <line x1="4" y1="20" x2="21" y2="3"></line>
+                <polyline points="21 16 21 21 16 21"></polyline>
+                <line x1="15" y1="15" x2="21" y2="21"></line>
+                <line x1="4" y1="4" x2="9" y2="9"></line>
+              </svg>
             </button>
           </div>
 
@@ -339,17 +372,70 @@ export default function Player({
                 onClick={handlePrevious}
                 title="Previous"
               >
-                ⏮
+                <svg
+                  width="24"
+                  height="24"
+                  viewBox="0 0 24 24"
+                  fill="currentColor"
+                >
+                  <line
+                    x1="5"
+                    y1="4"
+                    x2="5"
+                    y2="20"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  />
+                  <polygon points="19 3 19 21 5 12 19 3" />
+                </svg>
               </button>
               <button
                 className="player-btn player-btn-play"
                 onClick={togglePlayPause}
                 disabled={loading}
               >
-                {loading ? "⏳" : isPlaying ? "⏸" : "▶"}
+                {loading ? (
+                  "⏳"
+                ) : isPlaying ? (
+                  <svg
+                    width="24"
+                    height="24"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  >
+                    <rect x="6" y="4" width="4" height="16" />
+                    <rect x="14" y="4" width="4" height="16" />
+                  </svg>
+                ) : (
+                  <svg
+                    width="24"
+                    height="24"
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                  >
+                    <polygon points="5 3 19 12 5 21 5 3" />
+                  </svg>
+                )}
               </button>
               <button className="player-btn" onClick={handleNext} title="Next">
-                ⏭
+                <svg
+                  width="24"
+                  height="24"
+                  viewBox="0 0 24 24"
+                  fill="currentColor"
+                >
+                  <polygon points="5 3 5 21 19 12 5 3" />
+                  <line
+                    x1="19"
+                    y1="4"
+                    x2="19"
+                    y2="20"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  />
+                </svg>
               </button>
             </div>
             <div className="player-progress">
@@ -380,33 +466,6 @@ export default function Player({
               onChange={handleVolumeChange}
             />
           </div>
-        </div>
-
-        {/* Attribution - Required by SoundCloud Terms */}
-        <div className="player-attribution">
-          <span>
-            By{" "}
-            <a
-              href={`https://soundcloud.com/${currentTrack.user?.permalink || "#"}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="player-attribution-link"
-            >
-              {currentTrack.user?.username || "Unknown"}
-            </a>
-          </span>
-          <span className="player-attribution-divider">•</span>
-          <span>
-            Powered by{" "}
-            <a
-              href="https://soundcloud.com"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="player-attribution-link"
-            >
-              SoundCloud
-            </a>
-          </span>
         </div>
       </div>
     </div>
