@@ -19,3 +19,10 @@ dist
 
 # System files
 .DS_Store
+
+# Rust/Tauri build artifacts
+target/
+Cargo.lock
+
+# Tauri generated files
+src-tauri/target/
