@@ -526,7 +526,7 @@ html,
   margin-bottom: 24px;
   background-size: cover;
   background-position: center;
-  background-attachment: fixed;
+  background-repeat: no-repeat;
   min-height: 280px;
   position: relative;
 }
@@ -564,6 +564,23 @@ html,
   position: relative;
   z-index: 1;
   flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.verified-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: #1da1f2;
+  border-radius: 50%;
+  color: white;
+  font-size: 18px;
+  font-weight: bold;
+  flex-shrink: 0;
 }
 
 .playlist-header-cover {
@@ -941,6 +958,16 @@ html,
   transition:
     opacity 0.2s,
     transform 0.2s;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.player-volume-btn svg {
+  width: 24px;
+  height: 24px;
+  fill: currentColor;
 }
 
 .player-volume-btn:hover {

@@ -147,6 +147,7 @@ export default function Home() {
     try {
       const response = await fetch("/api/auth/me");
       const data = await response.json();
+      console.log("User profile data:", data);
       setUserProfile(data);
       if (data.tracks) {
         setPlaylistTracks(data.tracks);
@@ -177,6 +178,7 @@ export default function Home() {
         throw new Error(`Artist fetch failed: ${response.status}`);
       }
       const data = await response.json();
+      setSelectedArtist(data);
       setArtistTracks(data.tracks || []);
     } catch (error) {
       console.error("Failed to fetch artist tracks:", error);
@@ -670,7 +672,13 @@ export default function Home() {
                   <div
                     className="profile-header"
                     style={{
-                      backgroundImage: `url(${(viewingProfile ? userProfile?.banner_url : selectedArtist?.banner_url)?.replace("-large", "-t500x500") || "linear-gradient(135deg, #667eea 0%, #764ba2 100%)"})`,
+                      backgroundImage: (
+                        viewingProfile
+                          ? userProfile?.banner_url
+                          : selectedArtist?.banner_url
+                      )
+                        ? `url(${viewingProfile ? userProfile?.banner_url : selectedArtist?.banner_url})`
+                        : "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
                       backgroundSize: "cover",
                       backgroundPosition: "center",
                     }}
@@ -698,6 +706,13 @@ export default function Home() {
                       {viewingProfile
                         ? userProfile?.username
                         : selectedArtist?.username}
+                      {(viewingProfile
+                        ? userProfile?.verified
+                        : selectedArtist?.verified) && (
+                        <span className="verified-badge" title="Verified">
+                          ✓
+                        </span>
+                      )}
                     </h2>
                   </div>
                 ) : (
