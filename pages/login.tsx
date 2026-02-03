@@ -24,16 +24,19 @@ export default function Login() {
 
   return (
     <div className="login-page">
-      <div className="login-card">
-        <h1>🎵 Soundcloudy</h1>
-        <p>Your personal SoundCloud player</p>
+      {error && <div className="login-error">Error: {error}</div>}
 
-        {error && <div className="login-error">Error: {error}</div>}
-
-        <button className="login-button" onClick={handleLogin}>
-          Login with SoundCloud
-        </button>
-      </div>
+      <button className="login-button-glass" onClick={handleLogin}>
+        <svg
+          width="64"
+          height="64"
+          viewBox="0 0 24 24"
+          fill="currentColor"
+          className="login-play-icon"
+        >
+          <polygon points="5 3 19 12 5 21 5 3" />
+        </svg>
+      </button>
     </div>
   );
 }

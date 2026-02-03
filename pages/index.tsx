@@ -1,4 +1,11 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  useMemo,
+  startTransition,
+} from "react";
 import { useRouter } from "next/router";
 import Player from "../src/components/Player";
 import dynamic from "next/dynamic";
@@ -37,6 +44,10 @@ export default function Home() {
   >("playlist");
   const [isShuffle, setIsShuffle] = useState(false);
   const scrollTriggerRef = useRef<HTMLDivElement>(null);
+  const playlistCacheRef = useRef<{ data: any[]; timestamp: number } | null>(
+    null,
+  );
+  const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
   const scrollToTop = () => {
     if (typeof window !== "undefined") {
@@ -44,19 +55,69 @@ export default function Home() {
     }
   };
 
-  // Fetch playlists
-  const fetchPlaylists = async () => {
-    try {
-      const response = await fetch("/api/playlists");
-      const data = await response.json();
-      const sorted = (data.playlists || [])
-        .sort((a: any, b: any) => (b.modified_at || 0) - (a.modified_at || 0))
-        .slice(0, 5);
-      setPlaylists(sorted);
-    } catch (error) {
-      console.error("Failed to fetch playlists:", error);
+  useEffect(() => {
+    let rafId: number | null = null;
+
+    const handleScroll = () => {
+      if (rafId) return; // Skip if already queued
+
+      rafId = requestAnimationFrame(() => {
+        const maxCollapse = 200;
+        const scrollY = window.scrollY;
+
+        // Smooth progressive collapse
+        const progress = Math.min(1, Math.max(0, scrollY / maxCollapse));
+
+        document.documentElement.style.setProperty(
+          "--scroll-progress",
+          String(progress),
+        );
+
+        rafId = null;
+      });
+    };
+
+    if (typeof window !== "undefined") {
+      handleScroll();
+      window.addEventListener("scroll", handleScroll, { passive: true });
+      return () => {
+        window.removeEventListener("scroll", handleScroll);
+        if (rafId) cancelAnimationFrame(rafId);
+      };
     }
-  };
+  }, []);
+
+  // Fetch playlists with caching
+  const fetchPlaylists = useCallback(
+    async (forceRefresh = false) => {
+      // Check cache first
+      if (!forceRefresh && playlistCacheRef.current) {
+        const now = Date.now();
+        if (now - playlistCacheRef.current.timestamp < CACHE_DURATION) {
+          setPlaylists(playlistCacheRef.current.data);
+          return;
+        }
+      }
+
+      try {
+        const response = await fetch("/api/playlists");
+        const data = await response.json();
+        const sorted = (data.playlists || [])
+          .sort((a: any, b: any) => (b.modified_at || 0) - (a.modified_at || 0))
+          .slice(0, 5);
+        setPlaylists(sorted);
+
+        // Update cache
+        playlistCacheRef.current = {
+          data: sorted,
+          timestamp: Date.now(),
+        };
+      } catch (error) {
+        console.error("Failed to fetch playlists:", error);
+      }
+    },
+    [CACHE_DURATION],
+  );
 
   // Fetch last played track
   const fetchLastPlayedTrack = async () => {
@@ -85,6 +146,7 @@ export default function Home() {
     setViewingProfile(false);
     setViewingArtist(false);
     setSelectedArtist(null);
+    setUserProfile(null);
     setSectionLoading(true);
     setTracks([]);
     setPlaylistTracks([]);
@@ -108,6 +170,7 @@ export default function Home() {
     setSelectedPlaylist(null);
     setViewingProfile(false);
     setViewingArtist(false);
+    setUserProfile(null);
     setSelectedArtist(null);
     setSectionLoading(true);
     setTracks([]);
@@ -171,6 +234,7 @@ export default function Home() {
     setSelectedArtist(artist);
     setSectionLoading(true);
     setArtistTracks([]);
+    scrollToTop();
 
     try {
       const response = await fetch(`/api/artist/${artist.id}`);
@@ -214,6 +278,7 @@ export default function Home() {
     setViewingProfile(false);
     setViewingArtist(false);
     setSelectedArtist(null);
+    setUserProfile(null);
     setViewingHomepage(false);
 
     try {
@@ -239,7 +304,9 @@ export default function Home() {
       });
 
       if (!nextPageHref) {
-        setTracks(data.collection || []);
+        startTransition(() => {
+          setTracks(data.collection || []);
+        });
         scrollToTop();
       } else {
         const newTracks = data.collection || [];
@@ -247,7 +314,9 @@ export default function Home() {
         const uniqueNewTracks = newTracks.filter(
           (t: any) => !existingIds.has(t.id),
         );
-        setTracks((prev) => [...prev, ...uniqueNewTracks]);
+        startTransition(() => {
+          setTracks((prev) => [...prev, ...uniqueNewTracks]);
+        });
       }
 
       setSearchHasMore(data.hasMore || false);
@@ -464,6 +533,7 @@ export default function Home() {
           setViewingProfile(false);
           setViewingArtist(false);
           setSelectedArtist(null);
+          setUserProfile(null);
           break;
         case "profile":
           setViewingHomepage(false);
@@ -493,6 +563,7 @@ export default function Home() {
           setViewingProfile(false);
           setViewingArtist(false);
           setSelectedArtist(null);
+          setUserProfile(null);
           setQuery(state.query || "");
           handleSearch();
           break;
@@ -503,6 +574,7 @@ export default function Home() {
           setViewingProfile(false);
           setViewingArtist(false);
           setSelectedArtist(null);
+          setUserProfile(null);
           break;
       }
     };
@@ -553,6 +625,7 @@ export default function Home() {
               setViewingProfile(false);
               setViewingArtist(false);
               setSelectedArtist(null);
+              setUserProfile(null);
               pushTabState("homepage");
             }}
           >
@@ -560,6 +633,8 @@ export default function Home() {
               src="https://img.icons8.com/parakeet-line/50/home.png"
               alt="Home"
               className="nav-icon-img"
+              loading="lazy"
+              decoding="async"
             />
             {sidebarExpanded && <span className="nav-label">Home</span>}
           </button>
@@ -575,6 +650,8 @@ export default function Home() {
               src="https://img.icons8.com/parakeet-line/48/person-male.png"
               alt="Profile"
               className="nav-icon-img"
+              loading="lazy"
+              decoding="async"
             />
             {sidebarExpanded && <span className="nav-label">Profile</span>}
           </button>
@@ -606,6 +683,8 @@ export default function Home() {
               src="https://img.icons8.com/parakeet-line/48/calendar-1.png"
               alt="Newly Released"
               className="nav-icon-img"
+              loading="lazy"
+              decoding="async"
             />
             {sidebarExpanded && (
               <span className="nav-label">Newly Released</span>
@@ -634,6 +713,8 @@ export default function Home() {
                     src={getPlaylistCover(playlist)}
                     alt={playlist.title}
                     className="playlist-thumb"
+                    loading="lazy"
+                    decoding="async"
                   />
                   {sidebarExpanded && (
                     <div className="playlist-title-sidebar">
@@ -717,6 +798,10 @@ export default function Home() {
                           : selectedArtist?.username
                       }
                       className="profile-header-avatar"
+                      loading="eager"
+                      decoding="async"
+                      loading="eager"
+                      decoding="async"
                     />
                     <h2 className="profile-header-title">
                       {viewingProfile
@@ -737,6 +822,8 @@ export default function Home() {
                       src={displayCover}
                       alt={displayTitle}
                       className="playlist-header-cover"
+                      loading="eager"
+                      decoding="async"
                     />
                     <h2 className="playlist-header-title">{displayTitle}</h2>
                   </div>
@@ -770,6 +857,8 @@ export default function Home() {
                         }
                         alt={track.title}
                         className="track-row-cover"
+                        loading="lazy"
+                        decoding="async"
                       />
                       <div className="track-row-info">
                         <div className="track-row-title">{track.title}</div>
@@ -821,6 +910,8 @@ export default function Home() {
                   }
                   alt={t.title}
                   className="track-cover"
+                  loading="lazy"
+                  decoding="async"
                 />
                 <div className="track-info">
                   <div className="track-title">{t.title}</div>

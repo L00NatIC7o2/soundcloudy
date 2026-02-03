@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, memo } from "react";
 
 interface Playlist {
   id: number;
@@ -14,7 +14,7 @@ interface PlaylistMenuProps {
   playlistsWithTrack?: number[]; // Array of playlist IDs that already contain this track
 }
 
-export default function PlaylistMenu({
+const PlaylistMenu = memo(function PlaylistMenu({
   trackId,
   onClose,
   isOpen,
@@ -174,4 +174,6 @@ export default function PlaylistMenu({
       </div>
     </div>
   );
-}
+});
+
+export default PlaylistMenu;

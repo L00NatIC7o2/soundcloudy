@@ -48,6 +48,20 @@
   --sidebar-expanded: 200px;
   --player-height: 84px;
   --scroll-progress: 0;
+  
+  /* Performance optimizations */
+  --profile-max-height: 280px;
+  --profile-min-height: 168px;
+  --playlist-max-height: 248px;
+  --playlist-min-height: 168px;
+}
+
+/* Global image optimization */
+img {
+  image-rendering: auto;
+  image-rendering: -webkit-optimize-contrast;
+  content-visibility: auto;
+}
 }
 
 body,
@@ -66,79 +80,60 @@ html,
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: #000000;
   font-family:
     -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu,
     Cantarell, sans-serif;
+  position: relative;
 }
 
-.login-card {
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(10px);
-  border-radius: 20px;
-  padding: 60px 40px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-  text-align: center;
-  max-width: 400px;
-  width: 90%;
-}
-
-.login-card h1 {
-  font-size: 48px;
-  margin: 0 0 12px;
-  color: #333;
-  font-weight: 700;
-}
-
-.login-card p {
-  font-size: 16px;
-  color: #666;
-  margin: 0 0 32px;
-  font-weight: 500;
-}
-
-.login-button {
-  width: 100%;
-  padding: 14px 24px;
+.login-button-glass {
+  width: 200px;
+  height: 200px;
   border: none;
-  border-radius: 12px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  font-size: 16px;
-  font-weight: 600;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
   transition: all 0.3s ease;
-  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+  color: white;
 }
 
-.login-button:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+.login-button-glass:hover {
+  background: rgba(255, 255, 255, 0.15);
+  transform: scale(1.05);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
 }
 
-.login-button:active {
-  transform: translateY(0);
+.login-button-glass:active {
+  transform: scale(0.98);
+}
+
+.login-play-icon {
+  width: 64px;
+  height: 64px;
+  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.3));
 }
 
 .login-error {
-  background: #fee;
-  border: 1px solid #fcc;
-  color: #c00;
-  padding: 12px 16px;
+  position: absolute;
+  top: 40px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(255, 50, 50, 0.2);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 100, 100, 0.3);
+  color: #ff6666;
+  padding: 12px 24px;
   border-radius: 8px;
-  margin-bottom: 20px;
   font-size: 14px;
-}
-
-.login-note {
-  font-size: 12px;
-  color: #999;
-  margin-top: 20px;
-}
-
-.login-button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 
 /* App Shell */
@@ -524,9 +519,16 @@ html,
   border-radius: 0 0 16px 16px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   margin-bottom: 24px;
-  transition: none;
-  height: auto;
-  min-height: unset;
+  will-change: height, padding, gap;
+  contain: layout style;
+  --playlist-max-height: 248px;
+  --playlist-min-height: 168px;
+  height: calc(
+    var(--playlist-max-height) -
+      (var(--playlist-max-height) - var(--playlist-min-height)) *
+      var(--scroll-progress)
+  );
+  min-height: var(--playlist-min-height);
 }
 
 /* Profile/Artist Header */
@@ -534,7 +536,10 @@ html,
   position: sticky;
   top: 0;
   z-index: 10;
-  padding: 40px 24px;
+  --profile-max-height: 280px;
+  --profile-min-height: 168px;
+  --profile-padding-y: calc(40px - (20px * var(--scroll-progress)));
+  padding: var(--profile-padding-y) 24px;
   display: flex;
   align-items: flex-end;
   gap: 24px;
@@ -544,8 +549,14 @@ html,
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
-  min-height: 280px;
-  position: relative;
+  will-change: height, padding;
+  contain: layout style;
+  height: calc(
+    var(--profile-max-height) -
+      (var(--profile-max-height) - var(--profile-min-height)) *
+      var(--scroll-progress)
+  );
+  min-height: var(--profile-min-height);
 }
 
 .profile-header::before {
@@ -561,23 +572,26 @@ html,
 }
 
 .profile-header-avatar {
-  width: 200px;
-  height: 200px;
+  --profile-avatar-size: calc(200px - (120px * var(--scroll-progress)));
+  width: var(--profile-avatar-size);
+  height: var(--profile-avatar-size);
   border-radius: 12px;
   object-fit: cover;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
   flex-shrink: 0;
   position: relative;
   z-index: 1;
+  will-change: width, height;
 }
 
 .profile-header-title {
-  font-size: 48px;
+  font-size: calc(48px - (22px * var(--scroll-progress)));
   font-weight: 700;
   margin: 0;
   color: white;
   text-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
   line-height: 1.2;
+  will-change: font-size;
   position: relative;
   z-index: 1;
   flex: 1;
@@ -604,6 +618,7 @@ html,
   --cover-size: calc(200px - (144px * var(--scroll-progress)));
   width: var(--cover-size);
   height: var(--cover-size);
+  will-change: width, height;
   border-radius: 12px;
   object-fit: cover;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);

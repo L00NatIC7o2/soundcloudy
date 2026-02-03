@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, memo } from "react";
 import PlaylistMenu from "./PlaylistMenu";
 
 interface PlayerProps {
@@ -11,7 +11,7 @@ interface PlayerProps {
   onShuffleChange?: (shuffle: boolean) => void;
 }
 
-export default function Player({
+const Player = memo(function Player({
   currentTrack,
   onTrackEnd,
   onPrevious,
@@ -176,10 +176,11 @@ export default function Player({
     checkIfLiked(currentTrack.id);
   }, [currentTrack?.id]);
 
+  // Only check playlists when menu is opened, not on every track change
   useEffect(() => {
-    if (!currentTrack?.id) return;
+    if (!currentTrack?.id || !isPlaylistMenuOpen) return;
     checkPlaylistsForTrack(currentTrack.id);
-  }, [currentTrack?.id]);
+  }, [currentTrack?.id, isPlaylistMenuOpen]);
 
   const checkIfLiked = async (trackId: number | string) => {
     if (!trackId) return;
@@ -554,4 +555,6 @@ export default function Player({
       </div>
     </div>
   );
-}
+});
+
+export default Player;
