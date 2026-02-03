@@ -1,5 +1,9 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import axios from "axios";
+import {
+  extractSoundCloudV2ClientId,
+  saveEnvFile,
+} from "../../../scripts/extract-sc-v2-id";
 
 export default async function handler(
   req: NextApiRequest,
@@ -65,6 +69,32 @@ export default async function handler(
 
     console.log("Setting cookies and redirecting...");
     res.setHeader("Set-Cookie", cookies);
+
+    // Extract and save SoundCloud V2 Client ID if not already set
+    if (
+      !process.env.SOUNDCLOUD_V2_CLIENT_ID ||
+      process.env.SOUNDCLOUD_V2_CLIENT_ID.length === 0
+    ) {
+      console.log("Extracting SoundCloud V2 Client ID...");
+      try {
+        const v2ClientId = await extractSoundCloudV2ClientId(access_token);
+        if (v2ClientId) {
+          saveEnvFile({ SOUNDCLOUD_V2_CLIENT_ID: v2ClientId });
+          console.log("✓ SoundCloud V2 Client ID saved to .env.local");
+        } else {
+          console.warn(
+            "⚠ Could not extract V2 Client ID. User may need to manually add it.",
+          );
+        }
+      } catch (err) {
+        console.error(
+          "Error during V2 Client ID extraction:",
+          err instanceof Error ? err.message : String(err),
+        );
+        // Don't fail auth just because we couldn't extract the V2 ID
+      }
+    }
+
     res.redirect(302, "/");
   } catch (error: any) {
     console.error(
