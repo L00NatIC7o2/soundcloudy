@@ -556,7 +556,11 @@ export default function Home() {
               pushTabState("homepage");
             }}
           >
-            <span className="nav-icon">🏠</span>
+            <img
+              src="https://img.icons8.com/parakeet-line/50/home.png"
+              alt="Home"
+              className="nav-icon-img"
+            />
             {sidebarExpanded && <span className="nav-label">Home</span>}
           </button>
 
@@ -567,7 +571,11 @@ export default function Home() {
               handleProfileClick();
             }}
           >
-            <span className="nav-icon">👤</span>
+            <img
+              src="https://img.icons8.com/parakeet-line/48/person-male.png"
+              alt="Profile"
+              className="nav-icon-img"
+            />
             {sidebarExpanded && <span className="nav-label">Profile</span>}
           </button>
 
@@ -578,7 +586,11 @@ export default function Home() {
               handleLikesClick();
             }}
           >
-            <span className="nav-icon">❤️</span>
+            <img
+              src="https://img.icons8.com/parakeet-line/48/like.png"
+              alt="Liked Songs"
+              className="nav-icon-img nav-icon-like"
+            />
             {sidebarExpanded && <span className="nav-label">Liked Songs</span>}
           </button>
 
@@ -590,7 +602,11 @@ export default function Home() {
               setViewingLikes(false);
             }}
           >
-            <span className="nav-icon">🆕</span>
+            <img
+              src="https://img.icons8.com/parakeet-line/48/calendar-1.png"
+              alt="Newly Released"
+              className="nav-icon-img"
+            />
             {sidebarExpanded && (
               <span className="nav-label">Newly Released</span>
             )}

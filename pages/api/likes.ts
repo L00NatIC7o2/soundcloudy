@@ -30,9 +30,16 @@ export default async function handler(
       },
     );
 
-    const likes = Array.isArray(response.data)
+    const rawLikes = Array.isArray(response.data)
       ? response.data
       : response.data?.collection || [];
+    const likes = rawLikes
+      .map((item: any) => item?.track || item)
+      .filter((item: any) => item && item.id)
+      .map((track: any) => ({
+        ...track,
+        isLiked: true,
+      }));
     const hasMore = Array.isArray(response.data)
       ? likes.length >= limitNum
       : Boolean(response.data?.next_href);

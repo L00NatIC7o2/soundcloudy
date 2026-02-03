@@ -34,9 +34,10 @@ export default async function handler(
     console.log("Artist verified status:", user.verified);
     console.log("Artist badges:", user.badges);
 
+    // Use API verified flag (more reliable than scraping)
+    const verified = Boolean(user.verified || user.badges?.verified);
     // Extract banner URL by scraping with Puppeteer
     let banner_url = null;
-    let verified = false;
     let browser;
     try {
       browser = await puppeteer.launch({
@@ -57,10 +58,9 @@ export default async function handler(
         timeout: 30000,
       });
 
-      // Extract banner URL and verified status from the page
+      // Extract banner URL from the page
       const scrapedData = await page.evaluate(() => {
         let banner = null;
-        let isVerified = false;
 
         // Look for the banner element
         const element = document.querySelector(
@@ -77,26 +77,12 @@ export default async function handler(
           }
         }
 
-        // Look for verified badge - try multiple selectors
-        const verifiedBadge =
-          document.querySelector(".sc-tag-verified") ||
-          document.querySelector("[class*='verified']") ||
-          document.querySelector("[title*='Verified']") ||
-          document.querySelector("[aria-label*='Verified']");
-
-        if (verifiedBadge) {
-          isVerified = true;
-          console.log("Found verified badge:", verifiedBadge.className);
-        }
-
-        return { banner, isVerified };
+        return { banner };
       });
 
       banner_url = scrapedData.banner;
-      verified = scrapedData.isVerified;
 
       console.log("Puppeteer scraped banner_url:", banner_url);
-      console.log("Puppeteer scraped verified:", verified);
     } catch (error) {
       console.error("Failed to scrape banner with Puppeteer:", error);
     } finally {

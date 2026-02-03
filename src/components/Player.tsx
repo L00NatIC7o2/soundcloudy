@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import PlaylistMenu from "./PlaylistMenu";
 
 interface PlayerProps {
   currentTrack: any;
@@ -27,6 +28,9 @@ export default function Player({
   const [isMuted, setIsMuted] = useState(false);
   const [isLiked, setIsLiked] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [isPlaylistMenuOpen, setIsPlaylistMenuOpen] = useState(false);
+  const [playlistsWithTrack, setPlaylistsWithTrack] = useState<number[]>([]);
+  const [isInAnyPlaylist, setIsInAnyPlaylist] = useState(false);
 
   // Update Media Session metadata
   useEffect(() => {
@@ -135,9 +139,6 @@ export default function Player({
           audioRef.current.src = `/api/stream?trackId=${currentTrack.id}&proxy=1`;
           audioRef.current.load();
 
-          // Check like status
-          checkIfLiked();
-
           const playPromise = audioRef.current.play();
           if (playPromise !== undefined) {
             playPromise
@@ -164,12 +165,26 @@ export default function Player({
     loadTrack();
   }, [currentTrack]);
 
-  const checkIfLiked = async () => {
+  useEffect(() => {
     if (!currentTrack?.id) return;
+    if (currentTrack?.isLiked) {
+      setIsLiked(true);
+      return;
+    }
+
+    setIsLiked(false);
+    checkIfLiked(currentTrack.id);
+  }, [currentTrack?.id]);
+
+  useEffect(() => {
+    if (!currentTrack?.id) return;
+    checkPlaylistsForTrack(currentTrack.id);
+  }, [currentTrack?.id]);
+
+  const checkIfLiked = async (trackId: number | string) => {
+    if (!trackId) return;
     try {
-      const response = await fetch(
-        `/api/check-like?trackId=${currentTrack.id}`,
-      );
+      const response = await fetch(`/api/check-like?trackId=${trackId}`);
       const data = await response.json();
       setIsLiked(data.isLiked);
     } catch (error) {
@@ -184,16 +199,13 @@ export default function Player({
       return;
     }
 
-    const newLikeState = !isLiked;
-    setIsLiked(newLikeState);
-
     try {
       const response = await fetch("/api/like", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           trackId: currentTrack.id,
-          like: newLikeState,
+          like: !isLiked,
         }),
       });
 
@@ -201,12 +213,30 @@ export default function Player({
         const errorData = await response.json();
         throw new Error(errorData.error || "Failed to update like");
       }
+      await checkIfLiked(currentTrack.id);
     } catch (error) {
       console.error("Like failed:", error);
-      setIsLiked(!newLikeState);
       alert(
         `Error: ${error instanceof Error ? error.message : "Unknown error"}`,
       );
+    }
+  };
+
+  const checkPlaylistsForTrack = async (trackId: number | string) => {
+    if (!trackId) return;
+    try {
+      const response = await fetch(
+        `/api/check-track-in-playlists?trackId=${trackId}`,
+      );
+      const data = await response.json();
+      setPlaylistsWithTrack(
+        data.playlistsWithTrack?.map((p: any) => p.id) || [],
+      );
+      setIsInAnyPlaylist(data.isInAnyPlaylist);
+    } catch (error) {
+      console.error("Failed to check playlists:", error);
+      setIsInAnyPlaylist(false);
+      setPlaylistsWithTrack([]);
     }
   };
 
@@ -228,7 +258,6 @@ export default function Player({
       // Update Media Session position - only if duration is valid
       if (
         "mediaSession" in navigator &&
-        navigator.mediaSession.setPositionState &&
         !isNaN(audioRef.current.duration) &&
         audioRef.current.duration > 0
       ) {
@@ -321,28 +350,53 @@ export default function Player({
               alt={currentTrack.title}
               className="player-artwork"
             />
-            <div className="player-info">
-              <div
-                className="player-artist"
-                onClick={() => onArtistClick?.(currentTrack.user)}
-                style={{
-                  cursor: onArtistClick ? "pointer" : "default",
-                  textDecoration: onArtistClick ? "underline" : "none",
-                }}
-              >
-                {currentTrack.user?.username || "Unknown"}
+            <div className="player-info-container">
+              <div className="player-info">
+                <div
+                  className="player-artist"
+                  onClick={() => onArtistClick?.(currentTrack.user)}
+                  style={{
+                    cursor: onArtistClick ? "pointer" : "default",
+                    textDecoration: onArtistClick ? "underline" : "none",
+                  }}
+                >
+                  {currentTrack.user?.username || "Unknown"}
+                </div>
+                <div className="player-title">
+                  <span>{currentTrack.title}</span>
+                </div>
               </div>
-              <div className="player-title">
-                <span>{currentTrack.title}</span>
+              <div className="player-actions">
+                <button
+                  className={`player-like ${isLiked ? "liked" : ""}`}
+                  onClick={toggleLike}
+                  title={isLiked ? "Unlike" : "Like"}
+                >
+                  <img
+                    src="https://img.icons8.com/parakeet-line/48/like.png"
+                    alt={isLiked ? "Unlike" : "Like"}
+                    className="player-like-icon"
+                  />
+                </button>
+                <button
+                  className={`player-add-playlist ${isInAnyPlaylist ? "in-playlist" : ""}`}
+                  onClick={() => setIsPlaylistMenuOpen(!isPlaylistMenuOpen)}
+                  title={
+                    isInAnyPlaylist ? "Added to playlist" : "Add to playlist"
+                  }
+                >
+                  <img
+                    src={
+                      isInAnyPlaylist
+                        ? "https://img.icons8.com/parakeet-line/50/checked.png"
+                        : "https://img.icons8.com/parakeet-line/48/add.png"
+                    }
+                    alt="Add to playlist"
+                    className="player-add-playlist-icon"
+                  />
+                </button>
               </div>
             </div>
-            <button
-              className={`player-like ${isLiked ? "liked" : ""}`}
-              onClick={toggleLike}
-              title={isLiked ? "Unlike" : "Like"}
-            >
-              <span className="player-like-icon">{isLiked ? "♥" : "♡"}</span>
-            </button>
             <button
               className={`player-shuffle ${isShuffle ? "active" : ""}`}
               onClick={() => onShuffleChange?.(!isShuffle)}
@@ -363,6 +417,12 @@ export default function Player({
                 <line x1="4" y1="4" x2="9" y2="9"></line>
               </svg>
             </button>
+            <PlaylistMenu
+              trackId={currentTrack.id}
+              isOpen={isPlaylistMenuOpen}
+              onClose={() => setIsPlaylistMenuOpen(false)}
+              playlistsWithTrack={playlistsWithTrack}
+            />
           </div>
 
           <div className="player-center">
@@ -455,33 +515,29 @@ export default function Player({
           <div className="player-right">
             <button className="player-volume-btn" onClick={toggleMute}>
               {isMuted || volume === 0 ? (
-                <svg
-                  width="24"
-                  height="24"
-                  viewBox="0 0 24 24"
-                  fill="currentColor"
-                >
-                  <path d="M16.6915026,12.4744748 L21.1271369,16.9101091 C21.6563168,17.439289 21.6563168,18.3159781 21.1271369,18.8451579 C20.5979571,19.3743378 19.7212681,19.3743378 19.1920882,18.8451579 L14.7564539,14.4095236 L10.3208196,18.8451579 C9.79163977,19.3743378 8.91495066,19.3743378 8.38577084,18.8451579 C7.85659103,18.3159781 7.85659103,17.439289 8.38577084,16.9101091 L12.8214051,12.4744748 L8.38577084,8.03884049 C7.85659103,7.50966068 7.85659103,6.63297157 8.38577084,6.10379175 C8.91495066,5.57461194 9.79163977,5.57461194 10.3208196,6.10379175 L14.7564539,10.5394261 L19.1920882,6.10379175 C19.7212681,5.57461194 20.5979571,5.57461194 21.1271369,6.10379175 C21.6563168,6.63297157 21.6563168,7.50966068 21.1271369,8.03884049 L16.6915026,12.4744748 Z" />
-                </svg>
-              ) : volume < 0.5 ? (
-                <svg
-                  width="24"
-                  height="24"
-                  viewBox="0 0 24 24"
-                  fill="currentColor"
-                >
-                  <path d="M3 9v6h4l5 5V4l-5 5H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z" />
-                </svg>
+                <img
+                  src="https://img.icons8.com/parakeet-line/48/mute.png"
+                  alt="Mute"
+                  className="player-volume-icon"
+                />
+              ) : volume < 0.33 ? (
+                <img
+                  src="https://img.icons8.com/parakeet-line/48/low-volume.png"
+                  alt="Low volume"
+                  className="player-volume-icon"
+                />
+              ) : volume < 0.66 ? (
+                <img
+                  src="https://img.icons8.com/parakeet-line/48/medium-volume.png"
+                  alt="Medium volume"
+                  className="player-volume-icon"
+                />
               ) : (
-                <svg
-                  width="24"
-                  height="24"
-                  viewBox="0 0 24 24"
-                  fill="currentColor"
-                >
-                  <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z" />
-                  <path d="M17 16.91c-1.48 1.46-3.51 2.36-5.77 2.36-2.26 0-4.29-.9-5.77-2.36l-1.1 1.1c1.86 1.86 4.41 3 7.07 3s5.21-1.14 7.07-3l-1.1-1.1zM19.5 5.5C19.5 2.46 16.84 0 13.5 0S7.5 2.46 7.5 5.5h2.5c0-1.93 1.71-3.5 3-3.5s3 1.57 3 3.5v5c0 1.93-1.71 3.5-3 3.5s-3-1.57-3-3.5H7.5c0 3.04 2.66 5.5 6 5.5s6-2.46 6-5.5v-5z" />
-                </svg>
+                <img
+                  src="https://img.icons8.com/parakeet-line/48/high-volume.png"
+                  alt="High volume"
+                  className="player-volume-icon"
+                />
               )}
             </button>
             <input

@@ -18,24 +18,33 @@ export default async function handler(
 
   try {
     const response = await axios.get(
-      "https://api.soundcloud.com/me/favorites",
+      "https://api.soundcloud.com/me/likes/tracks",
       {
         headers: {
           Authorization: `OAuth ${token}`,
         },
         params: {
-          limit: 1,
+          ids: trackId,
+          limit: 10,
         },
         timeout: 5000,
       },
     );
 
-    // Check if track is in favorites
-    const isLiked = response.data.collection?.some(
-      (item: any) => (item.track?.id || item.id) === parseInt(trackId),
-    );
+    const data = response.data;
+    const collection = Array.isArray(data)
+      ? data
+      : Array.isArray(data?.collection)
+        ? data.collection
+        : [];
 
-    res.json({ isLiked: !!isLiked });
+    const trackIdNum = parseInt(trackId, 10);
+    const isLiked = collection.some((item: any) => {
+      const id = item?.track?.id ?? item?.id;
+      return id === trackIdNum;
+    });
+
+    res.json({ isLiked });
   } catch (error: any) {
     console.error("Check like error:", error.message);
     res.json({ isLiked: false });
