@@ -1,0 +1,6 @@
+[build]
+target-dir = "E:/soundcloudy-target"
+rustflags = ["-C", "link-arg=-Wl,--stack,8388608"]
+
+[env]
+RUST_MIN_STACK = "8388608"

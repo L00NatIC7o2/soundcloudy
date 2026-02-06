@@ -1,0 +1,3 @@
+@echo off
+echo Starting Soundcloudy...
+start "" "%~dp0soundcloudy.exe"

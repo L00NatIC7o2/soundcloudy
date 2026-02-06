@@ -21,7 +21,7 @@ export default function Home() {
   const [playlistTracks, setPlaylistTracks] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [currentTrack, setCurrentTrack] = useState<any>(null);
-  const [sidebarExpanded, setSidebarExpanded] = useState(true);
+  const [sidebarExpanded, setSidebarExpanded] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [authChecking, setAuthChecking] = useState(true);
   const [viewingLikes, setViewingLikes] = useState(false);
@@ -798,8 +798,6 @@ export default function Home() {
                           : selectedArtist?.username
                       }
                       className="profile-header-avatar"
-                      loading="eager"
-                      decoding="async"
                       loading="eager"
                       decoding="async"
                     />

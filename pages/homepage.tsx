@@ -23,10 +23,10 @@ export default function HomePage({
   const [recommendedAlbums, setRecommendedAlbums] = useState<any[]>([]);
 
   useEffect(() => {
-    // Fetch recently played tracks
+    // Fetch recently played items (tracks, playlists, albums)
     fetch("/api/recently-played")
       .then((res) => res.json())
-      .then((data) => setRecentlyPlayed(data.tracks || []));
+      .then((data) => setRecentlyPlayed(data.items || []));
 
     // Fetch related tracks ("more of what you like")
     fetch("/api/related-tracks?for=homepage")
@@ -44,29 +44,42 @@ export default function HomePage({
       .then((data) => setRecommendedAlbums(data.albums || []));
   }, []);
 
+  const handleItemClick = (item: any) => {
+    if (item.kind === "track") {
+      const tracks = recentlyPlayed.filter((i) => i.kind === "track");
+      onTrackClick(item, "playlist", tracks);
+    } else if (item.kind === "playlist" || item.kind === "playlist-like") {
+      // Handle playlist click - could navigate to playlist view
+      console.log("Playlist clicked:", item);
+    }
+  };
+
   return (
     <div className="homepage-container">
       <section className="homepage-section">
         <h2>Recently Played</h2>
-        <div className="tracks-grid">
-          {recentlyPlayed.map((track) => (
+        <div className="horizontal-scroll">
+          {recentlyPlayed.map((item) => (
             <div
-              key={track.id}
-              className="track-card"
-              onClick={() => onTrackClick(track, "playlist", recentlyPlayed)}
+              key={item.id}
+              className="horizontal-card"
+              onClick={() => handleItemClick(item)}
             >
               <img
                 src={
-                  track.artwork_url?.replace("-large", "-t500x500") ||
+                  item.artwork_url?.replace("-large", "-t500x500") ||
                   "/placeholder.png"
                 }
-                alt={track.title}
-                className="track-cover"
+                alt={item.title}
+                className="horizontal-cover"
               />
-              <div className="track-info">
-                <div className="track-title">{track.title}</div>
-                <div className="track-artist">
-                  {track.user?.username || "Unknown"}
+              <div className="horizontal-info">
+                <div className="horizontal-title">{item.title}</div>
+                <div className="horizontal-subtitle">
+                  {item.kind === "track" && (item.user?.username || "Unknown")}
+                  {(item.kind === "playlist" ||
+                    item.kind === "playlist-like") &&
+                    `Playlist • ${item.track_count || 0} tracks`}
                 </div>
               </div>
             </div>
@@ -76,11 +89,11 @@ export default function HomePage({
 
       <section className="homepage-section">
         <h2>More of What You Like</h2>
-        <div className="tracks-grid">
+        <div className="horizontal-scroll">
           {moreOfWhatYouLike.map((track) => (
             <div
               key={track.id}
-              className="track-card"
+              className="horizontal-card"
               onClick={() => onTrackClick(track, "search", moreOfWhatYouLike)}
             >
               <img
@@ -89,11 +102,11 @@ export default function HomePage({
                   "/placeholder.png"
                 }
                 alt={track.title}
-                className="track-cover"
+                className="horizontal-cover"
               />
-              <div className="track-info">
-                <div className="track-title">{track.title}</div>
-                <div className="track-artist">
+              <div className="horizontal-info">
+                <div className="horizontal-title">{track.title}</div>
+                <div className="horizontal-subtitle">
                   {track.user?.username || "Unknown"}
                 </div>
               </div>

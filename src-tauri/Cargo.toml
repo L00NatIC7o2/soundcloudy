@@ -21,3 +21,6 @@ path = "src/main.rs"
 strip = true
 opt-level = "z"
 lto = true
+
+[profile.release.build-override]
+opt-level = 0
