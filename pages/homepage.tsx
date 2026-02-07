@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type MouseEvent } from "react";
+import { useEffect, useState, type MouseEvent } from "react";
 
 export default function HomePage({
   onTrackClick,
@@ -59,80 +59,6 @@ export default function HomePage({
     backgroundImage: `url(${getCardCover(item)})`,
   });
 
-  const useDragScroll = () => {
-    const ref = useRef<HTMLDivElement | null>(null);
-    const isDown = useRef(false);
-    const startX = useRef(0);
-    const scrollLeft = useRef(0);
-    const velocity = useRef(0);
-    const lastX = useRef(0);
-    const lastTime = useRef(0);
-    const rafId = useRef<number | null>(null);
-
-    const onMouseDown = (event: MouseEvent<HTMLDivElement>) => {
-      if (!ref.current) return;
-      isDown.current = true;
-      ref.current.classList.add("dragging");
-      startX.current = event.pageX - ref.current.offsetLeft;
-      scrollLeft.current = ref.current.scrollLeft;
-      lastX.current = event.pageX;
-      lastTime.current = performance.now();
-      velocity.current = 0;
-      if (rafId.current) {
-        cancelAnimationFrame(rafId.current);
-        rafId.current = null;
-      }
-    };
-
-    const endDrag = () => {
-      if (!ref.current) return;
-      isDown.current = false;
-      ref.current.classList.remove("dragging");
-      const startMomentum = () => {
-        if (!ref.current) return;
-        velocity.current *= 0.95;
-        if (Math.abs(velocity.current) < 0.1) {
-          velocity.current = 0;
-          return;
-        }
-        ref.current.scrollLeft -= velocity.current * 16;
-        rafId.current = requestAnimationFrame(startMomentum);
-      };
-
-      if (Math.abs(velocity.current) > 0.2) {
-        rafId.current = requestAnimationFrame(startMomentum);
-      }
-    };
-
-    const onMouseMove = (event: MouseEvent<HTMLDivElement>) => {
-      if (!isDown.current || !ref.current) return;
-      event.preventDefault();
-      const x = event.pageX - ref.current.offsetLeft;
-      const walk = (x - startX.current) * 1.2;
-      ref.current.scrollLeft = scrollLeft.current - walk;
-
-      const now = performance.now();
-      const dx = event.pageX - lastX.current;
-      const dt = Math.max(1, now - lastTime.current);
-      velocity.current = dx / dt;
-      lastX.current = event.pageX;
-      lastTime.current = now;
-    };
-
-    return {
-      ref,
-      onMouseDown,
-      onMouseLeave: endDrag,
-      onMouseUp: endDrag,
-      onMouseMove,
-    };
-  };
-
-  const recentlyScroll = useDragScroll();
-  const moreScroll = useDragScroll();
-  const releasedScroll = useDragScroll();
-  const albumsScroll = useDragScroll();
-
   useEffect(() => {
     // Fetch recently played items (tracks, playlists, albums)
     fetch("/api/recently-played")
@@ -168,14 +94,7 @@ export default function HomePage({
     <div className="homepage-container">
       <section className="homepage-section">
         <h2>Recently Played</h2>
-        <div
-          className="horizontal-scroll drag-scroll"
-          ref={recentlyScroll.ref}
-          onMouseDown={recentlyScroll.onMouseDown}
-          onMouseLeave={recentlyScroll.onMouseLeave}
-          onMouseUp={recentlyScroll.onMouseUp}
-          onMouseMove={recentlyScroll.onMouseMove}
-        >
+        <div className="horizontal-scroll">
           {recentlyPlayed.map((item) => (
             <div
               key={item.id}
@@ -245,14 +164,7 @@ export default function HomePage({
 
       <section className="homepage-section">
         <h2>More of What You Like</h2>
-        <div
-          className="horizontal-scroll drag-scroll"
-          ref={moreScroll.ref}
-          onMouseDown={moreScroll.onMouseDown}
-          onMouseLeave={moreScroll.onMouseLeave}
-          onMouseUp={moreScroll.onMouseUp}
-          onMouseMove={moreScroll.onMouseMove}
-        >
+        <div className="horizontal-scroll">
           {moreOfWhatYouLike.map((track) => (
             <div
               key={track.id}
@@ -319,14 +231,7 @@ export default function HomePage({
 
       <section className="homepage-section">
         <h2>Recently Released</h2>
-        <div
-          className="horizontal-scroll drag-scroll"
-          ref={releasedScroll.ref}
-          onMouseDown={releasedScroll.onMouseDown}
-          onMouseLeave={releasedScroll.onMouseLeave}
-          onMouseUp={releasedScroll.onMouseUp}
-          onMouseMove={releasedScroll.onMouseMove}
-        >
+        <div className="horizontal-scroll">
           {recentlyReleased.map((track) => (
             <div
               key={track.id}
@@ -393,14 +298,7 @@ export default function HomePage({
 
       <section className="homepage-section">
         <h2>Recommended Albums</h2>
-        <div
-          className="horizontal-scroll drag-scroll"
-          ref={albumsScroll.ref}
-          onMouseDown={albumsScroll.onMouseDown}
-          onMouseLeave={albumsScroll.onMouseLeave}
-          onMouseUp={albumsScroll.onMouseUp}
-          onMouseMove={albumsScroll.onMouseMove}
-        >
+        <div className="horizontal-scroll">
           {recommendedAlbums.map((album) => (
             <div
               key={album.id}

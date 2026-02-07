@@ -279,9 +279,22 @@ const Player = memo(function Player({
       togglePlayPause();
     };
 
+    const handleExternalNext = () => {
+      handleNext();
+    };
+
+    const handleExternalPrev = () => {
+      handlePrevious();
+    };
+
     window.addEventListener("player-toggle", handleExternalToggle);
-    return () =>
+    window.addEventListener("player-next", handleExternalNext);
+    window.addEventListener("player-prev", handleExternalPrev);
+    return () => {
       window.removeEventListener("player-toggle", handleExternalToggle);
+      window.removeEventListener("player-next", handleExternalNext);
+      window.removeEventListener("player-prev", handleExternalPrev);
+    };
   }, [isPlaying]);
 
   const handleTimeUpdate = () => {

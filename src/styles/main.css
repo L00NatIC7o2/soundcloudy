@@ -74,15 +74,71 @@ html,
   background: #000;
 }
 
+.titlebar {
+  position: fixed;
+  top: 8px;
+  right: 10px;
+  height: auto;
+  display: none;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.8);
+  z-index: 1003;
+  -webkit-app-region: no-drag;
+}
+
+.titlebar-drag {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 12px;
+  -webkit-app-region: drag;
+  z-index: 1002;
+}
+
+body.electron .titlebar {
+  display: flex;
+}
+
+.titlebar-right {
+  display: flex;
+  gap: 6px;
+  -webkit-app-region: no-drag;
+}
+
+.titlebar-btn {
+  width: 28px;
+  height: 24px;
+  border: 0;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.9);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+}
+
+.titlebar-btn:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.titlebar-btn.close:hover {
+  background: rgba(235, 87, 87, 0.7);
+}
+
 /* Scrollbars hidden until hover */
 * {
-  scrollbar-width: none;
+  scrollbar-width: thin;
   -ms-overflow-style: none;
-  scrollbar-gutter: auto;
+  scrollbar-color: transparent transparent;
 }
 
 *:hover {
-  scrollbar-width: thin;
   scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
 }
 
@@ -111,7 +167,18 @@ html,
 
 html::-webkit-scrollbar,
 body::-webkit-scrollbar {
+  width: 0;
+  height: 0;
   background: transparent;
+}
+
+html,
+body {
+  scrollbar-width: none;
+}
+
+body {
+  overflow-y: scroll;
 }
 
 html::-webkit-scrollbar-track,
@@ -173,9 +240,11 @@ body::-webkit-scrollbar-track-piece {
   transform: scale(0.98);
 }
 
-.login-play-icon {
-  width: 20px;
-  height: 20px;
+.login-logo {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  object-fit: cover;
   filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.3));
 }
 
@@ -213,7 +282,7 @@ body::-webkit-scrollbar-track-piece {
   z-index: 101;
   display: flex;
   flex-direction: column;
-  overflow-y: auto;
+  overflow-y: hidden;
   overflow-x: hidden;
   box-shadow: 2px 0 12px rgba(0, 0, 0, 0.15);
   padding: 16px 0;
@@ -451,6 +520,10 @@ body::-webkit-scrollbar-track-piece {
   pointer-events: none;
 }
 
+body.electron .top-bar {
+  top: 12px;
+}
+
 .search-box {
   display: flex;
   gap: 8px;
@@ -525,6 +598,10 @@ body::-webkit-scrollbar-track-piece {
   min-height: 100vh;
   transition: margin-left 0.3s;
   overscroll-behavior: contain;
+}
+
+body.electron .main-area {
+  padding-top: 96px;
 }
 
 .app-shell:has(.sidebar.expanded) .main-area {
@@ -1546,12 +1623,10 @@ body::-webkit-scrollbar-track-piece {
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
 }
 
-/* Find the sidebar styles and add these scrollbar styles */
+/* Sidebar theme override */
 
 .sidebar {
-  width: 250px;
   background: linear-gradient(180deg, #000000 0%, #0a0a0a 100%);
-  overflow-y: auto;
 }
 
 /* Responsive */
@@ -2182,6 +2257,7 @@ body::-webkit-scrollbar-track-piece {
 .search-results-container {
   width: 100%;
   padding-bottom: 120px; /* Space for player */
+  padding-right: 0;
 }
 
 .search-section {

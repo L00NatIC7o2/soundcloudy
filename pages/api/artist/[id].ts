@@ -128,34 +128,87 @@ export default async function handler(
       return banner_url;
     };
 
+    const fetchPaginatedCollection = async (
+      url: string,
+      params: Record<string, string | number>,
+      maxItems: number,
+    ) => {
+      let items: any[] = [];
+      let nextUrl: string | null = url;
+      let firstRequest = true;
+
+      while (nextUrl && items.length < maxItems) {
+        const response = await axios.get(nextUrl, {
+          headers: {
+            Authorization: `OAuth ${token}`,
+          },
+          params: firstRequest
+            ? { ...params, limit: 200, linked_partitioning: 1 }
+            : undefined,
+          timeout: 8000,
+        });
+
+        const data = response.data;
+        const collection = Array.isArray(data) ? data : data?.collection || [];
+        items = items.concat(collection);
+        nextUrl = data?.next_href || null;
+        firstRequest = false;
+      }
+
+      return items.slice(0, maxItems);
+    };
+
     const fetchTracks = async () => {
       try {
-        const tracksResponse = await axios.get(
+        const maxTracks = Math.min(user.track_count || 500, 1000);
+        return await fetchPaginatedCollection(
           `https://api.soundcloud.com/users/${id}/tracks`,
-          {
-            headers: {
-              Authorization: `OAuth ${token}`,
-            },
-            params: {
-              limit: 50,
-              access: "playable",
-            },
-            timeout: 8000,
-          },
+          { access: "playable" },
+          maxTracks,
         );
-        return Array.isArray(tracksResponse.data)
-          ? tracksResponse.data
-          : tracksResponse.data?.collection || [];
       } catch (error) {
         console.error("Failed to fetch artist tracks:", error);
         return [];
       }
     };
 
-    const [banner_url, tracks] = await Promise.all([
+    const fetchPlaylists = async () => {
+      try {
+        return await fetchPaginatedCollection(
+          `https://api.soundcloud.com/users/${id}/playlists`,
+          {},
+          500,
+        );
+      } catch (error) {
+        console.error("Failed to fetch artist playlists:", error);
+        return [];
+      }
+    };
+
+    const splitPlaylists = (items: any[]) => {
+      const albums: any[] = [];
+      const playlists: any[] = [];
+      items.forEach((item) => {
+        const isAlbum = Boolean(
+          item?.is_album ||
+          item?.set_type === "album" ||
+          item?.kind === "album",
+        );
+        if (isAlbum) {
+          albums.push(item);
+        } else {
+          playlists.push(item);
+        }
+      });
+      return { albums, playlists };
+    };
+
+    const [banner_url, tracks, playlistsRaw] = await Promise.all([
       fetchBanner(),
       fetchTracks(),
+      fetchPlaylists(),
     ]);
+    const { albums, playlists } = splitPlaylists(playlistsRaw);
 
     const payload = {
       id: user.id,
@@ -172,6 +225,8 @@ export default async function handler(
       track_count: user.track_count,
       verified: verified || false,
       tracks,
+      albums,
+      playlists,
     };
 
     const cacheTtl = banner_url ? CACHE_TTL_MS : 10_000;

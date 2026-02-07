@@ -46,9 +46,13 @@ export default function Home() {
   const [viewingLikes, setViewingLikes] = useState(false);
   const [viewingProfile, setViewingProfile] = useState(false);
   const [userProfile, setUserProfile] = useState<any>(null);
+  const [profilePlaylists, setProfilePlaylists] = useState<any[]>([]);
+  const [profileAlbums, setProfileAlbums] = useState<any[]>([]);
   const [viewingArtist, setViewingArtist] = useState(false);
   const [selectedArtist, setSelectedArtist] = useState<any>(null);
   const [artistTracks, setArtistTracks] = useState<any[]>([]);
+  const [artistPlaylists, setArtistPlaylists] = useState<any[]>([]);
+  const [artistAlbums, setArtistAlbums] = useState<any[]>([]);
   const [viewingTrack, setViewingTrack] = useState(false);
   const [selectedTrack, setSelectedTrack] = useState<any>(null);
   const [viewingHomepage, setViewingHomepage] = useState(true);
@@ -104,6 +108,10 @@ export default function Home() {
   const [likedPlaylists, setLikedPlaylists] = useState<Record<number, boolean>>(
     {},
   );
+  const [playlistCoverOverrides, setPlaylistCoverOverrides] = useState<
+    Record<number, string>
+  >({});
+  const [isWindowMaximized, setIsWindowMaximized] = useState(false);
   const [playerState, setPlayerState] = useState<{
     trackId: number | null;
     isPlaying: boolean;
@@ -121,6 +129,7 @@ export default function Home() {
   const playlistCacheRef = useRef<{ data: any[]; timestamp: number } | null>(
     null,
   );
+  const playlistCoverFetchRef = useRef<Set<number>>(new Set());
   const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
   const scrollToTop = () => {
@@ -182,6 +191,23 @@ export default function Home() {
       isPlaying: prev.trackId === currentTrack?.id ? prev.isPlaying : false,
     }));
   }, [currentTrack?.id]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const api = (window as any).electronAPI;
+    if (!api?.windowControls) return;
+    document.body.classList.add("electron");
+    api.windowControls.isMaximized().then((state: boolean) => {
+      setIsWindowMaximized(Boolean(state));
+    });
+    const cleanup = api.windowControls.onMaximized((state: boolean) => {
+      setIsWindowMaximized(Boolean(state));
+    });
+    return () => {
+      cleanup?.();
+      document.body.classList.remove("electron");
+    };
+  }, []);
 
   // Fetch playlists with caching
   const fetchPlaylists = useCallback(
@@ -275,7 +301,16 @@ export default function Home() {
     playlistTitle: string | null,
   ) => {
     if (!playlistId) return;
-    handlePlaylistClick({ id: playlistId, title: playlistTitle || "Playlist" });
+    const resolved =
+      libraryPlaylists.find((p) => p.id === playlistId) ||
+      playlists.find((p) => p.id === playlistId) ||
+      playlistResults.find((p) => p.id === playlistId) ||
+      albumResults.find((p) => p.id === playlistId);
+    const fallback = {
+      id: playlistId,
+      title: playlistTitle || "Playlist",
+    };
+    handlePlaylistClick(resolved || fallback);
   };
 
   // Handle playlist click
@@ -428,6 +463,52 @@ export default function Home() {
     }
   };
 
+  useEffect(() => {
+    if (!viewingLibrary || libraryPlaylists.length === 0) return;
+    const missing = libraryPlaylists
+      .map((playlist: any) => resolvePlaylistItem(playlist) || playlist)
+      .filter((playlist: any) => {
+        if (!playlist?.id) return false;
+        if (playlistCoverOverrides[playlist.id]) return false;
+        if (playlistCoverFetchRef.current.has(playlist.id)) return false;
+        const hasArtwork = Boolean(
+          playlist.artwork_url ||
+          (playlist.tracks && playlist.tracks[0]?.artwork_url),
+        );
+        return !hasArtwork;
+      })
+      .slice(0, 10);
+
+    if (missing.length === 0) return;
+
+    let cancelled = false;
+    (async () => {
+      for (const playlist of missing) {
+        if (!playlist?.id) continue;
+        playlistCoverFetchRef.current.add(playlist.id);
+        try {
+          const response = await fetch(`/api/playlist/${playlist.id}`);
+          if (!response.ok) continue;
+          const data = await response.json();
+          const firstArtwork = data?.tracks?.[0]?.artwork_url;
+          const normalized = normalizeArtworkUrl(firstArtwork);
+          if (!cancelled && normalized) {
+            setPlaylistCoverOverrides((prev) => ({
+              ...prev,
+              [playlist.id]: normalized,
+            }));
+          }
+        } catch (error) {
+          console.error("Failed to fetch playlist cover:", error);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [viewingLibrary, libraryPlaylists, playlistCoverOverrides]);
+
   // Handle profile click
   const handleProfileClick = async (skipHistory = false) => {
     setViewingProfile(true);
@@ -442,6 +523,8 @@ export default function Home() {
     setSectionLoading(true);
     setTracks([]);
     setArtistTracks([]); // <-- Clear artist tracks
+    setProfilePlaylists([]);
+    setProfileAlbums([]);
     setPlaylistTracks([]);
 
     try {
@@ -452,6 +535,8 @@ export default function Home() {
       if (data.tracks) {
         setPlaylistTracks(data.tracks);
       }
+      setProfilePlaylists(data.playlists || []);
+      setProfileAlbums(data.albums || []);
     } catch (error) {
       console.error("Failed to fetch profile:", error);
     } finally {
@@ -480,6 +565,8 @@ export default function Home() {
     setSelectedArtist(artist);
     setSectionLoading(true);
     setArtistTracks([]);
+    setArtistPlaylists([]);
+    setArtistAlbums([]);
     setIsFollowingArtist(false);
     setCheckingArtistFollow(false);
     if (!skipScroll) {
@@ -494,6 +581,8 @@ export default function Home() {
       const data = await response.json();
       setSelectedArtist(data);
       setArtistTracks(data.tracks || []);
+      setArtistPlaylists(data.playlists || []);
+      setArtistAlbums(data.albums || []);
     } catch (error) {
       console.error("Failed to fetch artist tracks:", error);
     } finally {
@@ -1267,18 +1356,29 @@ export default function Home() {
     return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
 
+  const normalizeArtworkUrl = (url?: string | null) => {
+    if (!url) return null;
+    return url.includes("-large") ? url.replace("-large", "-t500x500") : url;
+  };
+
   const getPlaylistCover = (playlist: any) => {
-    if (playlist.artwork_url) {
-      return playlist.artwork_url.replace("-large", "-t500x500");
-    }
-    if (
-      playlist.tracks &&
-      playlist.tracks.length > 0 &&
-      playlist.tracks[0].artwork_url
-    ) {
-      return playlist.tracks[0].artwork_url.replace("-large", "-t500x500");
-    }
-    return "/placeholder.png";
+    const resolved = resolvePlaylistItem(playlist) || playlist;
+    const override = resolved?.id ? playlistCoverOverrides[resolved.id] : null;
+    if (override) return override;
+    const visualsUrl =
+      resolved?.visuals?.visuals?.[0]?.visual_url ||
+      resolved?.visuals?.visual_url ||
+      resolved?.picture_url;
+    const artworkUrl = resolved?.artwork_url;
+    const trackArtwork =
+      resolved?.tracks?.length > 0 ? resolved.tracks[0]?.artwork_url : null;
+    const fallbackAvatar = resolved?.user?.avatar_url;
+    const cover =
+      normalizeArtworkUrl(artworkUrl) ||
+      normalizeArtworkUrl(trackArtwork) ||
+      normalizeArtworkUrl(visualsUrl) ||
+      normalizeArtworkUrl(fallbackAvatar);
+    return cover || "/placeholder.png";
   };
 
   const getCardCover = (item: any) => {
@@ -1344,6 +1444,20 @@ export default function Home() {
     };
     checkAuth();
   }, [router]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const refresh = async () => {
+      try {
+        await fetch("/api/auth/refresh");
+      } catch (_error) {
+        // silent refresh failure; auth check will handle re-login
+      }
+    };
+    refresh();
+    const interval = window.setInterval(refresh, 45 * 60 * 1000);
+    return () => window.clearInterval(interval);
+  }, [isAuthenticated]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1668,6 +1782,10 @@ export default function Home() {
   const visiblePlaylists = showAllPlaylists
     ? playlistResults
     : playlistResults.slice(0, 8);
+  const activeProfileAlbums = viewingProfile ? profileAlbums : artistAlbums;
+  const activeProfilePlaylists = viewingProfile
+    ? profilePlaylists
+    : artistPlaylists;
 
   return (
     <div className="app-shell">
@@ -1867,6 +1985,40 @@ export default function Home() {
           </div>
         </div>
       </aside>
+
+      <div className="titlebar">
+        <div className="titlebar-drag" aria-hidden="true" />
+        <div className="titlebar-right">
+          <button
+            type="button"
+            className="titlebar-btn"
+            onClick={() =>
+              (window as any).electronAPI?.windowControls?.minimize()
+            }
+            aria-label="Minimize"
+          >
+            —
+          </button>
+          <button
+            type="button"
+            className="titlebar-btn"
+            onClick={() =>
+              (window as any).electronAPI?.windowControls?.maximizeToggle()
+            }
+            aria-label={isWindowMaximized ? "Restore" : "Maximize"}
+          >
+            {isWindowMaximized ? "❐" : "▢"}
+          </button>
+          <button
+            type="button"
+            className="titlebar-btn close"
+            onClick={() => (window as any).electronAPI?.windowControls?.close()}
+            aria-label="Close"
+          >
+            ×
+          </button>
+        </div>
+      </div>
 
       <div className="top-bar">
         <div className="search-box" ref={searchBoxRef}>
@@ -2241,6 +2393,14 @@ export default function Home() {
                 ) : viewingProfile || viewingArtist ? (
                   <div
                     className="profile-header"
+                    onContextMenu={(event) => {
+                      const profileItem = viewingProfile
+                        ? userProfile
+                        : selectedArtist;
+                      if (profileItem) {
+                        handleContextMenu(event, profileItem, "search");
+                      }
+                    }}
                     style={{
                       backgroundImage: (
                         viewingProfile
@@ -2409,6 +2569,210 @@ export default function Home() {
                     <h2 className="playlist-header-title">{displayTitle}</h2>
                   </div>
                 )}
+                {(viewingProfile || viewingArtist) &&
+                  activeProfileAlbums.length > 0 && (
+                    <section className="search-section">
+                      <div className="search-section-header">
+                        <h3 className="search-section-title">Albums</h3>
+                      </div>
+                      <div className="horizontal-scroll drag-scroll">
+                        {activeProfileAlbums.map((album: any) => (
+                          <div
+                            key={`profile-album-${album.id}`}
+                            className="track-card"
+                            onClick={() => handlePlaylistClick(album)}
+                            onContextMenu={(event) =>
+                              handleContextMenu(event, album, "search")
+                            }
+                          >
+                            <button
+                              type="button"
+                              className={`card-play-btn ${
+                                isPlaylistPlaying(album.id) ? "pause" : "play"
+                              }`}
+                              style={getCardCoverStyle(album)}
+                              onClick={(event) =>
+                                handleCardPlayClick(event, album, "search")
+                              }
+                              aria-label={
+                                isPlaylistPlaying(album.id) ? "Pause" : "Play"
+                              }
+                            >
+                              {isPlaylistPlaying(album.id) ? (
+                                <svg
+                                  width="40"
+                                  height="40"
+                                  viewBox="0 0 24 24"
+                                  fill="currentColor"
+                                >
+                                  <rect x="6" y="4" width="4" height="16" />
+                                  <rect x="14" y="4" width="4" height="16" />
+                                </svg>
+                              ) : (
+                                <svg
+                                  width="40"
+                                  height="40"
+                                  viewBox="0 0 24 24"
+                                  fill="currentColor"
+                                >
+                                  <polygon points="5 3 19 12 5 21 5 3" />
+                                </svg>
+                              )}
+                            </button>
+                            <img
+                              src={getPlaylistCover(album)}
+                              alt={album.title}
+                              className="track-cover"
+                              loading="lazy"
+                              decoding="async"
+                            />
+                            <div
+                              className="track-info clickable"
+                              onClick={(event) => handleInfoClick(event, album)}
+                            >
+                              <div className="track-title">{album.title}</div>
+                              <div
+                                className="track-artist clickable"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  handleArtistClick(album.user);
+                                }}
+                              >
+                                {album.user?.username || "Unknown"}
+                              </div>
+                              {album.user?.id &&
+                                userProfile?.id &&
+                                album.user.id !== userProfile.id && (
+                                  <button
+                                    type="button"
+                                    className={`track-like-btn ${
+                                      likedPlaylists[album.id] ? "liked" : ""
+                                    }`}
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      togglePlaylistLike(album.id);
+                                    }}
+                                    aria-label={
+                                      likedPlaylists[album.id]
+                                        ? "Remove like"
+                                        : "Add like"
+                                    }
+                                  >
+                                    {likedPlaylists[album.id] ? "♥" : "♡"}
+                                  </button>
+                                )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+                  )}
+                {(viewingProfile || viewingArtist) &&
+                  activeProfilePlaylists.length > 0 && (
+                    <section className="search-section">
+                      <div className="search-section-header">
+                        <h3 className="search-section-title">Playlists</h3>
+                      </div>
+                      <div className="horizontal-scroll drag-scroll">
+                        {activeProfilePlaylists.map((playlist: any) => (
+                          <div
+                            key={`profile-playlist-${playlist.id}`}
+                            className="track-card"
+                            onClick={() => handlePlaylistClick(playlist)}
+                            onContextMenu={(event) =>
+                              handleContextMenu(event, playlist, "search")
+                            }
+                          >
+                            <button
+                              type="button"
+                              className={`card-play-btn ${
+                                isPlaylistPlaying(playlist.id)
+                                  ? "pause"
+                                  : "play"
+                              }`}
+                              style={getCardCoverStyle(playlist)}
+                              onClick={(event) =>
+                                handleCardPlayClick(event, playlist, "search")
+                              }
+                              aria-label={
+                                isPlaylistPlaying(playlist.id)
+                                  ? "Pause"
+                                  : "Play"
+                              }
+                            >
+                              {isPlaylistPlaying(playlist.id) ? (
+                                <svg
+                                  width="40"
+                                  height="40"
+                                  viewBox="0 0 24 24"
+                                  fill="currentColor"
+                                >
+                                  <rect x="6" y="4" width="4" height="16" />
+                                  <rect x="14" y="4" width="4" height="16" />
+                                </svg>
+                              ) : (
+                                <svg
+                                  width="40"
+                                  height="40"
+                                  viewBox="0 0 24 24"
+                                  fill="currentColor"
+                                >
+                                  <polygon points="5 3 19 12 5 21 5 3" />
+                                </svg>
+                              )}
+                            </button>
+                            <img
+                              src={getPlaylistCover(playlist)}
+                              alt={playlist.title}
+                              className="track-cover"
+                              loading="lazy"
+                              decoding="async"
+                            />
+                            <div
+                              className="track-info clickable"
+                              onClick={(event) =>
+                                handleInfoClick(event, playlist)
+                              }
+                            >
+                              <div className="track-title">
+                                {playlist.title}
+                              </div>
+                              <div
+                                className="track-artist clickable"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  handleArtistClick(playlist.user);
+                                }}
+                              >
+                                {playlist.user?.username || "Unknown"}
+                              </div>
+                              {playlist.user?.id &&
+                                userProfile?.id &&
+                                playlist.user.id !== userProfile.id && (
+                                  <button
+                                    type="button"
+                                    className={`track-like-btn ${
+                                      likedPlaylists[playlist.id] ? "liked" : ""
+                                    }`}
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      togglePlaylistLike(playlist.id);
+                                    }}
+                                    aria-label={
+                                      likedPlaylists[playlist.id]
+                                        ? "Remove like"
+                                        : "Add like"
+                                    }
+                                  >
+                                    {likedPlaylists[playlist.id] ? "♥" : "♡"}
+                                  </button>
+                                )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+                  )}
                 <div className="track-list">
                   {(viewingProfile
                     ? playlistTracks

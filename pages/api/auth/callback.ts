@@ -13,6 +13,7 @@ export default async function handler(
 
   console.log("Callback received - code exists:", !!code, "error:", error);
 
+  const state = typeof req.query.state === "string" ? req.query.state : null;
   if (error) {
     return res.redirect(`/login?error=${error}`);
   }
@@ -22,7 +23,13 @@ export default async function handler(
   }
 
   try {
-    const redirectUri = `${process.env.NEXTAUTH_URL}/api/auth/callback`;
+    const requestedRedirect =
+      typeof req.query.redirect_uri === "string"
+        ? req.query.redirect_uri
+        : null;
+    const redirectUri = requestedRedirect
+      ? requestedRedirect
+      : `${process.env.NEXTAUTH_URL}/api/auth/callback`;
 
     console.log("Exchanging code for token...");
     console.log("Redirect URI:", redirectUri);
@@ -67,10 +74,45 @@ export default async function handler(
       );
     }
 
+    if (state === "electron") {
+      const nonce = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const store = globalThis.__scAuthBridgeStore || new Map();
+      store.set(nonce, {
+        access_token,
+        refresh_token,
+        expires_in: expires_in || 3600,
+        created_at: Date.now(),
+      });
+      globalThis.__scAuthBridgeStore = store;
+
+      res.setHeader("Content-Type", "text/html");
+      res.status(200).send(`
+        <html>
+          <head><title>Soundcloudy Login</title></head>
+          <body style="font-family: sans-serif; background: #111; color: #fff; display: flex; align-items: center; justify-content: center; height: 100vh;">
+            <div>
+              <p>Opening Soundcloudy...</p>
+              <a href="soundcloudy://auth?nonce=${nonce}" style="color: #fff;">Click here if nothing happens.</a>
+            </div>
+            <script>
+              window.location.href = "soundcloudy://auth?nonce=${nonce}";
+              setTimeout(() => {
+                try {
+                  window.open("", "_self");
+                  window.close();
+                } catch (_error) {
+                  // Ignore close failures when the tab wasn't opened by script.
+                }
+              }, 800);
+            </script>
+          </body>
+        </html>
+      `);
+      return;
+    }
+
     console.log("Setting cookies and redirecting...");
     res.setHeader("Set-Cookie", cookies);
-
-    // Extract and save SoundCloud V2 Client ID if not already set
     if (
       !process.env.SOUNDCLOUD_V2_CLIENT_ID ||
       process.env.SOUNDCLOUD_V2_CLIENT_ID.length === 0
