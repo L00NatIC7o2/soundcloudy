@@ -7,6 +7,10 @@ interface PlayerProps {
   onPrevious?: () => void;
   onNext?: () => void;
   onArtistClick?: (artist: any) => void;
+  onPlaylistClick?: (
+    playlistId: number | null,
+    playlistTitle: string | null,
+  ) => void;
   isShuffle?: boolean;
   onShuffleChange?: (shuffle: boolean) => void;
 }
@@ -17,6 +21,7 @@ const Player = memo(function Player({
   onPrevious,
   onNext,
   onArtistClick,
+  onPlaylistClick,
   isShuffle = false,
   onShuffleChange,
 }: PlayerProps) {
@@ -31,6 +36,13 @@ const Player = memo(function Player({
   const [isPlaylistMenuOpen, setIsPlaylistMenuOpen] = useState(false);
   const [playlistsWithTrack, setPlaylistsWithTrack] = useState<number[]>([]);
   const [isInAnyPlaylist, setIsInAnyPlaylist] = useState(false);
+  const playlistLabel =
+    currentTrack?.playlistTitle ||
+    currentTrack?.publisher_metadata?.album_title ||
+    "";
+  const playlistId = currentTrack?.playlistId || null;
+  const canOpenPlaylist = Boolean(onPlaylistClick && playlistId);
+  const canOpenArtist = Boolean(onArtistClick && currentTrack?.user);
 
   // Update Media Session metadata
   useEffect(() => {
@@ -38,7 +50,7 @@ const Player = memo(function Player({
       navigator.mediaSession.metadata = new MediaMetadata({
         title: currentTrack.title,
         artist: currentTrack.user?.username || "Unknown Artist",
-        album: currentTrack.publisher_metadata?.album_title || "",
+        album: playlistLabel,
         artwork: [
           {
             src: currentTrack.artwork_url?.replace("-large", "-t500x500") || "",
@@ -251,6 +263,27 @@ const Player = memo(function Player({
     setIsPlaying(!isPlaying);
   };
 
+  useEffect(() => {
+    window.dispatchEvent(
+      new CustomEvent("player-state", {
+        detail: {
+          isPlaying,
+          trackId: currentTrack?.id ?? null,
+        },
+      }),
+    );
+  }, [isPlaying, currentTrack?.id]);
+
+  useEffect(() => {
+    const handleExternalToggle = () => {
+      togglePlayPause();
+    };
+
+    window.addEventListener("player-toggle", handleExternalToggle);
+    return () =>
+      window.removeEventListener("player-toggle", handleExternalToggle);
+  }, [isPlaying]);
+
   const handleTimeUpdate = () => {
     if (audioRef.current) {
       setCurrentTime(audioRef.current.currentTime);
@@ -353,15 +386,37 @@ const Player = memo(function Player({
             />
             <div className="player-info-container">
               <div className="player-info">
-                <div
-                  className="player-artist"
-                  onClick={() => onArtistClick?.(currentTrack.user)}
-                  style={{
-                    cursor: onArtistClick ? "pointer" : "default",
-                    textDecoration: onArtistClick ? "underline" : "none",
-                  }}
-                >
-                  {currentTrack.user?.username || "Unknown"}
+                <div className="player-artist-row">
+                  {canOpenArtist ? (
+                    <button
+                      type="button"
+                      className="player-link player-artist"
+                      onClick={() => onArtistClick?.(currentTrack.user)}
+                    >
+                      {currentTrack.user?.username || "Unknown"}
+                    </button>
+                  ) : (
+                    <span className="player-artist">
+                      {currentTrack.user?.username || "Unknown"}
+                    </span>
+                  )}
+                  {playlistLabel &&
+                    (canOpenPlaylist ? (
+                      <button
+                        type="button"
+                        className="player-link player-playlist-link"
+                        onClick={() =>
+                          onPlaylistClick?.(playlistId, playlistLabel)
+                        }
+                        aria-label={`Open playlist ${playlistLabel}`}
+                      >
+                        {playlistLabel}
+                      </button>
+                    ) : (
+                      <span className="player-playlist-link">
+                        {playlistLabel}
+                      </span>
+                    ))}
                 </div>
                 <div className="player-title">
                   <span>{currentTrack.title}</span>

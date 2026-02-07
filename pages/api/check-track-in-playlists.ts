@@ -5,7 +5,7 @@ export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
-  const { trackId } = req.query;
+  const { trackId, playlistId } = req.query;
   const token = req.cookies.soundcloud_token;
 
   if (!token) {
@@ -17,6 +17,41 @@ export default async function handler(
   }
 
   try {
+    const trackIdNum = parseInt(trackId as string);
+
+    if (playlistId) {
+      const targetPlaylistId = parseInt(playlistId as string);
+      try {
+        const tracksResponse = await axios.get(
+          `https://api.soundcloud.com/playlists/${targetPlaylistId}/tracks`,
+          {
+            headers: {
+              Authorization: `OAuth ${token}`,
+            },
+            params: {
+              limit: 200,
+              linked_partitioning: 1,
+            },
+            timeout: 5000,
+          },
+        );
+
+        const tracks = tracksResponse.data.collection || [];
+        const isInPlaylist = tracks.some((item: any) => {
+          const track = item?.track || item;
+          return track?.id === trackIdNum;
+        });
+
+        return res.json({
+          isInAnyPlaylist: isInPlaylist,
+          playlistsWithTrack: isInPlaylist ? [{ id: targetPlaylistId }] : [],
+        });
+      } catch (error) {
+        console.warn(`Could not check playlist ${playlistId}`);
+        return res.json({ isInAnyPlaylist: false, playlistsWithTrack: [] });
+      }
+    }
+
     // Fetch user's playlists
     const playlistsResponse = await axios.get(
       "https://api.soundcloud.com/me/playlists",
@@ -33,7 +68,6 @@ export default async function handler(
     );
 
     const playlists = playlistsResponse.data.collection || [];
-    const trackIdNum = parseInt(trackId as string);
     const playlistsWithTrack: any[] = [];
 
     // Check each playlist for the track

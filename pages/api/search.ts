@@ -5,13 +5,18 @@ export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
-  const { q, nextHref } = req.query;
+  const { q, nextHref, limit, suggest } = req.query;
   const token = req.cookies.soundcloud_token;
 
   if (!q && !nextHref) {
-    return res
-      .status(400)
-      .json({ collection: [], hasMore: false, nextHref: null });
+    return res.status(400).json({
+      collection: [],
+      hasMore: false,
+      nextHref: null,
+      artists: [],
+      albums: [],
+      playlists: [],
+    });
   }
 
   if (!token) {
@@ -20,47 +25,123 @@ export default async function handler(
       collection: [],
       hasMore: false,
       nextHref: null,
+      artists: [],
+      albums: [],
+      playlists: [],
     });
   }
 
   try {
     console.log("🔍 Searching:", q, "using nextHref:", !!nextHref);
 
-    // Try multiple search strategies
-    let response;
+    const isSuggest =
+      suggest === "1" ||
+      suggest === "true" ||
+      suggest === "yes" ||
+      suggest === "on";
+    const requestedLimit = Number(limit);
+    const trackLimit = Math.min(
+      Number.isFinite(requestedLimit)
+        ? Math.max(1, requestedLimit)
+        : isSuggest
+          ? 8
+          : 200,
+      200,
+    );
+    const sectionLimit = isSuggest ? Math.min(trackLimit, 10) : 50;
+
     let collection = [];
     let responseNextHref = null;
+    let artists: any[] = [];
+    let albums: any[] = [];
+    let playlists: any[] = [];
 
-    // If nextHref provided, use it directly
     if (nextHref && typeof nextHref === "string") {
       console.log("📍 Following next_href pagination...");
-      response = await axios.get(nextHref, {
+      const response = await axios.get(nextHref, {
         headers: {
           Authorization: `OAuth ${token}`,
         },
         timeout: 10000,
       });
-    } else {
-      // Initial search
-      console.log("🔍 Starting new search for:", q);
-      response = await axios.get("https://api.soundcloud.com/tracks", {
-        headers: {
-          Authorization: `OAuth ${token}`,
-        },
-        params: {
-          q,
-          limit: 200,
-          linked_partitioning: 1,
-          access: "playable",
-        },
-        timeout: 10000,
-      });
-    }
 
-    collection = Array.isArray(response.data)
-      ? response.data
-      : response.data?.collection || [];
-    responseNextHref = response.data?.next_href || null;
+      collection = Array.isArray(response.data)
+        ? response.data
+        : response.data?.collection || [];
+      responseNextHref = response.data?.next_href || null;
+    } else {
+      console.log("🔍 Starting new search for:", q);
+
+      const [trackResponse, userResponse, playlistResponse] = await Promise.all(
+        [
+          axios.get("https://api.soundcloud.com/tracks", {
+            headers: {
+              Authorization: `OAuth ${token}`,
+            },
+            params: {
+              q,
+              limit: trackLimit,
+              linked_partitioning: 1,
+              access: "playable",
+            },
+            timeout: 10000,
+          }),
+          axios.get("https://api.soundcloud.com/users", {
+            headers: {
+              Authorization: `OAuth ${token}`,
+            },
+            params: {
+              q,
+              limit: sectionLimit,
+            },
+            timeout: 10000,
+          }),
+          axios.get("https://api.soundcloud.com/playlists", {
+            headers: {
+              Authorization: `OAuth ${token}`,
+            },
+            params: {
+              q,
+              limit: sectionLimit,
+              linked_partitioning: 1,
+            },
+            timeout: 10000,
+          }),
+        ],
+      );
+
+      collection = Array.isArray(trackResponse.data)
+        ? trackResponse.data
+        : trackResponse.data?.collection || [];
+      responseNextHref = trackResponse.data?.next_href || null;
+
+      const userCollection = Array.isArray(userResponse.data)
+        ? userResponse.data
+        : userResponse.data?.collection || [];
+      artists = [...userCollection].sort(
+        (a: any, b: any) => (b.followers_count || 0) - (a.followers_count || 0),
+      );
+
+      const setCollection = Array.isArray(playlistResponse.data)
+        ? playlistResponse.data
+        : playlistResponse.data?.collection || [];
+      const sortedSets = [...setCollection].sort((a: any, b: any) => {
+        const aScore =
+          (a.likes_count || a.favoritings_count || 0) * 10 +
+          (a.playback_count || 0);
+        const bScore =
+          (b.likes_count || b.favoritings_count || 0) * 10 +
+          (b.playback_count || 0);
+        return bScore - aScore;
+      });
+
+      albums = sortedSets.filter(
+        (set: any) => set.is_album || set.set_type === "album",
+      );
+      playlists = sortedSets.filter(
+        (set: any) => !(set.is_album || set.set_type === "album"),
+      );
+    }
 
     console.log(
       "✅ Results:",
@@ -105,6 +186,9 @@ export default async function handler(
       collection,
       hasMore: !!responseNextHref,
       nextHref: responseNextHref,
+      artists,
+      albums,
+      playlists,
     });
   } catch (error: any) {
     console.error(
@@ -119,6 +203,9 @@ export default async function handler(
         collection: [],
         hasMore: false,
         nextHref: null,
+        artists: [],
+        albums: [],
+        playlists: [],
       });
     }
 
@@ -126,6 +213,9 @@ export default async function handler(
       collection: [],
       hasMore: false,
       nextHref: null,
+      artists: [],
+      albums: [],
+      playlists: [],
     });
   }
 }

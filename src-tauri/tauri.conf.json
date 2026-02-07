@@ -3,10 +3,9 @@
   "version": "1.0.0",
   "identifier": "com.soundcloudy.app",
   "build": {
-    "beforeBuildCommand": "",
+    "beforeBuildCommand": "npm run build",
     "beforeDevCommand": "npm run dev",
-    "devUrl": "https://soundcloudy.vercel.app",
-    "frontendDist": "../out"
+    "devUrl": "http://localhost:3000"
   },
   "app": {
     "windows": [
@@ -26,9 +25,8 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["msi"],
+    "targets": ["nsis"],
     "icon": ["icons/icon.ico"],
-    "externalBin": ["node"],
-    "resources": []
+    "resources": ["../.next/standalone", "../.next/static", "../public"]
   }
 }
