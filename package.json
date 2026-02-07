@@ -1,6 +1,9 @@
 {
   "type": "module",
   "name": "soundcloudy",
+  "version": "0.1.0",
+  "description": "A SoundCloud music player",
+  "author": "Soundcloudy",
   "main": "electron/main.cjs",
   "scripts": {
     "dev": "next dev",

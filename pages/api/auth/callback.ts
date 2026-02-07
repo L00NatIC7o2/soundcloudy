@@ -76,14 +76,15 @@ export default async function handler(
 
     if (state === "electron") {
       const nonce = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-      const store = globalThis.__scAuthBridgeStore || new Map();
+      const store: Map<string, any> =
+        (globalThis as any).__scAuthBridgeStore || new Map();
       store.set(nonce, {
         access_token,
         refresh_token,
         expires_in: expires_in || 3600,
         created_at: Date.now(),
       });
-      globalThis.__scAuthBridgeStore = store;
+      (globalThis as any).__scAuthBridgeStore = store;
 
       res.setHeader("Content-Type", "text/html");
       res.status(200).send(`

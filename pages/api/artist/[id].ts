@@ -1,6 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import axios from "axios";
-import puppeteer from "puppeteer";
+import puppeteer, { type Browser, type Page } from "puppeteer";
 
 const artistCache = new Map<
   string,
@@ -9,7 +9,7 @@ const artistCache = new Map<
 const CACHE_TTL_MS = 60_000;
 const BANNER_NAV_TIMEOUT_MS = 10_000;
 const BANNER_WAIT_TIMEOUT_MS = 3_000;
-let browserPromise: Promise<puppeteer.Browser> | null = null;
+let browserPromise: Promise<Browser> | null = null;
 
 const getBrowser = async () => {
   if (!browserPromise) {
@@ -68,7 +68,7 @@ export default async function handler(
     const verified = Boolean(user.verified || user.badges?.verified);
     const fetchBanner = async () => {
       let banner_url = null;
-      let page: puppeteer.Page | null = null;
+      let page: Page | null = null;
       try {
         const browser = await getBrowser();
         page = await browser.newPage();
@@ -138,7 +138,7 @@ export default async function handler(
       let firstRequest = true;
 
       while (nextUrl && items.length < maxItems) {
-        const response = await axios.get(nextUrl, {
+        const response: any = await axios.get(nextUrl, {
           headers: {
             Authorization: `OAuth ${token}`,
           },
