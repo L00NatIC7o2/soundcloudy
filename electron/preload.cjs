@@ -3,6 +3,8 @@ const { contextBridge, ipcRenderer } = require("electron");
 contextBridge.exposeInMainWorld("electronAPI", {
   togglePlayPause: () => ipcRenderer.send("player-toggle"),
   openExternal: (url) => ipcRenderer.invoke("open-external", url),
+  captureHistorySession: () => ipcRenderer.invoke("history-capture"),
+  scrapeHistoryUrls: () => ipcRenderer.invoke("history-scrape"),
   windowControls: {
     minimize: () => ipcRenderer.invoke("window-minimize"),
     maximizeToggle: () => ipcRenderer.invoke("window-maximize-toggle"),

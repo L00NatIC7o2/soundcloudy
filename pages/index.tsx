@@ -48,6 +48,13 @@ export default function Home() {
   const [userProfile, setUserProfile] = useState<any>(null);
   const [profilePlaylists, setProfilePlaylists] = useState<any[]>([]);
   const [profileAlbums, setProfileAlbums] = useState<any[]>([]);
+  const [listeningHistory, setListeningHistory] = useState<any[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historySyncing, setHistorySyncing] = useState(false);
+  const [historySyncMessage, setHistorySyncMessage] = useState<string | null>(
+    null,
+  );
+  const [historyError, setHistoryError] = useState<string | null>(null);
   const [viewingArtist, setViewingArtist] = useState(false);
   const [selectedArtist, setSelectedArtist] = useState<any>(null);
   const [artistTracks, setArtistTracks] = useState<any[]>([]);
@@ -60,7 +67,6 @@ export default function Home() {
   const [libraryPlaylists, setLibraryPlaylists] = useState<any[]>([]);
   const [libraryLoading, setLibraryLoading] = useState(false);
   const [sectionLoading, setSectionLoading] = useState(false);
-  // Removed Genius cache state
   const [searchOffset, setSearchOffset] = useState<number>(0);
   const [searchHasMore, setSearchHasMore] = useState<boolean>(false);
   const [searchNextHref, setSearchNextHref] = useState<string | null>(null);
@@ -143,13 +149,12 @@ export default function Home() {
     let rafId: number | null = null;
 
     const handleScroll = () => {
-      if (rafId) return; // Skip if already queued
+      if (rafId) return;
 
       rafId = requestAnimationFrame(() => {
         const maxCollapse = 200;
         const scrollY = window.scrollY;
 
-        // Smooth progressive collapse
         const progress = Math.min(1, Math.max(0, scrollY / maxCollapse));
 
         document.documentElement.style.setProperty(
@@ -191,6 +196,33 @@ export default function Home() {
       isPlaying: prev.trackId === currentTrack?.id ? prev.isPlaying : false,
     }));
   }, [currentTrack?.id]);
+
+  useEffect(() => {
+    const isEditableTarget = (target: EventTarget | null) => {
+      if (!(target instanceof HTMLElement)) return false;
+      const tagName = target.tagName.toLowerCase();
+      if (
+        tagName === "input" ||
+        tagName === "textarea" ||
+        tagName === "select"
+      ) {
+        return true;
+      }
+      return target.isContentEditable;
+    };
+
+    const handleSpacebar = (event: KeyboardEvent) => {
+      if (event.code !== "Space" && event.key !== " ") return;
+      if (isEditableTarget(event.target)) return;
+      event.preventDefault();
+      window.dispatchEvent(new CustomEvent("player-toggle"));
+    };
+
+    window.addEventListener("keydown", handleSpacebar, { passive: false });
+    return () => {
+      window.removeEventListener("keydown", handleSpacebar);
+    };
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -526,6 +558,9 @@ export default function Home() {
     setProfilePlaylists([]);
     setProfileAlbums([]);
     setPlaylistTracks([]);
+    setListeningHistory([]);
+    setHistoryLoading(false);
+    setHistoryError(null);
 
     try {
       const response = await fetch("/api/auth/me");
@@ -542,12 +577,24 @@ export default function Home() {
     } finally {
       setSectionLoading(false);
     }
+
+    // Listening history is fetched only via the Sync History button.
     if (!skipHistory) {
       pushTabState("profile");
     }
   };
 
-  // Handle artist click
+  // const handleHistorySync = async () => {
+  //   if (typeof window === "undefined") return;
+  //   const api = (window as any).electronAPI;
+  //   if (!api?.scrapeHistoryUrls) {
+  //     setHistorySyncMessage("History fetch is available in the desktop app.");
+  //     return;
+  //   }
+  //   setHistorySyncing(true);
+  //   setHistorySyncMessage(
+  //     "Open the SoundCloud window, scroll if needed, then close it.",
+  //   );
   const handleArtistClick = async (
     artist: any,
     skipHistory = false,
@@ -635,7 +682,6 @@ export default function Home() {
     [query],
   );
 
-  // Handle search with pagination
   const handleSearch = async (
     nextPageHref: string | null = null,
     overrideQuery?: string,
@@ -1421,7 +1467,6 @@ export default function Home() {
 
   // Removed fetchGeniusMetadata
 
-  // Auth check
   useEffect(() => {
     const checkAuth = async () => {
       try {
@@ -1529,9 +1574,6 @@ export default function Home() {
     return () => window.removeEventListener("mousedown", handleClickOutside);
   }, [showSuggestions]);
 
-  // Removed Genius metadata effect
-
-  // Infinite scroll for search results
   useEffect(() => {
     // Only enable infinite scroll when viewing search results
     if (
@@ -1573,7 +1615,6 @@ export default function Home() {
     viewingTrack,
   ]);
 
-  // Popstate handler for browser back/forward
   useEffect(() => {
     const onPopState = (event: PopStateEvent) => {
       const state = event.state || {};
@@ -2773,6 +2814,94 @@ export default function Home() {
                       </div>
                     </section>
                   )}
+                {viewingProfile && (
+                  <section className="search-section">
+                    <div className="search-section-header">
+                      <h3 className="search-section-title">
+                        Listening History
+                      </h3>
+                    </div>
+                    {historyLoading ? (
+                      <div className="playlist-loading">Loading...</div>
+                    ) : historyError ? (
+                      <div className="playlist-loading">{historyError}</div>
+                    ) : listeningHistory.length === 0 ? (
+                      <div className="playlist-loading">
+                        No listening history yet.
+                      </div>
+                    ) : (
+                      <div className="track-list">
+                        {listeningHistory.map((track: any, index: number) => (
+                          <div
+                            key={`history-${track.id || index}`}
+                            className="track-row"
+                            onClick={() =>
+                              handleTrackClick(
+                                track,
+                                "playlist",
+                                listeningHistory,
+                              )
+                            }
+                            onContextMenu={(event) =>
+                              handleContextMenu(
+                                event,
+                                track,
+                                "playlist",
+                                listeningHistory,
+                              )
+                            }
+                          >
+                            <img
+                              src={
+                                track.artwork_url?.replace(
+                                  "-large",
+                                  "-t200x200",
+                                ) || "/placeholder.png"
+                              }
+                              alt={track.title}
+                              className="track-row-cover"
+                              loading="lazy"
+                              decoding="async"
+                            />
+                            <div className="track-row-info">
+                              <div className="track-row-title">
+                                {track.title}
+                              </div>
+                              <div
+                                className="track-row-artist"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleArtistClick(track.user);
+                                }}
+                                style={{
+                                  cursor: "pointer",
+                                  textDecoration: "underline",
+                                }}
+                              >
+                                {track.user?.username || "Unknown"}
+                              </div>
+                            </div>
+                            <div className="track-row-duration">
+                              {formatDuration(track.duration)}
+                            </div>
+                            <div className="track-row-year">
+                              {track.created_at
+                                ? getYear(track.created_at)
+                                : "—"}
+                            </div>
+                            <div className="track-row-added">
+                              {track.added_at
+                                ? formatTimeAgo(track.added_at)
+                                : track.created_at
+                                  ? formatTimeAgo(track.created_at)
+                                  : "—"}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </section>
+                )}
                 <div className="track-list">
                   {(viewingProfile
                     ? playlistTracks

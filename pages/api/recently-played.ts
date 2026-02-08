@@ -6,6 +6,14 @@ const getRecentlyPlayed = async (req: NextApiRequest) => {
   const v2ClientId =
     process.env.SOUNDCLOUD_V2_CLIENT_ID || "2-312569-189576713-EF8sAzE2OOkPKj";
   const clientId = v2ClientId || process.env.SOUNDCLOUD_CLIENT_ID;
+  const rawLimit = Array.isArray(req.query.limit)
+    ? req.query.limit[0]
+    : req.query.limit;
+  const parsedLimit = Number(rawLimit);
+  const limit =
+    Number.isFinite(parsedLimit) && parsedLimit > 0
+      ? Math.min(parsedLimit, 200)
+      : 50;
 
   console.log("/api/recently-played debug:", {
     token: token ? token.slice(0, 6) + "..." : undefined,
@@ -24,7 +32,7 @@ const getRecentlyPlayed = async (req: NextApiRequest) => {
     const apiUrl = "https://api-v2.soundcloud.com/me/track_history";
     console.log("Requesting SoundCloud v2 play history:", apiUrl, {
       params: {
-        limit: 50,
+        limit,
         client_id: clientId,
       },
     });
@@ -33,7 +41,7 @@ const getRecentlyPlayed = async (req: NextApiRequest) => {
     try {
       response = await axios.get(apiUrl, {
         params: {
-          limit: 50,
+          limit,
           client_id: clientId,
         },
         headers: {
@@ -46,7 +54,7 @@ const getRecentlyPlayed = async (req: NextApiRequest) => {
         // Fallback to oauth_token param if header auth is rejected
         response = await axios.get(apiUrl, {
           params: {
-            limit: 50,
+            limit,
             client_id: clientId,
             oauth_token: token,
           },
@@ -77,7 +85,7 @@ const getRecentlyPlayed = async (req: NextApiRequest) => {
       try {
         const activitiesUrl = "https://api.soundcloud.com/me/activities";
         const activityResponse = await axios.get(activitiesUrl, {
-          params: { limit: 50 },
+          params: { limit },
           headers: {
             Authorization: `OAuth ${token}`,
           },

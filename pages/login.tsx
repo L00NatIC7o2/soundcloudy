@@ -32,13 +32,7 @@ export default function Login() {
       {error && <div className="login-error">Error: {error}</div>}
 
       <button className="login-button-glass" onClick={handleLogin}>
-        <img
-          src="/logo.png"
-          alt="Soundcloudy"
-          className="login-logo"
-          loading="eager"
-          decoding="async"
-        />
+        Login
       </button>
     </div>
   );

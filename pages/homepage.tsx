@@ -60,15 +60,12 @@ export default function HomePage({
   });
 
   useEffect(() => {
-    // Fetch recently played items (tracks, playlists, albums)
+    setRecentlyPlayed([]);
+
+    // Use recently played items as "more of what you like"
     fetch("/api/recently-played")
       .then((res) => res.json())
-      .then((data) => setRecentlyPlayed(data.items || []));
-
-    // Fetch related tracks ("more of what you like")
-    fetch("/api/related-tracks?for=homepage")
-      .then((res) => res.json())
-      .then((data) => setMoreOfWhatYouLike(data.tracks || []));
+      .then((data) => setMoreOfWhatYouLike((data.items || []).slice(0, 10)));
 
     // Fetch recently released songs from favorite artists (stub, implement endpoint)
     fetch("/api/recently-released")
