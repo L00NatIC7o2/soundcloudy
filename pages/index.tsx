@@ -50,18 +50,7 @@ export default function Home() {
   const [profileAlbums, setProfileAlbums] = useState<any[]>([]);
   const [listeningHistory, setListeningHistory] = useState<any[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
-  const [historySyncing, setHistorySyncing] = useState(false);
-  const [historySyncMessage, setHistorySyncMessage] = useState<string | null>(
-    null,
-  );
-  const [historyLoginLoading, setHistoryLoginLoading] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
-  const [historySettingsOpen, setHistorySettingsOpen] = useState(false);
-  const [historyCacheWarming, setHistoryCacheWarming] = useState(false);
-  const [historyDebugVisible, setHistoryDebugVisible] = useState(false);
-  const [historyDebugDetails, setHistoryDebugDetails] = useState<string | null>(
-    null,
-  );
   const [viewingArtist, setViewingArtist] = useState(false);
   const [selectedArtist, setSelectedArtist] = useState<any>(null);
   const [artistTracks, setArtistTracks] = useState<any[]>([]);
@@ -359,6 +348,54 @@ export default function Home() {
     autoPlayFirst = false,
     navigate = true,
   ) => {
+    // Handle system playlists that need URL resolution
+    if (playlist?.needsResolution && playlist?.permalink_url) {
+      setSectionLoading(true);
+      try {
+        console.log("Resolving system playlist URL:", playlist.permalink_url);
+
+        // Get token from cookies
+        const token = document.cookie
+          .split("; ")
+          .find((row) => row.startsWith("soundcloud_token="))
+          ?.split("=")[1];
+
+        if (!token) {
+          console.error("No auth token found");
+          setSectionLoading(false);
+          return;
+        }
+
+        const response = await fetch(
+          `https://api.soundcloud.com/resolve?url=${encodeURIComponent(playlist.permalink_url)}`,
+          {
+            headers: {
+              Authorization: `OAuth ${token}`,
+            },
+          },
+        );
+
+        if (response.ok) {
+          const resolvedData = await response.json();
+          console.log("Resolved system playlist:", resolvedData);
+
+          // Continue with the resolved playlist
+          playlist = {
+            ...resolvedData,
+            needsResolution: false,
+          };
+        } else {
+          console.error("Failed to resolve system playlist:", response.status);
+          setSectionLoading(false);
+          return;
+        }
+      } catch (error) {
+        console.error("Error resolving system playlist:", error);
+        setSectionLoading(false);
+        return;
+      }
+    }
+
     const resolvedPlaylist = resolvePlaylistItem(playlist);
     if (!resolvedPlaylist?.id) {
       return;
@@ -566,7 +603,7 @@ export default function Home() {
     setProfileAlbums([]);
     setPlaylistTracks([]);
     setListeningHistory([]);
-    setHistoryLoading(false);
+    setHistoryLoading(true);
     setHistoryError(null);
 
     try {
@@ -585,7 +622,9 @@ export default function Home() {
       setSectionLoading(false);
     }
 
-    // Listening history is fetched only via the Sync History button.
+    // Auto-fetch listening history in background
+    fetchListeningHistoryBackground();
+
     if (!skipHistory) {
       pushTabState("profile");
     }
@@ -597,182 +636,82 @@ export default function Home() {
       added_at: item.played_at || item.added_at || null,
     }));
 
-  const fetchHistoryFromApi = async ({
-    force = false,
-    scrape = false,
-    debug = false,
-  }: {
-    force?: boolean;
-    scrape?: boolean;
-    debug?: boolean;
-  } = {}) => {
-    const params = new URLSearchParams({ limit: "100", cache: "1" });
-    if (force) params.set("force", "1");
-    if (scrape) params.set("scrape", "1");
-    if (debug) params.set("debug", "1");
-    const response = await fetch(`/api/listening-history?${params.toString()}`);
-    const data = await response.json();
-    return { response, data };
-  };
-
-  const updateHistoryFromApiResult = (response: Response, data: any) => {
-    if (!response.ok || data?.error) {
-      setHistoryError(data?.error || "Unable to fetch listening history.");
-      if (data?.details || data?.debug) {
-        setHistoryDebugDetails(
-          JSON.stringify(data?.details || data?.debug, null, 2),
-        );
-      }
-      setListeningHistory([]);
-      return false;
-    }
-
-    const items = Array.isArray(data.items) ? data.items : [];
-    const normalized = normalizeHistoryItems(items);
-    setListeningHistory(normalized);
-    setHistorySyncMessage(
-      data?.cached ? "History updated (cached)." : "History updated.",
-    );
-    if (data?.debug) {
-      setHistoryDebugDetails(JSON.stringify(data.debug, null, 2));
-    }
-    return true;
-  };
-
-  const handleHistorySync = async () => {
-    setHistorySyncing(true);
-    setHistorySyncMessage("Refreshing history...");
+  const fetchListeningHistoryBackground = async () => {
     try {
       setHistoryLoading(true);
       setHistoryError(null);
-      setHistoryDebugDetails(null);
-      setHistoryDebugVisible(false);
       await fetch("/api/auth/check");
-      const debugEnabled = historyDebugVisible;
+
       const api = (window as any).electronAPI;
       if (api?.playHistoryViaWeb) {
         const result = await api.playHistoryViaWeb();
         if (result?.error) {
-          const status = result?.status ? ` (status ${result.status})` : "";
-          const message = result?.message ? `: ${result.message}` : "";
-          const debug = result?.debug
-            ? ` [play:${result.debug.play}, track:${result.debug.track || "-"}, act:${result.debug.activity || "-"}, v1:${result.debug.activityV1 || "-"}]`
-            : "";
-          const probeText = Array.isArray(result?.probes)
-            ? ` (probe: ${result.probes
-                .map(
-                  (probe: any) =>
-                    `${probe.label}=${probe.status || "-"}${probe.error ? ":" + probe.error : ""}`,
-                )
-                .join(", ")})`
-            : "";
-          setHistoryError(
-            `${result?.error || "Unable to fetch listening history."}${status}${message}${debug}${probeText}`,
+          // Fallback to server-side scrape on error
+          const response = await fetch(
+            "/api/listening-history?limit=100&scrape=1&cache=1",
           );
-          setHistoryDebugDetails(
-            JSON.stringify(
-              {
-                status: result?.status ?? null,
-                message: result?.message ?? null,
-                source: result?.source ?? result?.fallback ?? null,
-                debug: result?.debug ?? null,
-                probes: result?.probes ?? null,
-              },
-              null,
-              2,
-            ),
-          );
-          setListeningHistory([]);
+          const data = await response.json();
+          if (!response.ok || data?.error) {
+            setHistoryError(
+              data?.error || "Unable to fetch listening history.",
+            );
+            setListeningHistory([]);
+          } else {
+            const items = Array.isArray(data.items) ? data.items : [];
+            const normalized = normalizeHistoryItems(items);
+            setListeningHistory(normalized);
+          }
         } else {
           const items = Array.isArray(result?.items) ? result.items : [];
           const normalized = normalizeHistoryItems(items);
           const shouldScrapeFallback =
             result?.source === "stream" || normalized.length === 0;
           if (shouldScrapeFallback) {
-            const { response, data } = await fetchHistoryFromApi({
-              force: true,
-              scrape: true,
-              debug: debugEnabled,
-            });
-            updateHistoryFromApiResult(response, data);
+            const response = await fetch(
+              "/api/listening-history?limit=100&scrape=1&force=1",
+            );
+            const data = await response.json();
+            if (!response.ok || data?.error) {
+              setHistoryError(
+                data?.error || "Unable to fetch listening history.",
+              );
+              setListeningHistory([]);
+            } else {
+              const apiItems = Array.isArray(data.items) ? data.items : [];
+              const apiNormalized = normalizeHistoryItems(apiItems);
+              setListeningHistory(apiNormalized);
+            }
           } else {
             setListeningHistory(normalized);
-            setHistorySyncMessage("History updated.");
-            if (result?.source || result?.debug || result?.probes) {
-              setHistoryDebugDetails(
-                JSON.stringify(
-                  {
-                    source: result?.source ?? null,
-                    debug: result?.debug ?? null,
-                    probes: result?.probes ?? null,
-                  },
-                  null,
-                  2,
-                ),
-              );
-            }
           }
         }
       } else {
-        const { response, data } = await fetchHistoryFromApi({
-          debug: debugEnabled,
-        });
-        const updated = updateHistoryFromApiResult(response, data);
-        if (updated && data?.cached) {
-          const warm = await fetchHistoryFromApi({
-            force: true,
-            debug: debugEnabled,
-          });
-          updateHistoryFromApiResult(warm.response, warm.data);
+        // Web fallback: try cache first, then force refresh if needed
+        const response = await fetch(
+          "/api/listening-history?limit=100&cache=1",
+        );
+        const data = await response.json();
+        if (!response.ok || data?.error) {
+          setHistoryError(data?.error || "Unable to fetch listening history.");
+          setListeningHistory([]);
+        } else {
+          const items = Array.isArray(data.items) ? data.items : [];
+          const normalized = normalizeHistoryItems(items);
+          setListeningHistory(normalized);
+
+          // Warm cache in background if we got cached data
+          if (data?.cached) {
+            fetch("/api/listening-history?limit=100&force=1&cache=1").catch(
+              () => {},
+            );
+          }
         }
       }
     } catch (error) {
-      setHistorySyncMessage("Failed to fetch listening history.");
+      console.error("Failed to fetch listening history:", error);
       setHistoryError("Unable to fetch listening history.");
     } finally {
       setHistoryLoading(false);
-      setHistorySyncing(false);
-    }
-  };
-
-  const handleHistoryCacheWarm = async () => {
-    setHistoryCacheWarming(true);
-    setHistorySyncMessage("Warming history cache...");
-    try {
-      setHistoryLoading(true);
-      setHistoryError(null);
-      const { response, data } = await fetchHistoryFromApi({
-        force: true,
-        scrape: true,
-        debug: historyDebugVisible,
-      });
-      updateHistoryFromApiResult(response, data);
-    } catch (_error) {
-      setHistorySyncMessage("Failed to warm history cache.");
-      setHistoryError("Unable to fetch listening history.");
-    } finally {
-      setHistoryLoading(false);
-      setHistoryCacheWarming(false);
-    }
-  };
-
-  const handleHistoryWebLogin = async () => {
-    const api = (window as any).electronAPI;
-    if (!api?.historyWebLogin) return;
-    setHistoryLoginLoading(true);
-    setHistorySyncMessage("Open SoundCloud login window...");
-    setHistoryError(null);
-    try {
-      const result = await api.historyWebLogin();
-      if (result?.ok) {
-        setHistorySyncMessage("History login complete. You can sync now.");
-      } else {
-        setHistorySyncMessage(result?.error || "History login cancelled.");
-      }
-    } catch (_error) {
-      setHistorySyncMessage("History login failed.");
-    } finally {
-      setHistoryLoginLoading(false);
     }
   };
   const handleArtistClick = async (
@@ -2730,72 +2669,6 @@ export default function Home() {
                       </div>
                     </div>
                     <div className="profile-header-right">
-                      {viewingProfile && (
-                        <div className="history-sync">
-                          <button
-                            type="button"
-                            className="history-sync-btn history-login-btn"
-                            onClick={handleHistoryWebLogin}
-                            disabled={historyLoginLoading}
-                          >
-                            {historyLoginLoading
-                              ? "Opening login..."
-                              : "Enable History"}
-                          </button>
-                          <button
-                            type="button"
-                            className="history-sync-btn"
-                            onClick={handleHistorySync}
-                            disabled={historySyncing}
-                          >
-                            {historySyncing ? "Syncing..." : "Sync History"}
-                          </button>
-                          <button
-                            type="button"
-                            className="history-sync-btn history-settings-toggle"
-                            onClick={() =>
-                              setHistorySettingsOpen((prev) => !prev)
-                            }
-                          >
-                            {historySettingsOpen
-                              ? "Close History Settings"
-                              : "History Settings"}
-                          </button>
-                          {historySyncMessage && (
-                            <div className="history-sync-status">
-                              {historySyncMessage}
-                            </div>
-                          )}
-                          {historySettingsOpen && (
-                            <div className="history-settings-panel">
-                              <label className="history-settings-row">
-                                <input
-                                  type="checkbox"
-                                  checked={historyDebugVisible}
-                                  onChange={(event) =>
-                                    setHistoryDebugVisible(event.target.checked)
-                                  }
-                                />
-                                <span>Show history debug</span>
-                              </label>
-                              <button
-                                type="button"
-                                className="history-sync-btn history-warm-btn"
-                                onClick={handleHistoryCacheWarm}
-                                disabled={
-                                  historyCacheWarming ||
-                                  historyLoading ||
-                                  historySyncing
-                                }
-                              >
-                                {historyCacheWarming
-                                  ? "Warming..."
-                                  : "Warm Cache"}
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      )}
                       <div className="profile-header-stats">
                         <div className="profile-stat">
                           <div className="profile-stat-value">
@@ -3106,13 +2979,6 @@ export default function Home() {
                         Listening History
                       </h3>
                     </div>
-                    {historySettingsOpen &&
-                      historyDebugVisible &&
-                      historyDebugDetails && (
-                        <pre className="history-debug-panel">
-                          {historyDebugDetails}
-                        </pre>
-                      )}
                     {historyLoading ? (
                       <div className="playlist-loading">Loading...</div>
                     ) : historyError ? (

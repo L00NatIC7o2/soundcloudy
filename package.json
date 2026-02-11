@@ -14,8 +14,7 @@
     "electron:pack": "npm run build && electron-builder --dir",
     "tauri": "tauri",
     "tauri-dev": "tauri dev",
-    "tauri-build": "tauri build",
-    "update-sc-creds": "node scripts/update-sc-credentials.js"
+    "tauri-build": "tauri build"
   },
   "dependencies": {
     "axios": "^1.13.4",

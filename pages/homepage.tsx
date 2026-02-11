@@ -39,10 +39,8 @@ export default function HomePage({
   onNext: () => void;
   onTrackEnd: () => void;
 }) {
-  const [recentlyPlayed, setRecentlyPlayed] = useState<any[]>([]);
-  const [moreOfWhatYouLike, setMoreOfWhatYouLike] = useState<any[]>([]);
-  const [recentlyReleased, setRecentlyReleased] = useState<any[]>([]);
-  const [recommendedAlbums, setRecommendedAlbums] = useState<any[]>([]);
+  const [discoverSections, setDiscoverSections] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
 
   const getCardCover = (item: any) => {
     if (!item) return "/placeholder.png";
@@ -60,303 +58,146 @@ export default function HomePage({
   });
 
   useEffect(() => {
-    setRecentlyPlayed([]);
+    setLoading(true);
 
-    // Use recently played items as "more of what you like"
-    fetch("/api/recently-played")
+    // Fetch discover page data (personalized playlists, stations, etc.)
+    fetch("/api/discover")
       .then((res) => res.json())
-      .then((data) => setMoreOfWhatYouLike((data.items || []).slice(0, 10)));
-
-    // Fetch recently released songs from favorite artists (stub, implement endpoint)
-    fetch("/api/recently-released")
-      .then((res) => res.json())
-      .then((data) => setRecentlyReleased(data.tracks || []));
-
-    // Fetch recommended albums from favorite artists (stub, implement endpoint)
-    fetch("/api/recommended-albums")
-      .then((res) => res.json())
-      .then((data) => setRecommendedAlbums(data.albums || []));
+      .then((data) => {
+        console.log("Discover API response:", data);
+        if (data.sections && Array.isArray(data.sections)) {
+          console.log("Setting discover sections:", data.sections.length);
+          setDiscoverSections(data.sections);
+        } else {
+          console.warn("No sections in discover response");
+        }
+      })
+      .catch((error) => {
+        console.error("Error fetching discover data:", error);
+      })
+      .finally(() => {
+        setLoading(false);
+      });
   }, []);
 
-  const handleItemClick = (item: any) => {
+  const handleItemClick = (item: any, trackList: any[]) => {
     if (item.kind === "track") {
-      const tracks = recentlyPlayed.filter((i) => i.kind === "track");
-      onTrackClick(item, "playlist", tracks);
-    } else if (item.kind === "playlist" || item.kind === "playlist-like") {
-      onPlaylistClick?.(item);
+      onTrackClick(item, "search", trackList);
+    } else if (
+      item.kind === "playlist" ||
+      item.kind === "playlist-like" ||
+      item.kind === "system-playlist"
+    ) {
+      // For system playlists (Daily Drops, stations, etc.), we need to resolve the URL first
+      if (item.permalink_url) {
+        // Let the parent handle playlist resolution and loading
+        onPlaylistClick?.({
+          ...item,
+          needsResolution: true, // Flag to indicate we need to resolve this URL
+        });
+      } else {
+        onPlaylistClick?.(item);
+      }
     }
+  };
+
+  const renderSection = (section: any) => {
+    if (!section.items || section.items.length === 0) return null;
+
+    return (
+      <section key={section.title} className="homepage-section">
+        <h2>{section.title}</h2>
+        <div className="horizontal-scroll">
+          {section.items.map((item: any, index: number) => {
+            const key = item.id || `${section.title}-${index}`;
+            const tracks = section.items.filter((i: any) => i.kind === "track");
+
+            return (
+              <div
+                key={key}
+                className="track-card home-track-card"
+                onClick={() => handleItemClick(item, section.items)}
+                onContextMenu={(event) =>
+                  onTrackContextMenu?.(event, item, "search", section.items)
+                }
+              >
+                <button
+                  type="button"
+                  className={`card-play-btn ${
+                    isItemPlaying?.(item) ? "pause" : "play"
+                  }`}
+                  style={getCardCoverStyle(item)}
+                  onClick={(event) =>
+                    onCardPlayClick?.(event, item, "search", section.items)
+                  }
+                  aria-label={isItemPlaying?.(item) ? "Pause" : "Play"}
+                >
+                  {isItemPlaying?.(item) ? (
+                    <svg
+                      width="40"
+                      height="40"
+                      viewBox="0 0 24 24"
+                      fill="currentColor"
+                    >
+                      <rect x="6" y="4" width="4" height="16" />
+                      <rect x="14" y="4" width="4" height="16" />
+                    </svg>
+                  ) : (
+                    <svg
+                      width="40"
+                      height="40"
+                      viewBox="0 0 24 24"
+                      fill="currentColor"
+                    >
+                      <polygon points="5 3 19 12 5 21 5 3" />
+                    </svg>
+                  )}
+                </button>
+                <img
+                  src={getCardCover(item)}
+                  alt={item.title}
+                  className="track-cover home-track-cover"
+                  draggable={false}
+                />
+                <div
+                  className="track-info clickable"
+                  onClick={(event) => onInfoClick?.(event, item)}
+                >
+                  <div className="track-title">{item.title}</div>
+                  <div className="track-artist">
+                    {item.kind === "track" && (item.username || "Unknown")}
+                    {(item.kind === "playlist" ||
+                      item.kind === "playlist-like" ||
+                      item.kind === "system-playlist") &&
+                      `Playlist • ${item.track_count || 0} tracks`}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+    );
   };
 
   return (
     <div className="homepage-container">
-      <section className="homepage-section">
-        <h2>Recently Played</h2>
-        <div className="horizontal-scroll">
-          {recentlyPlayed.map((item) => (
-            <div
-              key={item.id}
-              className="track-card home-track-card"
-              onClick={() => handleItemClick(item)}
-              onContextMenu={(event) =>
-                onTrackContextMenu?.(event, item, "playlist", recentlyPlayed)
-              }
-            >
-              <button
-                type="button"
-                className={`card-play-btn ${
-                  isItemPlaying?.(item) ? "pause" : "play"
-                }`}
-                style={getCardCoverStyle(item)}
-                onClick={(event) =>
-                  onCardPlayClick?.(event, item, "playlist", recentlyPlayed)
-                }
-                aria-label={isItemPlaying?.(item) ? "Pause" : "Play"}
-              >
-                {isItemPlaying?.(item) ? (
-                  <svg
-                    width="40"
-                    height="40"
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
-                  >
-                    <rect x="6" y="4" width="4" height="16" />
-                    <rect x="14" y="4" width="4" height="16" />
-                  </svg>
-                ) : (
-                  <svg
-                    width="40"
-                    height="40"
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
-                  >
-                    <polygon points="5 3 19 12 5 21 5 3" />
-                  </svg>
-                )}
-              </button>
-              <img
-                src={
-                  item.artwork_url?.replace("-large", "-t500x500") ||
-                  "/placeholder.png"
-                }
-                alt={item.title}
-                className="track-cover home-track-cover"
-                draggable={false}
-              />
-              <div
-                className="track-info clickable"
-                onClick={(event) => onInfoClick?.(event, item)}
-              >
-                <div className="track-title">{item.title}</div>
-                <div className="track-artist">
-                  {item.kind === "track" && (item.user?.username || "Unknown")}
-                  {(item.kind === "playlist" ||
-                    item.kind === "playlist-like") &&
-                    `Playlist • ${item.track_count || 0} tracks`}
-                </div>
-              </div>
-            </div>
-          ))}
+      {loading && (
+        <div className="homepage-loading">
+          <p>Loading personalized content...</p>
         </div>
-      </section>
-
-      <section className="homepage-section">
-        <h2>More of What You Like</h2>
-        <div className="horizontal-scroll">
-          {moreOfWhatYouLike.map((track) => (
-            <div
-              key={track.id}
-              className="track-card home-track-card"
-              onClick={() => onTrackClick(track, "search", moreOfWhatYouLike)}
-              onContextMenu={(event) =>
-                onTrackContextMenu?.(event, track, "search", moreOfWhatYouLike)
-              }
-            >
-              <button
-                type="button"
-                className={`card-play-btn ${
-                  isItemPlaying?.(track) ? "pause" : "play"
-                }`}
-                style={getCardCoverStyle(track)}
-                onClick={(event) =>
-                  onCardPlayClick?.(event, track, "search", moreOfWhatYouLike)
-                }
-                aria-label={isItemPlaying?.(track) ? "Pause" : "Play"}
-              >
-                {isItemPlaying?.(track) ? (
-                  <svg
-                    width="40"
-                    height="40"
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
-                  >
-                    <rect x="6" y="4" width="4" height="16" />
-                    <rect x="14" y="4" width="4" height="16" />
-                  </svg>
-                ) : (
-                  <svg
-                    width="40"
-                    height="40"
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
-                  >
-                    <polygon points="5 3 19 12 5 21 5 3" />
-                  </svg>
-                )}
-              </button>
-              <img
-                src={
-                  track.artwork_url?.replace("-large", "-t500x500") ||
-                  "/placeholder.png"
-                }
-                alt={track.title}
-                className="track-cover home-track-cover"
-                draggable={false}
-              />
-              <div
-                className="track-info clickable"
-                onClick={(event) => onInfoClick?.(event, track)}
-              >
-                <div className="track-title">{track.title}</div>
-                <div className="track-artist">
-                  {track.user?.username || "Unknown"}
-                </div>
-              </div>
-            </div>
-          ))}
+      )}
+      {!loading && discoverSections.length === 0 && (
+        <div className="homepage-empty">
+          <p>
+            Loading your personalized content...
+            <br />
+            If this persists, check the browser console for errors or try
+            refreshing.
+          </p>
         </div>
-      </section>
-
-      <section className="homepage-section">
-        <h2>Recently Released</h2>
-        <div className="horizontal-scroll">
-          {recentlyReleased.map((track) => (
-            <div
-              key={track.id}
-              className="track-card home-track-card"
-              onClick={() => onTrackClick(track, "search", recentlyReleased)}
-              onContextMenu={(event) =>
-                onTrackContextMenu?.(event, track, "search", recentlyReleased)
-              }
-            >
-              <button
-                type="button"
-                className={`card-play-btn ${
-                  isItemPlaying?.(track) ? "pause" : "play"
-                }`}
-                style={getCardCoverStyle(track)}
-                onClick={(event) =>
-                  onCardPlayClick?.(event, track, "search", recentlyReleased)
-                }
-                aria-label={isItemPlaying?.(track) ? "Pause" : "Play"}
-              >
-                {isItemPlaying?.(track) ? (
-                  <svg
-                    width="40"
-                    height="40"
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
-                  >
-                    <rect x="6" y="4" width="4" height="16" />
-                    <rect x="14" y="4" width="4" height="16" />
-                  </svg>
-                ) : (
-                  <svg
-                    width="40"
-                    height="40"
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
-                  >
-                    <polygon points="5 3 19 12 5 21 5 3" />
-                  </svg>
-                )}
-              </button>
-              <img
-                src={
-                  track.artwork_url?.replace("-large", "-t500x500") ||
-                  "/placeholder.png"
-                }
-                alt={track.title}
-                className="track-cover home-track-cover"
-                draggable={false}
-              />
-              <div
-                className="track-info clickable"
-                onClick={(event) => onInfoClick?.(event, track)}
-              >
-                <div className="track-title">{track.title}</div>
-                <div className="track-artist">
-                  {track.user?.username || "Unknown"}
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="homepage-section">
-        <h2>Recommended Albums</h2>
-        <div className="horizontal-scroll">
-          {recommendedAlbums.map((album) => (
-            <div
-              key={album.id}
-              className="track-card home-track-card"
-              onClick={() => onPlaylistClick?.(album)}
-              onContextMenu={(event) =>
-                onTrackContextMenu?.(event, album, "search", recommendedAlbums)
-              }
-            >
-              <button
-                type="button"
-                className="card-play-btn play"
-                style={getCardCoverStyle(album)}
-                onClick={(event) =>
-                  onCardPlayClick?.(event, album, "search", recommendedAlbums)
-                }
-                aria-label="Play"
-              >
-                {isItemPlaying?.(album) ? (
-                  <svg
-                    width="40"
-                    height="40"
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
-                  >
-                    <rect x="6" y="4" width="4" height="16" />
-                    <rect x="14" y="4" width="4" height="16" />
-                  </svg>
-                ) : (
-                  <svg
-                    width="40"
-                    height="40"
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
-                  >
-                    <polygon points="5 3 19 12 5 21 5 3" />
-                  </svg>
-                )}
-              </button>
-              <img
-                src={
-                  album.artwork_url?.replace("-large", "-t500x500") ||
-                  "/placeholder.png"
-                }
-                alt={album.title}
-                className="track-cover home-track-cover"
-                draggable={false}
-              />
-              <div
-                className="track-info clickable"
-                onClick={(event) => onInfoClick?.(event, album)}
-              >
-                <div className="track-title">{album.title}</div>
-                <div className="track-artist">
-                  {album.user?.username || "Unknown"}
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
+      )}
+      {discoverSections.map((section) => renderSection(section))}
     </div>
   );
 }
