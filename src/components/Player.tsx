@@ -36,6 +36,7 @@ const Player = memo(function Player({
   const [isPlaylistMenuOpen, setIsPlaylistMenuOpen] = useState(false);
   const [playlistsWithTrack, setPlaylistsWithTrack] = useState<number[]>([]);
   const [isInAnyPlaylist, setIsInAnyPlaylist] = useState(false);
+  const lastBackClickRef = useRef<number>(0);
   const playlistLabel =
     currentTrack?.playlistTitle ||
     currentTrack?.publisher_metadata?.album_title ||
@@ -366,7 +367,24 @@ const Player = memo(function Player({
   };
 
   const handlePrevious = () => {
-    onPrevious?.();
+    if (!audioRef.current) {
+      onPrevious?.();
+      return;
+    }
+
+    const now = Date.now();
+    const timeSinceLastClick = now - lastBackClickRef.current;
+    const currentTime = audioRef.current.currentTime;
+
+    // If song has played for less than 2 seconds OR back was clicked within 2 seconds, go to previous track
+    if (currentTime < 2 || timeSinceLastClick < 2000) {
+      lastBackClickRef.current = 0;
+      onPrevious?.();
+    } else {
+      // Otherwise, restart the current song
+      lastBackClickRef.current = now;
+      audioRef.current.currentTime = 0;
+    }
   };
 
   const handleNext = () => {

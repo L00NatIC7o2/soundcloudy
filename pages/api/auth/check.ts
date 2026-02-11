@@ -16,6 +16,52 @@ export default async function handler(
       !!refreshToken,
     );
 
+    if (!token && refreshToken) {
+      try {
+        const params = new URLSearchParams({
+          client_id: process.env.SOUNDCLOUD_CLIENT_ID!,
+          client_secret: process.env.SOUNDCLOUD_CLIENT_SECRET!,
+          grant_type: "refresh_token",
+          refresh_token: refreshToken,
+        });
+
+        const refreshResponse = await axios.post(
+          "https://api.soundcloud.com/oauth2/token",
+          params.toString(),
+          {
+            headers: {
+              "Content-Type": "application/x-www-form-urlencoded",
+            },
+          },
+        );
+
+        const newToken = refreshResponse.data.access_token;
+        const newRefreshToken =
+          refreshResponse.data.refresh_token || refreshToken;
+        const expiresIn = refreshResponse.data.expires_in || 3600;
+
+        const cookies = [
+          `soundcloud_token=${newToken}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${expiresIn}`,
+          `soundcloud_refresh_token=${newRefreshToken}; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000`,
+        ];
+
+        res.setHeader("Set-Cookie", cookies);
+        return res.json({ authenticated: true });
+      } catch (refreshError: any) {
+        console.error(
+          "Token refresh failed:",
+          refreshError.response?.data || refreshError.message,
+        );
+        res.setHeader("Set-Cookie", [
+          "soundcloud_token=; Path=/; Max-Age=0",
+          "soundcloud_refresh_token=; Path=/; Max-Age=0",
+        ]);
+        return res
+          .status(401)
+          .json({ error: "Token expired - please log in again" });
+      }
+    }
+
     if (!token) {
       return res.status(401).json({ error: "Not authenticated" });
     }

@@ -5,10 +5,80 @@ import axios from "axios";
 import puppeteer, { type Browser, type Page } from "puppeteer";
 
 const HISTORY_URL = "https://soundcloud.com/you/history";
+const PLAY_HISTORY_URL = "https://api-v2.soundcloud.com/me/play-history/tracks";
+const PLAY_HISTORY_URL_LEGACY = "https://api-v2.soundcloud.com/me/play-history";
+const PLAY_HISTORY_APP_VERSION =
+  process.env.SOUNDCLOUD_APP_VERSION || "1770366292";
+const PLAY_HISTORY_LOCALE = process.env.SOUNDCLOUD_APP_LOCALE || "en";
 const NAV_TIMEOUT_MS = 15000;
 const WAIT_TIMEOUT_MS = 5000;
 let browserPromise: Promise<Browser> | null = null;
 const HISTORY_COOKIE_ENV = "SOUNDCLOUD_HISTORY_COOKIE_PATH";
+const FALLBACK_CLIENT_ID = "BecG5WJDDxYMffAfWcjJleNqrGyJyZhI";
+
+let historyCache: {
+  data: any;
+  timestamp: number;
+  token: string;
+} | null = null;
+const CACHE_TTL_MS = 60000; // 60 seconds
+
+let extractedCredentials: {
+  clientId: string;
+  appVersion: string;
+  timestamp: number;
+} | null = null;
+const CREDENTIALS_CACHE_TTL_MS = 86400000; // 24 hours
+
+const resolveCredentialsCachePath = () => {
+  if (process.env.APPDATA) {
+    return path.join(process.env.APPDATA, "soundcloudy", "sc-credentials.json");
+  }
+  return path.join(process.cwd(), ".soundcloudy", "sc-credentials.json");
+};
+
+const loadCachedCredentials = () => {
+  try {
+    const cachePath = resolveCredentialsCachePath();
+    if (!fs.existsSync(cachePath)) return null;
+    const raw = fs.readFileSync(cachePath, "utf8");
+    const parsed = JSON.parse(raw);
+    if (
+      parsed?.clientId &&
+      parsed?.appVersion &&
+      typeof parsed?.timestamp === "number" &&
+      Date.now() - parsed.timestamp < CREDENTIALS_CACHE_TTL_MS
+    ) {
+      return {
+        clientId: parsed.clientId,
+        appVersion: parsed.appVersion,
+        timestamp: parsed.timestamp,
+      };
+    }
+    return null;
+  } catch (_error) {
+    return null;
+  }
+};
+
+const saveCachedCredentials = (clientId: string, appVersion: string) => {
+  try {
+    const cachePath = resolveCredentialsCachePath();
+    const dir = path.dirname(cachePath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    const data = {
+      clientId,
+      appVersion,
+      timestamp: Date.now(),
+    };
+    fs.writeFileSync(cachePath, JSON.stringify(data, null, 2), "utf8");
+    console.log("✓ Saved extracted SoundCloud credentials to cache");
+  } catch (error) {
+    console.error("Failed to save credentials cache:", error);
+  }
+};
 
 const getBrowser = async () => {
   if (!browserPromise) {
@@ -31,6 +101,174 @@ const getBrowser = async () => {
   }
   return browserPromise;
 };
+
+const getV2ClientId = () => {
+  if (extractedCredentials?.clientId) return extractedCredentials.clientId;
+  const cached = loadCachedCredentials();
+  if (cached?.clientId) {
+    extractedCredentials = cached;
+    return cached.clientId;
+  }
+  return (
+    process.env.SOUNDCLOUD_V2_CLIENT_ID ||
+    process.env.SOUNDCLOUD_CLIENT_ID ||
+    FALLBACK_CLIENT_ID
+  );
+};
+
+const getAppVersion = () => {
+  if (extractedCredentials?.appVersion) return extractedCredentials.appVersion;
+  const cached = loadCachedCredentials();
+  if (cached?.appVersion) {
+    extractedCredentials = cached;
+    return cached.appVersion;
+  }
+  return process.env.SOUNDCLOUD_APP_VERSION || PLAY_HISTORY_APP_VERSION;
+};
+
+const normalizePlayHistoryItem = (item: any) => {
+  const track =
+    item?.track || item?.played_track || item?.item || item?.sound || item;
+  if (!track || track.kind !== "track") return null;
+  return {
+    ...track,
+    played_at:
+      item?.played_at ||
+      item?.playedAt ||
+      item?.played_at_utc ||
+      item?.playback_timestamp ||
+      null,
+  };
+};
+
+const refreshAccessToken = async (refreshToken: string) => {
+  try {
+    const params = new URLSearchParams({
+      client_id: process.env.SOUNDCLOUD_CLIENT_ID!,
+      client_secret: process.env.SOUNDCLOUD_CLIENT_SECRET!,
+      grant_type: "refresh_token",
+      refresh_token: refreshToken,
+    });
+
+    const response = await axios.post(
+      "https://api.soundcloud.com/oauth2/token",
+      params.toString(),
+      {
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+      },
+    );
+
+    return {
+      token: response.data.access_token,
+      refreshToken: response.data.refresh_token || refreshToken,
+      expiresIn: response.data.expires_in || 3600,
+    };
+  } catch (error) {
+    console.error("Token refresh failed:", error);
+    return null;
+  }
+};
+
+const fetchPlayHistory = async (
+  token: string,
+  limit: number,
+  refreshToken?: string,
+) => {
+  const clientId = getV2ClientId();
+  const appVersion = getAppVersion();
+  const params = {
+    limit,
+    client_id: clientId,
+    app_version: appVersion,
+    app_locale: PLAY_HISTORY_LOCALE,
+    oauth_token: token,
+  };
+  let response;
+  const headers = {
+    Authorization: `OAuth ${token}`,
+    Accept: "application/json, text/plain, */*",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Device-Locale": "en-US",
+    "X-Client-Id": clientId,
+    Origin: "https://soundcloud.com",
+    Referer: "https://soundcloud.com/you/history",
+    "User-Agent":
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  };
+
+  try {
+    response = await axios.get(PLAY_HISTORY_URL, {
+      params,
+      headers,
+      timeout: 10000,
+    });
+  } catch (error: any) {
+    const status = error?.response?.status;
+    if (status === 401 || status === 403) {
+      // Try with explicit oauth_token parameter first
+      try {
+        response = await axios.get(PLAY_HISTORY_URL, {
+          params: {
+            ...params,
+            oauth_token: token,
+          },
+          headers,
+          timeout: 10000,
+        });
+      } catch (retryError: any) {
+        // If still 401/403 and we have a refresh token, try refreshing
+        if (
+          (retryError?.response?.status === 401 ||
+            retryError?.response?.status === 403) &&
+          refreshToken
+        ) {
+          const refreshed = await refreshAccessToken(refreshToken);
+          if (refreshed) {
+            // Retry with new token
+            const newHeaders = {
+              ...headers,
+              Authorization: `OAuth ${refreshed.token}`,
+              "X-Client-Id": getV2ClientId(),
+            };
+            response = await axios.get(PLAY_HISTORY_URL, {
+              params: {
+                ...params,
+                oauth_token: refreshed.token,
+              },
+              headers: newHeaders,
+              timeout: 10000,
+            });
+          } else {
+            throw retryError;
+          }
+        } else {
+          throw retryError;
+        }
+      }
+    } else if (status === 404) {
+      response = await axios.get(PLAY_HISTORY_URL_LEGACY, {
+        params,
+        headers,
+        timeout: 10000,
+      });
+    } else {
+      throw error;
+    }
+  }
+
+  const items = response?.data?.collection || [];
+  const tracks = items
+    .map(normalizePlayHistoryItem)
+    .filter((track: any) => track && track.id);
+  return { tracks, rawCount: items.length };
+};
+
+const delay = (ms: number) =>
+  new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 
 const resolveHistoryCookiePath = () => {
   if (process.env[HISTORY_COOKIE_ENV]) {
@@ -163,6 +401,8 @@ const extractTracks = (input: unknown, limit: number) => {
 const extractDomTrackUrls = async (page: Page, limit: number) => {
   const urls = await page.evaluate(() => {
     const selectors = [
+      ".playHistory .historicalPlays_item a[href]",
+      ".historicalPlays_item a[href]",
       "a.soundTitle__title",
       "a.soundTitle__titleLink",
       "a.sound__title",
@@ -286,8 +526,16 @@ const collectSampleNodes = (input: unknown, limit: number) => {
   return samples;
 };
 
-const getListeningHistoryInternal = async (req: NextApiRequest) => {
-  const token = req.cookies.soundcloud_token;
+const getListeningHistoryInternal = async (
+  req: NextApiRequest,
+  tokenOverride?: string,
+  refreshTokenOverride?: string,
+) => {
+  const token = tokenOverride || req.cookies.soundcloud_token;
+  const refreshToken =
+    refreshTokenOverride || req.cookies.soundcloud_refresh_token;
+  const allowScrape = req.query.scrape === "1";
+  const debug = req.query.debug === "1";
   const rawLimit = Array.isArray(req.query.limit)
     ? req.query.limit[0]
     : req.query.limit;
@@ -301,6 +549,45 @@ const getListeningHistoryInternal = async (req: NextApiRequest) => {
     throw new Error("Not authenticated");
   }
 
+  try {
+    const { tracks, rawCount } = await fetchPlayHistory(
+      token,
+      limit,
+      refreshToken,
+    );
+    return {
+      items: tracks,
+      limit,
+      source: "play-history",
+      debug: {
+        rawCount,
+      },
+    };
+  } catch (error: any) {
+    if (!allowScrape) {
+      const status = error?.response?.status || 500;
+      const details = debug
+        ? {
+            status,
+            data: error?.response?.data || null,
+            headers: error?.response?.headers || null,
+            message: error?.message || "Unknown error",
+            url: PLAY_HISTORY_URL,
+            params: {
+              limit,
+              client_id: getV2ClientId(),
+              app_version: PLAY_HISTORY_APP_VERSION,
+              app_locale: PLAY_HISTORY_LOCALE,
+            },
+          }
+        : undefined;
+      const err: any = new Error("Failed to fetch play history.");
+      err.status = status;
+      err.details = details || { status, message: "Unknown error" };
+      throw err;
+    }
+  }
+
   const browser = await getBrowser();
   let page: Page | null = null;
   try {
@@ -308,12 +595,36 @@ const getListeningHistoryInternal = async (req: NextApiRequest) => {
     const jsonResponses: Array<{ url: string; data: any }> = [];
     const responseUrls: string[] = [];
     const fetchUrls: string[] = [];
+    let capturedClientId: string | null = null;
+    let capturedAppVersion: string | null = null;
+
     page.on("response", async (response) => {
       try {
         const url = response.url();
         const requestType = response.request().resourceType();
         if (requestType === "xhr" || requestType === "fetch") {
           fetchUrls.push(url);
+
+          // Extract credentials from SoundCloud API requests
+          if (
+            (url.includes("api-v2.soundcloud.com") ||
+              url.includes("api.soundcloud.com")) &&
+            !capturedClientId
+          ) {
+            try {
+              const urlObj = new URL(url);
+              const clientId = urlObj.searchParams.get("client_id");
+              const appVersion = urlObj.searchParams.get("app_version");
+              if (clientId && !capturedClientId) {
+                capturedClientId = clientId;
+              }
+              if (appVersion && !capturedAppVersion) {
+                capturedAppVersion = appVersion;
+              }
+            } catch (_urlError) {
+              // Ignore URL parsing errors
+            }
+          }
         }
         const headers = response.headers();
         const contentType = headers["content-type"] || "";
@@ -374,6 +685,15 @@ const getListeningHistoryInternal = async (req: NextApiRequest) => {
       secure: true,
       sameSite: "Lax",
     });
+    await page.setCookie({
+      name: "soundcloud_token",
+      value: token,
+      domain: ".soundcloud.com",
+      path: "/",
+      httpOnly: true,
+      secure: true,
+      sameSite: "Lax",
+    });
 
     await page.goto(HISTORY_URL, {
       waitUntil: "domcontentloaded",
@@ -381,6 +701,7 @@ const getListeningHistoryInternal = async (req: NextApiRequest) => {
     });
 
     const acceptCookies = async () => {
+      if (!page) return false;
       try {
         const accepted = await page.evaluate(() => {
           const buttons = Array.from(document.querySelectorAll("button"));
@@ -430,7 +751,7 @@ const getListeningHistoryInternal = async (req: NextApiRequest) => {
           }
         }
         if (accepted) {
-          await page.waitForTimeout(800);
+          await delay(800);
         }
         return accepted;
       } catch (_error) {
@@ -445,9 +766,9 @@ const getListeningHistoryInternal = async (req: NextApiRequest) => {
       const accepted = await acceptCookies();
       if (!accepted) {
         await page.bringToFront();
-        await page.waitForTimeout(8000);
+        await delay(8000);
       }
-      await page.waitForTimeout(800);
+      await delay(800);
       await page.reload({
         waitUntil: "domcontentloaded",
         timeout: NAV_TIMEOUT_MS,
@@ -461,9 +782,9 @@ const getListeningHistoryInternal = async (req: NextApiRequest) => {
     }
 
     try {
-      await page.waitForTimeout(1200);
+      await delay(1200);
       await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-      await page.waitForTimeout(1200);
+      await delay(1200);
     } catch (_error) {
       // Ignore scroll issues.
     }
@@ -496,6 +817,17 @@ const getListeningHistoryInternal = async (req: NextApiRequest) => {
     if (tracks.length === 0 && jsonResponses.length > 0) {
       tracks = extractTracksFromResponses(jsonResponses, limit);
     }
+
+    // Save extracted credentials if found
+    if (capturedClientId && capturedAppVersion) {
+      saveCachedCredentials(capturedClientId, capturedAppVersion);
+      extractedCredentials = {
+        clientId: capturedClientId,
+        appVersion: capturedAppVersion,
+        timestamp: Date.now(),
+      };
+    }
+
     const loggedOut = /signin|login|connect|session/.test(pageUrl);
     return {
       items: tracks,
@@ -539,11 +871,79 @@ export default async function handler(
   res: NextApiResponse,
 ) {
   try {
-    const payload = await getListeningHistory(req);
+    let token = req.cookies.soundcloud_token;
+    const refreshToken = req.cookies.soundcloud_refresh_token;
+    const allowCache = req.query.cache === "1";
+    const forceRefresh = req.query.force === "1";
+
+    if (!token && refreshToken) {
+      try {
+        const params = new URLSearchParams({
+          client_id: process.env.SOUNDCLOUD_CLIENT_ID!,
+          client_secret: process.env.SOUNDCLOUD_CLIENT_SECRET!,
+          grant_type: "refresh_token",
+          refresh_token: refreshToken,
+        });
+
+        const refreshResponse = await axios.post(
+          "https://api.soundcloud.com/oauth2/token",
+          params.toString(),
+          {
+            headers: {
+              "Content-Type": "application/x-www-form-urlencoded",
+            },
+          },
+        );
+
+        token = refreshResponse.data.access_token;
+        const newRefreshToken =
+          refreshResponse.data.refresh_token || refreshToken;
+        const expiresIn = refreshResponse.data.expires_in || 3600;
+
+        const cookies = [
+          `soundcloud_token=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${expiresIn}`,
+          `soundcloud_refresh_token=${newRefreshToken}; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000`,
+        ];
+
+        res.setHeader("Set-Cookie", cookies);
+      } catch (refreshError: any) {
+        res.setHeader("Set-Cookie", [
+          "soundcloud_token=; Path=/; Max-Age=0",
+          "soundcloud_refresh_token=; Path=/; Max-Age=0",
+        ]);
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+    }
+
+    // Check cache
+    if (
+      allowCache &&
+      !forceRefresh &&
+      historyCache &&
+      historyCache.token === token &&
+      Date.now() - historyCache.timestamp < CACHE_TTL_MS
+    ) {
+      return res.status(200).json({ ...historyCache.data, cached: true });
+    }
+
+    const payload = await getListeningHistoryInternal(req, token);
+
+    // Store in cache
+    if (token) {
+      historyCache = {
+        data: payload,
+        timestamp: Date.now(),
+        token,
+      };
+    }
+
     res.status(200).json(payload);
   } catch (error: any) {
-    res.status(500).json({
+    const status = typeof error?.status === "number" ? error.status : 500;
+    const details = error?.details;
+    res.status(status).json({
       error: error instanceof Error ? error.message : "Unknown error",
+      ...(details ? { details } : {}),
     });
   }
 }

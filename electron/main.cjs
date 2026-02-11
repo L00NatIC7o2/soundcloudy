@@ -23,6 +23,54 @@ const HISTORY_COOKIE_FILENAME = "soundcloud-history-cookies.json";
 
 const PORT = 3000;
 const DEV_URL = "http://localhost:3000";
+const FALLBACK_CLIENT_ID = "BecG5WJDDxYMffAfWcjJleNqrGyJyZhI";
+const FALLBACK_APP_VERSION = "1770366292";
+
+let cachedCredentials = null;
+
+const loadCachedCredentials = () => {
+  if (cachedCredentials) return cachedCredentials;
+  try {
+    const cachePath = path.join(app.getPath("userData"), "sc-credentials.json");
+    if (!fs.existsSync(cachePath)) return null;
+    const raw = fs.readFileSync(cachePath, "utf8");
+    const parsed = JSON.parse(raw);
+    const oneDay = 86400000;
+    if (
+      parsed?.clientId &&
+      parsed?.appVersion &&
+      typeof parsed?.timestamp === "number" &&
+      Date.now() - parsed.timestamp < oneDay
+    ) {
+      cachedCredentials = {
+        clientId: parsed.clientId,
+        appVersion: parsed.appVersion,
+      };
+      return cachedCredentials;
+    }
+    return null;
+  } catch (_error) {
+    return null;
+  }
+};
+
+const getPlayHistoryClientId = () => {
+  const cached = loadCachedCredentials();
+  if (cached?.clientId) return cached.clientId;
+  return (
+    process.env.SOUNDCLOUD_V2_CLIENT_ID ||
+    process.env.SOUNDCLOUD_CLIENT_ID ||
+    FALLBACK_CLIENT_ID
+  );
+};
+
+const getPlayHistoryAppVersion = () => {
+  const cached = loadCachedCredentials();
+  if (cached?.appVersion) return cached.appVersion;
+  return process.env.SOUNDCLOUD_APP_VERSION || FALLBACK_APP_VERSION;
+};
+
+const PLAY_HISTORY_APP_LOCALE = process.env.SOUNDCLOUD_APP_LOCALE || "en";
 
 const getHistoryCookiePath = () =>
   path.join(app.getPath("userData"), HISTORY_COOKIE_FILENAME);
@@ -32,6 +80,392 @@ const sendPlayerToggle = () => {
   mainWindow.webContents.executeJavaScript(
     "window.dispatchEvent(new CustomEvent('player-toggle'))",
   );
+};
+
+const getLocalAuthBaseUrl = () =>
+  app.isPackaged ? `http://127.0.0.1:${PORT}` : DEV_URL;
+
+const getLocalAuthToken = async () => {
+  try {
+    const cookies =
+      await require("electron").session.defaultSession.cookies.get({
+        name: "soundcloud_token",
+        url: getLocalAuthBaseUrl(),
+      });
+    return cookies?.[0]?.value || null;
+  } catch (_error) {
+    return null;
+  }
+};
+
+const fetchPlayHistoryViaWebSession = async () => {
+  const token = await getLocalAuthToken();
+  if (!token) {
+    return { error: "Not authenticated" };
+  }
+
+  const historyWindow = new BrowserWindow({
+    width: 1100,
+    height: 800,
+    show: false,
+    autoHideMenuBar: true,
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+
+  try {
+    const session = historyWindow.webContents.session;
+    const existingWebToken = await session.cookies.get({
+      name: "oauth_token",
+      domain: ".soundcloud.com",
+    });
+    const authToken = existingWebToken?.[0]?.value || token;
+
+    const cookiePayload = {
+      name: "oauth_token",
+      value: authToken,
+      path: "/",
+      httpOnly: false,
+      secure: true,
+      sameSite: "no_restriction",
+      domain: ".soundcloud.com",
+    };
+
+    await session.cookies.set({
+      url: "https://soundcloud.com",
+      ...cookiePayload,
+    });
+
+    await session.cookies.set({
+      url: "https://api-v2.soundcloud.com",
+      ...cookiePayload,
+    });
+
+    await historyWindow.loadURL("https://soundcloud.com/you/history", {
+      userAgent:
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    });
+
+    let result = null;
+    try {
+      result = await historyWindow.webContents.executeJavaScript(
+        `(() => {
+          const baseParams = {
+            limit: "100",
+            client_id: ${JSON.stringify(getPlayHistoryClientId())},
+            app_version: ${JSON.stringify(getPlayHistoryAppVersion())},
+            app_locale: ${JSON.stringify(PLAY_HISTORY_APP_LOCALE)},
+            oauth_token: ${JSON.stringify(authToken)}
+          };
+          const headers = {
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Device-Locale": "en-US",
+            "X-Client-Id": ${JSON.stringify(getPlayHistoryClientId())},
+            "Authorization": "OAuth ${authToken}",
+            "Origin": "https://soundcloud.com",
+            "Referer": "https://soundcloud.com/you/history"
+          };
+          const v1Headers = {
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Authorization": "OAuth ${authToken}",
+            "Origin": "https://soundcloud.com",
+            "Referer": "https://soundcloud.com/you/history"
+          };
+
+          const fetchJson = async (url, requestHeaders) => {
+            try {
+              const res = await fetch(url, {
+                credentials: "include",
+                headers: requestHeaders || headers,
+                cache: "no-store"
+              });
+              const text = await res.text().catch(() => null);
+              let data = null;
+              if (text) {
+                try {
+                  data = JSON.parse(text);
+                } catch (_error) {
+                  data = null;
+                }
+              }
+              return {
+                ok: res.ok,
+                status: res.status,
+                data,
+                text: text ? text.slice(0, 200) : null
+              };
+            } catch (err) {
+              return {
+                ok: false,
+                status: null,
+                data: null,
+                text: null,
+                error: err?.message || "Failed to fetch",
+                url
+              };
+            }
+          };
+
+          const playParams = new URLSearchParams(baseParams).toString();
+          const playUrl = "https://api-v2.soundcloud.com/me/play-history/tracks?" + playParams;
+          const probeUrl = async (label, url, requestHeaders) => {
+            const res = await fetchJson(url, requestHeaders);
+            return {
+              label,
+              status: res.status,
+              ok: res.ok,
+              error: res.error || null,
+            };
+          };
+
+          const probes = async () => {
+            return [
+              await probeUrl(
+                "v2:me",
+                "https://api-v2.soundcloud.com/me?" +
+                  new URLSearchParams(baseParams).toString(),
+              ),
+              await probeUrl(
+                "v2:health",
+                "https://api-v2.soundcloud.com/health",
+              ),
+              await probeUrl(
+                "v1:me",
+                "https://api.soundcloud.com/me",
+                v1Headers,
+              ),
+            ];
+          };
+
+          return fetchJson(playUrl).then(async (first) => {
+            if (!first.ok && first.status === 404) {
+              const legacyParams = new URLSearchParams(baseParams).toString();
+              const legacyUrl =
+                "https://api-v2.soundcloud.com/me/play-history?" + legacyParams;
+              const legacy = await fetchJson(legacyUrl);
+              if (!legacy.ok && legacy.status === 404) {
+                const trackParams = new URLSearchParams(baseParams).toString();
+                const trackUrl = "https://api-v2.soundcloud.com/me/track_history?" + trackParams;
+                const second = await fetchJson(trackUrl);
+                if (!second.ok && second.status === 404) {
+                  const activityParams = new URLSearchParams({
+                    ...baseParams,
+                    limit: "50",
+                  }).toString();
+                  const activityUrl =
+                    "https://api-v2.soundcloud.com/me/activities?" +
+                    activityParams;
+                  const third = await fetchJson(activityUrl);
+                  if (!third.ok && third.status === 404) {
+                    const streamParams = new URLSearchParams({
+                      ...baseParams,
+                      limit: "50",
+                    }).toString();
+                    const streamUrl =
+                      "https://api-v2.soundcloud.com/stream?" + streamParams;
+                    const fourth = await fetchJson(streamUrl);
+                    if (!fourth.ok && fourth.status === 404) {
+                      const v1Params = new URLSearchParams({
+                        limit: "50",
+                      }).toString();
+                      const v1Url =
+                        "https://api.soundcloud.com/me/activities?" + v1Params;
+                      const fifth = await fetchJson(v1Url, v1Headers);
+                      return {
+                        ...fifth,
+                        fallback: "activities-v1",
+                        debug: {
+                          play: first.status,
+                          legacy: legacy.status,
+                          track: second.status,
+                          activity: third.status,
+                          stream: fourth.status,
+                          activityV1: fifth.status,
+                        },
+                        probes: await probes(),
+                      };
+                    }
+                    return {
+                      ...fourth,
+                      fallback: "stream",
+                      debug: {
+                        play: first.status,
+                        legacy: legacy.status,
+                        track: second.status,
+                        activity: third.status,
+                        stream: fourth.status,
+                      },
+                      probes: await probes(),
+                    };
+                  }
+                  return {
+                    ...third,
+                    fallback: "activities",
+                    debug: {
+                      play: first.status,
+                      legacy: legacy.status,
+                      track: second.status,
+                      activity: third.status,
+                    },
+                    probes: await probes(),
+                  };
+                }
+                return {
+                  ...second,
+                  fallback: "track_history",
+                  debug: { play: first.status, legacy: legacy.status, track: second.status },
+                  probes: await probes(),
+                };
+              }
+              return {
+                ...legacy,
+                fallback: "play-history",
+                debug: { play: first.status, legacy: legacy.status },
+                probes: await probes(),
+              };
+            }
+            return {
+              ...first,
+              fallback: "play-history",
+              debug: { play: first.status },
+              probes: await probes(),
+            };
+          });
+        })();`,
+      );
+    } catch (error) {
+      return {
+        error: "Failed to fetch play history",
+        status: null,
+        message: error?.message || "Web session request failed",
+      };
+    }
+
+    if (!result?.ok) {
+      const message =
+        result?.data?.error ||
+        result?.data?.errors?.[0]?.message ||
+        result?.error ||
+        result?.text ||
+        "No response from web session";
+      return {
+        error: "Failed to fetch play history",
+        status: result?.status || null,
+        message,
+        debug: result?.debug || null,
+        probes: result?.probes || null,
+        source: result?.fallback || null,
+      };
+    }
+
+    const items = (result?.data?.collection || [])
+      .map((item) => {
+        if (item?.track) {
+          return {
+            ...item.track,
+            played_at: item.played_at || item.created_at || null,
+          };
+        }
+        if (item?.origin) {
+          return {
+            ...item.origin,
+            played_at: item.created_at || item.origin?.created_at || null,
+          };
+        }
+        if (item?.id && item?.title) {
+          return {
+            ...item,
+            played_at: item.played_at || item.created_at || null,
+          };
+        }
+        return null;
+      })
+      .filter(Boolean);
+    return {
+      items,
+      source: result?.fallback || "play-history",
+      status: result?.status || null,
+      debug: result?.debug || null,
+      probes: result?.probes || null,
+    };
+  } finally {
+    historyWindow.destroy();
+  }
+};
+
+const openHistoryLoginWindow = async () => {
+  let loginWindow = null;
+  let resolved = false;
+
+  const finalize = (payload) => {
+    if (resolved) return;
+    resolved = true;
+    if (loginWindow && !loginWindow.isDestroyed()) {
+      loginWindow.close();
+    }
+    return payload;
+  };
+
+  loginWindow = new BrowserWindow({
+    width: 1100,
+    height: 800,
+    show: true,
+    autoHideMenuBar: true,
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+
+  const session = loginWindow.webContents.session;
+
+  const checkForWebToken = async () => {
+    try {
+      const cookies = await session.cookies.get({
+        name: "oauth_token",
+        domain: ".soundcloud.com",
+      });
+      return Boolean(cookies?.[0]?.value);
+    } catch (_error) {
+      return false;
+    }
+  };
+
+  return new Promise((resolve) => {
+    const maybeResolve = async () => {
+      const hasToken = await checkForWebToken();
+      if (hasToken) {
+        resolve(finalize({ ok: true }));
+      }
+    };
+
+    loginWindow.on("closed", () => {
+      if (!resolved) {
+        resolve(finalize({ ok: false, error: "Login window closed" }));
+      }
+    });
+
+    loginWindow.webContents.on("did-finish-load", () => {
+      void maybeResolve();
+    });
+
+    loginWindow.webContents.on("did-navigate", () => {
+      void maybeResolve();
+    });
+
+    loginWindow
+      .loadURL("https://soundcloud.com/you/history", {
+        userAgent:
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      })
+      .catch(() => {
+        resolve(finalize({ ok: false, error: "Failed to load login page" }));
+      });
+  });
 };
 
 const waitForServer = (url, timeoutMs = 15000) =>
@@ -247,9 +681,30 @@ const scrapeHistoryUrls = async () => {
       if (resolved) return;
       resolved = true;
       try {
+        await historyWindow.webContents.executeJavaScript(`(() => {
+          const waitFor = (predicate, timeout = 8000) => new Promise((resolve) => {
+            const start = Date.now();
+            const tick = () => {
+              if (predicate()) return resolve(true);
+              if (Date.now() - start > timeout) return resolve(false);
+              setTimeout(tick, 300);
+            };
+            tick();
+          });
+
+          return waitFor(
+            () => document.querySelector('.playHistory') || document.querySelector('.historicalPlays_item')
+          ).then(() => {
+            window.scrollTo(0, document.body.scrollHeight);
+            return true;
+          });
+        })();`);
+
         const payload = await historyWindow.webContents
           .executeJavaScript(`(() => {
           const selectors = [
+            '.playHistory .historicalPlays_item a[href]',
+            '.historicalPlays_item a[href]',
             'a.soundTitle__title',
             'a.soundTitle__titleLink',
             'a.sound__title',
@@ -277,6 +732,17 @@ const scrapeHistoryUrls = async () => {
           };
 
           const root = findHistoryRoot();
+          const historyItems = root.querySelectorAll('.historicalPlays_item');
+          const historyLinks = root.querySelectorAll('.historicalPlays_item a[href]');
+          const playHistoryRoot = document.querySelector('.playHistory');
+          const docHistoryItems = document.querySelectorAll('.historicalPlays_item');
+          const docHistoryLinks = document.querySelectorAll('.historicalPlays_item a[href]');
+          const bodyTextSample = (document.body?.innerText || '').slice(0, 200);
+          const sampleClasses = Array.from(document.querySelectorAll('section,main,div'))
+            .slice(0, 60)
+            .map((node) => node.className)
+            .filter((value) => typeof value === 'string' && value.trim().length > 0)
+            .slice(0, 12);
 
           for (const selector of selectors) {
             root.querySelectorAll(selector).forEach((node) => {
@@ -345,7 +811,14 @@ const scrapeHistoryUrls = async () => {
             urls: Array.from(links),
             trackIds: Array.from(trackIds),
             debug: {
-              rootText: (root?.textContent || '').slice(0, 180)
+              rootText: (root?.textContent || '').slice(0, 180),
+              historyItemCount: historyItems.length,
+              historyLinkCount: historyLinks.length,
+              playHistoryFound: Boolean(playHistoryRoot),
+              docHistoryItemCount: docHistoryItems.length,
+              docHistoryLinkCount: docHistoryLinks.length,
+              sampleClasses,
+              bodyTextSample
             }
           };
         })();`);
@@ -588,6 +1061,23 @@ ipcMain.handle("history-scrape", async () => {
     return await scrapeHistoryUrls();
   } catch (error) {
     return { urls: [], error: String(error) };
+  }
+});
+
+ipcMain.handle("history-play-history", async () => {
+  try {
+    return await fetchPlayHistoryViaWebSession();
+  } catch (error) {
+    return { error: String(error) };
+  }
+});
+
+ipcMain.handle("history-web-login", async () => {
+  try {
+    return await openHistoryLoginWindow();
+  } catch (error) {
+    console.error("History login failed:", error);
+    return { ok: false, error: "History login failed" };
   }
 });
 

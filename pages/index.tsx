@@ -54,7 +54,14 @@ export default function Home() {
   const [historySyncMessage, setHistorySyncMessage] = useState<string | null>(
     null,
   );
+  const [historyLoginLoading, setHistoryLoginLoading] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
+  const [historySettingsOpen, setHistorySettingsOpen] = useState(false);
+  const [historyCacheWarming, setHistoryCacheWarming] = useState(false);
+  const [historyDebugVisible, setHistoryDebugVisible] = useState(false);
+  const [historyDebugDetails, setHistoryDebugDetails] = useState<string | null>(
+    null,
+  );
   const [viewingArtist, setViewingArtist] = useState(false);
   const [selectedArtist, setSelectedArtist] = useState<any>(null);
   const [artistTracks, setArtistTracks] = useState<any[]>([]);
@@ -584,17 +591,190 @@ export default function Home() {
     }
   };
 
-  // const handleHistorySync = async () => {
-  //   if (typeof window === "undefined") return;
-  //   const api = (window as any).electronAPI;
-  //   if (!api?.scrapeHistoryUrls) {
-  //     setHistorySyncMessage("History fetch is available in the desktop app.");
-  //     return;
-  //   }
-  //   setHistorySyncing(true);
-  //   setHistorySyncMessage(
-  //     "Open the SoundCloud window, scroll if needed, then close it.",
-  //   );
+  const normalizeHistoryItems = (items: any[]) =>
+    items.map((item: any) => ({
+      ...item,
+      added_at: item.played_at || item.added_at || null,
+    }));
+
+  const fetchHistoryFromApi = async ({
+    force = false,
+    scrape = false,
+    debug = false,
+  }: {
+    force?: boolean;
+    scrape?: boolean;
+    debug?: boolean;
+  } = {}) => {
+    const params = new URLSearchParams({ limit: "100", cache: "1" });
+    if (force) params.set("force", "1");
+    if (scrape) params.set("scrape", "1");
+    if (debug) params.set("debug", "1");
+    const response = await fetch(`/api/listening-history?${params.toString()}`);
+    const data = await response.json();
+    return { response, data };
+  };
+
+  const updateHistoryFromApiResult = (response: Response, data: any) => {
+    if (!response.ok || data?.error) {
+      setHistoryError(data?.error || "Unable to fetch listening history.");
+      if (data?.details || data?.debug) {
+        setHistoryDebugDetails(
+          JSON.stringify(data?.details || data?.debug, null, 2),
+        );
+      }
+      setListeningHistory([]);
+      return false;
+    }
+
+    const items = Array.isArray(data.items) ? data.items : [];
+    const normalized = normalizeHistoryItems(items);
+    setListeningHistory(normalized);
+    setHistorySyncMessage(
+      data?.cached ? "History updated (cached)." : "History updated.",
+    );
+    if (data?.debug) {
+      setHistoryDebugDetails(JSON.stringify(data.debug, null, 2));
+    }
+    return true;
+  };
+
+  const handleHistorySync = async () => {
+    setHistorySyncing(true);
+    setHistorySyncMessage("Refreshing history...");
+    try {
+      setHistoryLoading(true);
+      setHistoryError(null);
+      setHistoryDebugDetails(null);
+      setHistoryDebugVisible(false);
+      await fetch("/api/auth/check");
+      const debugEnabled = historyDebugVisible;
+      const api = (window as any).electronAPI;
+      if (api?.playHistoryViaWeb) {
+        const result = await api.playHistoryViaWeb();
+        if (result?.error) {
+          const status = result?.status ? ` (status ${result.status})` : "";
+          const message = result?.message ? `: ${result.message}` : "";
+          const debug = result?.debug
+            ? ` [play:${result.debug.play}, track:${result.debug.track || "-"}, act:${result.debug.activity || "-"}, v1:${result.debug.activityV1 || "-"}]`
+            : "";
+          const probeText = Array.isArray(result?.probes)
+            ? ` (probe: ${result.probes
+                .map(
+                  (probe: any) =>
+                    `${probe.label}=${probe.status || "-"}${probe.error ? ":" + probe.error : ""}`,
+                )
+                .join(", ")})`
+            : "";
+          setHistoryError(
+            `${result?.error || "Unable to fetch listening history."}${status}${message}${debug}${probeText}`,
+          );
+          setHistoryDebugDetails(
+            JSON.stringify(
+              {
+                status: result?.status ?? null,
+                message: result?.message ?? null,
+                source: result?.source ?? result?.fallback ?? null,
+                debug: result?.debug ?? null,
+                probes: result?.probes ?? null,
+              },
+              null,
+              2,
+            ),
+          );
+          setListeningHistory([]);
+        } else {
+          const items = Array.isArray(result?.items) ? result.items : [];
+          const normalized = normalizeHistoryItems(items);
+          const shouldScrapeFallback =
+            result?.source === "stream" || normalized.length === 0;
+          if (shouldScrapeFallback) {
+            const { response, data } = await fetchHistoryFromApi({
+              force: true,
+              scrape: true,
+              debug: debugEnabled,
+            });
+            updateHistoryFromApiResult(response, data);
+          } else {
+            setListeningHistory(normalized);
+            setHistorySyncMessage("History updated.");
+            if (result?.source || result?.debug || result?.probes) {
+              setHistoryDebugDetails(
+                JSON.stringify(
+                  {
+                    source: result?.source ?? null,
+                    debug: result?.debug ?? null,
+                    probes: result?.probes ?? null,
+                  },
+                  null,
+                  2,
+                ),
+              );
+            }
+          }
+        }
+      } else {
+        const { response, data } = await fetchHistoryFromApi({
+          debug: debugEnabled,
+        });
+        const updated = updateHistoryFromApiResult(response, data);
+        if (updated && data?.cached) {
+          const warm = await fetchHistoryFromApi({
+            force: true,
+            debug: debugEnabled,
+          });
+          updateHistoryFromApiResult(warm.response, warm.data);
+        }
+      }
+    } catch (error) {
+      setHistorySyncMessage("Failed to fetch listening history.");
+      setHistoryError("Unable to fetch listening history.");
+    } finally {
+      setHistoryLoading(false);
+      setHistorySyncing(false);
+    }
+  };
+
+  const handleHistoryCacheWarm = async () => {
+    setHistoryCacheWarming(true);
+    setHistorySyncMessage("Warming history cache...");
+    try {
+      setHistoryLoading(true);
+      setHistoryError(null);
+      const { response, data } = await fetchHistoryFromApi({
+        force: true,
+        scrape: true,
+        debug: historyDebugVisible,
+      });
+      updateHistoryFromApiResult(response, data);
+    } catch (_error) {
+      setHistorySyncMessage("Failed to warm history cache.");
+      setHistoryError("Unable to fetch listening history.");
+    } finally {
+      setHistoryLoading(false);
+      setHistoryCacheWarming(false);
+    }
+  };
+
+  const handleHistoryWebLogin = async () => {
+    const api = (window as any).electronAPI;
+    if (!api?.historyWebLogin) return;
+    setHistoryLoginLoading(true);
+    setHistorySyncMessage("Open SoundCloud login window...");
+    setHistoryError(null);
+    try {
+      const result = await api.historyWebLogin();
+      if (result?.ok) {
+        setHistorySyncMessage("History login complete. You can sync now.");
+      } else {
+        setHistorySyncMessage(result?.error || "History login cancelled.");
+      }
+    } catch (_error) {
+      setHistorySyncMessage("History login failed.");
+    } finally {
+      setHistoryLoginLoading(false);
+    }
+  };
   const handleArtistClick = async (
     artist: any,
     skipHistory = false,
@@ -885,6 +1065,8 @@ export default function Home() {
           playlistTitle,
           playlistId: selectedPlaylist?.id || null,
         });
+        setQueue([track]);
+        setCurrentQueueIndex(0);
       }
       setQueueSource("playlist");
       if (selectedPlaylist?.id) {
@@ -892,25 +1074,42 @@ export default function Home() {
         setCurrentPlaylistTitle(playlistTitle);
       }
     } else if (source === "search") {
-      // Fetch related tracks for the clicked song and set queue to [clickedSong, ...relatedTracks]
+      // Set current track and a temporary single-track queue immediately
+      setCurrentTrack(track);
+      setQueue([track]);
+      setCurrentQueueIndex(0);
+      setQueueSource("search-related");
+      setCurrentPlaylistId(null);
+      setCurrentPlaylistTitle(null);
+
+      // Fetch related tracks in background and update queue
       (async () => {
-        setCurrentTrack(track);
-        setQueueSource("search-related");
-        setCurrentPlaylistId(null);
-        setCurrentPlaylistTitle(null);
         try {
           const res = await fetch(`/api/related-tracks?trackId=${track.id}`);
           const data = await res.json();
           const related = Array.isArray(data.tracks) ? data.tracks : [];
           // Remove the clicked track if present in related
           const filteredRelated = related.filter((t: any) => t.id !== track.id);
-          setQueue([track, ...filteredRelated]);
+          const newQueue = [track, ...filteredRelated];
+          setQueue(newQueue);
           setCurrentQueueIndex(0);
         } catch (e) {
-          setQueue([track]);
-          setCurrentQueueIndex(0);
+          // Queue already set to single track, nothing more to do
         }
       })();
+    } else if (source === "search-related") {
+      // Already have queue set up
+      const trackIndex = trackList.findIndex((t) => t.id === track.id);
+      if (trackIndex !== -1 && trackList.length > 0) {
+        setQueue(trackList);
+        setCurrentQueueIndex(trackIndex);
+        setCurrentTrack(trackList[trackIndex]);
+      } else {
+        setCurrentTrack(track);
+        setQueue([track]);
+        setCurrentQueueIndex(0);
+      }
+      setQueueSource("search-related");
     }
   };
 
@@ -1504,6 +1703,15 @@ export default function Home() {
     return () => window.clearInterval(interval);
   }, [isAuthenticated]);
 
+  const handleLogout = async () => {
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } finally {
+      setIsAuthenticated(false);
+      router.push("/login");
+    }
+  };
+
   useEffect(() => {
     if (typeof window === "undefined") return;
     const state = window.history.state || {};
@@ -2025,6 +2233,17 @@ export default function Home() {
             )}
           </div>
         </div>
+
+        <div className="sidebar-footer">
+          <button
+            type="button"
+            className="sidebar-logout-btn"
+            onClick={handleLogout}
+          >
+            {sidebarExpanded && <span className="nav-label">Log out</span>}
+            {!sidebarExpanded && <span aria-hidden="true">⎋</span>}
+          </button>
+        </div>
       </aside>
 
       <div className="titlebar">
@@ -2511,6 +2730,72 @@ export default function Home() {
                       </div>
                     </div>
                     <div className="profile-header-right">
+                      {viewingProfile && (
+                        <div className="history-sync">
+                          <button
+                            type="button"
+                            className="history-sync-btn history-login-btn"
+                            onClick={handleHistoryWebLogin}
+                            disabled={historyLoginLoading}
+                          >
+                            {historyLoginLoading
+                              ? "Opening login..."
+                              : "Enable History"}
+                          </button>
+                          <button
+                            type="button"
+                            className="history-sync-btn"
+                            onClick={handleHistorySync}
+                            disabled={historySyncing}
+                          >
+                            {historySyncing ? "Syncing..." : "Sync History"}
+                          </button>
+                          <button
+                            type="button"
+                            className="history-sync-btn history-settings-toggle"
+                            onClick={() =>
+                              setHistorySettingsOpen((prev) => !prev)
+                            }
+                          >
+                            {historySettingsOpen
+                              ? "Close History Settings"
+                              : "History Settings"}
+                          </button>
+                          {historySyncMessage && (
+                            <div className="history-sync-status">
+                              {historySyncMessage}
+                            </div>
+                          )}
+                          {historySettingsOpen && (
+                            <div className="history-settings-panel">
+                              <label className="history-settings-row">
+                                <input
+                                  type="checkbox"
+                                  checked={historyDebugVisible}
+                                  onChange={(event) =>
+                                    setHistoryDebugVisible(event.target.checked)
+                                  }
+                                />
+                                <span>Show history debug</span>
+                              </label>
+                              <button
+                                type="button"
+                                className="history-sync-btn history-warm-btn"
+                                onClick={handleHistoryCacheWarm}
+                                disabled={
+                                  historyCacheWarming ||
+                                  historyLoading ||
+                                  historySyncing
+                                }
+                              >
+                                {historyCacheWarming
+                                  ? "Warming..."
+                                  : "Warm Cache"}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )}
                       <div className="profile-header-stats">
                         <div className="profile-stat">
                           <div className="profile-stat-value">
@@ -2821,6 +3106,13 @@ export default function Home() {
                         Listening History
                       </h3>
                     </div>
+                    {historySettingsOpen &&
+                      historyDebugVisible &&
+                      historyDebugDetails && (
+                        <pre className="history-debug-panel">
+                          {historyDebugDetails}
+                        </pre>
+                      )}
                     {historyLoading ? (
                       <div className="playlist-loading">Loading...</div>
                     ) : historyError ? (

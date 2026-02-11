@@ -5,6 +5,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
   openExternal: (url) => ipcRenderer.invoke("open-external", url),
   captureHistorySession: () => ipcRenderer.invoke("history-capture"),
   scrapeHistoryUrls: () => ipcRenderer.invoke("history-scrape"),
+  playHistoryViaWeb: () => ipcRenderer.invoke("history-play-history"),
+  historyWebLogin: () => ipcRenderer.invoke("history-web-login"),
   windowControls: {
     minimize: () => ipcRenderer.invoke("window-minimize"),
     maximizeToggle: () => ipcRenderer.invoke("window-maximize-toggle"),

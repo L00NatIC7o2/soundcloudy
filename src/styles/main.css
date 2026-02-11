@@ -425,6 +425,36 @@ body::-webkit-scrollbar-track-piece {
   background: rgba(255, 255, 255, 0.2);
 }
 
+.sidebar-footer {
+  margin-top: auto;
+  padding: 12px;
+}
+
+.sidebar-logout-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 12px;
+  border: 0;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  cursor: pointer;
+  transition: background 0.2s;
+  white-space: nowrap;
+}
+
+.sidebar-logout-btn:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.sidebar.collapsed .sidebar-logout-btn {
+  width: 100%;
+  padding: 12px 8px;
+}
+
 /* Keep thumbnail fixed size */
 .playlist-thumb {
   width: 48px !important;
@@ -2748,10 +2778,64 @@ body.electron .main-area {
   opacity: 0.6;
   cursor: default;
 }
+.history-login-btn {
+  background: rgba(255, 255, 255, 0.08);
+}
+.history-debug-btn {
+  background: rgba(0, 0, 0, 0.25);
+  border-color: rgba(255, 255, 255, 0.28);
+}
+.history-settings-toggle {
+  background: rgba(100, 80, 180, 0.3);
+  border-color: rgba(120, 100, 200, 0.4);
+}
+.history-settings-toggle:hover {
+  background: rgba(120, 100, 200, 0.4);
+}
+.history-warm-btn {
+  background: rgba(118, 75, 162, 0.3);
+  border-color: rgba(118, 75, 162, 0.5);
+}
+.history-warm-btn:hover {
+  background: rgba(118, 75, 162, 0.5);
+}
+.history-settings-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  margin-top: 4px;
+}
+.history-settings-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  cursor: pointer;
+  color: rgba(255, 255, 255, 0.85);
+}
+.history-settings-row input[type="checkbox"] {
+  cursor: pointer;
+}
 .history-sync-status {
   font-size: 12px;
   color: rgba(255, 255, 255, 0.75);
   max-width: 280px;
+}
+.history-debug-panel {
+  margin: 12px 0 16px;
+  padding: 12px;
+  border-radius: 10px;
+  background: rgba(15, 15, 15, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .horizontal-card:hover {
