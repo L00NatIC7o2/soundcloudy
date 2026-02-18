@@ -28,12 +28,41 @@ export default function Login() {
   }, [router.query]);
 
   return (
-    <div className="login-page">
+    <div
+      className="login-page"
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        minHeight: "100vh",
+      }}
+    >
       {error && <div className="login-error">Error: {error}</div>}
-
-      <button className="login-button-glass" onClick={handleLogin}>
-        Login
-      </button>
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+        }}
+      >
+        <button className="login-button-glass" onClick={handleLogin}>
+          Login
+        </button>
+        <div
+          style={{
+            marginTop: 16,
+            color: "#d14b7a",
+            fontWeight: 600,
+            fontSize: "1.1rem",
+            cursor: "pointer",
+            textDecoration: "underline",
+          }}
+          onClick={() => router.push("/girlfriend")}
+        >
+          hi
+        </div>
+      </div>
     </div>
   );
 }

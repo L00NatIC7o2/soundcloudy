@@ -11,6 +11,7 @@ import { useRouter } from "next/router";
 import Player from "../src/components/Player";
 import PlaylistMenu from "../src/components/PlaylistMenu";
 import dynamic from "next/dynamic";
+import GirlfriendLogin from "./girlfriend";
 
 const HomePage = dynamic(() => import("./homepage"), { ssr: false });
 
@@ -1937,7 +1938,6 @@ export default function Home() {
     viewingLikes,
     viewingProfile,
     viewingArtist,
-    viewingLibrary,
     viewingTrack,
     selectedPlaylist,
     searchView,
@@ -2839,27 +2839,23 @@ export default function Home() {
                               >
                                 {album.user?.username || "Unknown"}
                               </div>
-                              {album.user?.id &&
-                                userProfile?.id &&
-                                album.user.id !== userProfile.id && (
-                                  <button
-                                    type="button"
-                                    className={`track-like-btn ${
-                                      likedPlaylists[album.id] ? "liked" : ""
-                                    }`}
-                                    onClick={(event) => {
-                                      event.stopPropagation();
-                                      togglePlaylistLike(album.id);
-                                    }}
-                                    aria-label={
-                                      likedPlaylists[album.id]
-                                        ? "Remove like"
-                                        : "Add like"
-                                    }
-                                  >
-                                    {likedPlaylists[album.id] ? "♥" : "♡"}
-                                  </button>
-                                )}
+                              <button
+                                type="button"
+                                className={`track-like-btn ${
+                                  likedPlaylists[album.id] ? "liked" : ""
+                                }`}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  togglePlaylistLike(album.id);
+                                }}
+                                aria-label={
+                                  likedPlaylists[album.id]
+                                    ? "Remove like"
+                                    : "Add like"
+                                }
+                              >
+                                {likedPlaylists[album.id] ? "♥" : "♡"}
+                              </button>
                             </div>
                           </div>
                         ))}
@@ -2945,27 +2941,23 @@ export default function Home() {
                               >
                                 {playlist.user?.username || "Unknown"}
                               </div>
-                              {playlist.user?.id &&
-                                userProfile?.id &&
-                                playlist.user.id !== userProfile.id && (
-                                  <button
-                                    type="button"
-                                    className={`track-like-btn ${
-                                      likedPlaylists[playlist.id] ? "liked" : ""
-                                    }`}
-                                    onClick={(event) => {
-                                      event.stopPropagation();
-                                      togglePlaylistLike(playlist.id);
-                                    }}
-                                    aria-label={
-                                      likedPlaylists[playlist.id]
-                                        ? "Remove like"
-                                        : "Add like"
-                                    }
-                                  >
-                                    {likedPlaylists[playlist.id] ? "♥" : "♡"}
-                                  </button>
-                                )}
+                              <button
+                                type="button"
+                                className={`track-like-btn ${
+                                  likedPlaylists[playlist.id] ? "liked" : ""
+                                }`}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  togglePlaylistLike(playlist.id);
+                                }}
+                                aria-label={
+                                  likedPlaylists[playlist.id]
+                                    ? "Remove like"
+                                    : "Add like"
+                                }
+                              >
+                                {likedPlaylists[playlist.id] ? "♥" : "♡"}
+                              </button>
                             </div>
                           </div>
                         ))}

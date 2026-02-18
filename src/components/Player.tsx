@@ -407,14 +407,37 @@ const Player = memo(function Player({
         {loading && <div className="player-loading">Loading track...</div>}
         <div className="player-content">
           <div className="player-left">
-            <img
-              src={
-                currentTrack.artwork_url?.replace("-large", "-t200x200") ||
-                "/placeholder.png"
-              }
-              alt={currentTrack.title}
-              className="player-artwork"
-            />
+            <div
+              className="player-artwork-wrapper"
+              style={{ position: "relative", display: "inline-block" }}
+            >
+              <a
+                href={`/track/${currentTrack.id}`}
+                tabIndex={0}
+                onClick={(e) => {
+                  e.preventDefault();
+                  window.location.href = `/track/${currentTrack.id}`;
+                }}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  // Show custom context menu
+                  // You can implement a context menu component here
+                  // For now, show browser menu
+                  // TODO: Replace with custom menu
+                  alert("Share | Go to Track | Add to Playlist");
+                }}
+              >
+                <img
+                  src={
+                    currentTrack.artwork_url?.replace("-large", "-t200x200") ||
+                    "/placeholder.png"
+                  }
+                  alt={currentTrack.title}
+                  className="player-artwork clickable"
+                  style={{ cursor: "pointer" }}
+                />
+              </a>
+            </div>
             <div className="player-info-container">
               <div className="player-info">
                 <div className="player-artist-row">
@@ -450,7 +473,21 @@ const Player = memo(function Player({
                     ))}
                 </div>
                 <div className="player-title">
-                  <span>{currentTrack.title}</span>
+                  <a
+                    href={`/track/${currentTrack.id}`}
+                    className="player-title-link"
+                    style={{
+                      color: "#ff5500",
+                      textDecoration: "underline",
+                      cursor: "pointer",
+                    }}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      window.location.href = `/track/${currentTrack.id}`;
+                    }}
+                  >
+                    {currentTrack.title}
+                  </a>
                 </div>
               </div>
               <div className="player-actions">
