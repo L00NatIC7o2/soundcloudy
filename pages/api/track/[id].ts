@@ -10,41 +10,9 @@ export default async function handler(
   // Use the provided OAuth token for v2api requests
   // Retrieve the user's OAuth token from cookies and ensure correct format for v2api
   let token = req.cookies.soundcloud_token;
-  // If the token is missing or looks like a public JWT, try to scrape the user's OAuth token from the SoundCloud page
   const isLikelyJwt = token && token.split(".").length === 3;
   if (!token || isLikelyJwt) {
-    try {
-      const browser = await puppeteer.launch({
-        headless: true,
-        args: ["--no-sandbox", "--disable-setuid-sandbox"],
-      });
-      const page = await browser.newPage();
-      await page.goto("https://soundcloud.com", {
-        waitUntil: "domcontentloaded",
-        timeout: 20000,
-      });
-      // Try to extract the OAuth token from the page's JS context or cookies
-      token = await page.evaluate(() => {
-        // Try to find the token in window.SC or cookies
-        const w = window as any;
-        if (w.SC && w.SC.accessToken) return w.SC.accessToken;
-        const match = document.cookie.match(/oauth_token=([^;]+)/);
-        return match ? match[1] : null;
-      });
-      await browser.close();
-      if (token) {
-        console.log(
-          "[track-api] Scraped OAuth token from SoundCloud page:",
-          token,
-        );
-      } else {
-        console.warn(
-          "[track-api] Failed to scrape OAuth token from SoundCloud page",
-        );
-      }
-    } catch (e) {
-      console.warn("[track-api] Error scraping OAuth token:", e);
-    }
+    return res.status(401).json({ error: "Not authenticated" });
   }
   if (token && !token.startsWith("OAuth ")) {
     token = `OAuth ${token}`;
@@ -54,23 +22,49 @@ export default async function handler(
 
   try {
     // Fetch track details
-    const trackRes = await axios.get(
-      `https://api-v2.soundcloud.com/tracks/${id}`,
-      {
+    let trackRes;
+    try {
+      trackRes = await axios.get(`https://api-v2.soundcloud.com/tracks/${id}`, {
         headers: token ? { Authorization: token } : {},
-      },
-    );
+      });
+    } catch (e: any) {
+      if (e?.response?.status === 401 || e?.response?.status === 403) {
+        // Fallback to oauth_token param if header auth is rejected
+        trackRes = await axios.get(
+          `https://api-v2.soundcloud.com/tracks/${id}`,
+          {
+            params: { oauth_token: token },
+          },
+        );
+      } else {
+        throw e;
+      }
+    }
     const track = trackRes.data;
     console.log("[track-api] Track response:", JSON.stringify(track, null, 2));
 
     // Fetch comments
-    const commentsRes = await axios.get(
-      `https://api-v2.soundcloud.com/tracks/${id}/comments`,
-      {
-        headers: token ? { Authorization: token } : {},
-        params: { limit: 50 },
-      },
-    );
+    let commentsRes;
+    try {
+      commentsRes = await axios.get(
+        `https://api-v2.soundcloud.com/tracks/${id}/comments`,
+        {
+          headers: token ? { Authorization: token } : {},
+          params: { limit: 50 },
+        },
+      );
+    } catch (e: any) {
+      if (e?.response?.status === 401 || e?.response?.status === 403) {
+        commentsRes = await axios.get(
+          `https://api-v2.soundcloud.com/tracks/${id}/comments`,
+          {
+            params: { limit: 50, oauth_token: token },
+          },
+        );
+      } else {
+        throw e;
+      }
+    }
     const comments = (commentsRes.data.collection || []).map((c: any) => ({
       id: c.id,
       user: {

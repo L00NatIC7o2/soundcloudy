@@ -88,6 +88,9 @@ export default function Search() {
     }
   };
 
+  // Use Next.js router for SPA navigation
+  const router = require("next/router").useRouter();
+
   return (
     <div className="search-container">
       <input
@@ -105,8 +108,20 @@ export default function Search() {
       <div className="search-results">
         {results.map((track) => (
           <div key={track.id} className="track-item">
-            {/* Your track item component */}
-            <div>{track.title}</div>
+            <a
+              href={`/track/${track.id}`}
+              onClick={(e) => {
+                e.preventDefault();
+                router.push(`/track/${track.id}`);
+              }}
+              style={{
+                color: "#ff5500",
+                textDecoration: "underline",
+                cursor: "pointer",
+              }}
+            >
+              {track.title}
+            </a>
           </div>
         ))}
       </div>

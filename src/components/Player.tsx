@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, memo } from "react";
+import { useRouter } from "next/router";
 import PlaylistMenu from "./PlaylistMenu";
 
 interface PlayerProps {
@@ -26,6 +27,7 @@ const Player = memo(function Player({
   onShuffleChange,
 }: PlayerProps) {
   const audioRef = useRef<HTMLAudioElement>(null);
+  const router = useRouter();
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -483,7 +485,7 @@ const Player = memo(function Player({
                     }}
                     onClick={(e) => {
                       e.preventDefault();
-                      window.location.href = `/track/${currentTrack.id}`;
+                      router.push(`/track/${currentTrack.id}`);
                     }}
                   >
                     {currentTrack.title}
