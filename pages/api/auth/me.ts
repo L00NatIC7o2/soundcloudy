@@ -1,7 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import axios from "axios";
-import puppeteer from "puppeteer-core";
-import chromium from "@sparticuz/chromium";
+import puppeteer from "puppeteer"; // Switched to standard puppeteer
 
 const profileCache = new Map<
   string,
@@ -9,12 +8,15 @@ const profileCache = new Map<
 >();
 const CACHE_TTL_MS = 60_000;
 
+// Simplified Local Browser Launch
 const getBrowser = async () => {
   return await puppeteer.launch({
-    args: [...chromium.args, "--hide-scrollbars", "--disable-web-security"],
-    defaultViewport: chromium.defaultViewport,
-    executablePath: await chromium.executablePath(),
-    headless: chromium.headless,
+    headless: "new",
+    args: [
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-web-security",
+    ],
   });
 };
 
@@ -48,18 +50,15 @@ export default async function handler(
         browser = await getBrowser();
         const page = await browser.newPage();
 
-        // Impersonate a real browser to avoid blocks
         await page.setUserAgent(
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         );
 
-        // Block everything except the specific background visuals to save RAM
         await page.setRequestInterception(true);
         page.on("request", (request) => {
           const type = request.resourceType();
-          if (["font", "stylesheet", "media"].includes(type)) {
-            request.abort();
-          } else if (type === "image" && !request.url().includes("visuals")) {
+          // We only need the HTML and images (for the banner)
+          if (["font", "stylesheet", "media", "script"].includes(type)) {
             request.abort();
           } else {
             request.continue();
@@ -77,7 +76,6 @@ export default async function handler(
           ) as HTMLElement;
           if (!bannerElement) return null;
           const style = window.getComputedStyle(bannerElement).backgroundImage;
-          // Clean up the URL and grab the original high-res version
           const match = style.match(/url\("?(.+?)"?\)/);
           return match ? match[1].replace("t500x500", "original") : null;
         });
@@ -89,7 +87,7 @@ export default async function handler(
       }
     };
 
-    // 3. Parallel fetching of tracks and playlists
+    // 3. Parallel fetching
     const [banner_url, tracksRes, playlistsRes] = await Promise.all([
       fetchBanner(user.permalink_url),
       axios.get(`https://api.soundcloud.com/me/tracks`, {
@@ -100,10 +98,9 @@ export default async function handler(
       }),
     ]);
 
-    // Format final response
     const payload = {
       id: user.id,
-      urn: user.urn || `soundcloud:users:${user.id}`, // Forward compatibility for 2025/2026 ID changes
+      urn: user.urn || `soundcloud:users:${user.id}`,
       username: user.username,
       avatar_url: user.avatar_url,
       banner_url,
