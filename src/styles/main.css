@@ -1407,6 +1407,24 @@ body.electron .main-area {
 
 .playlist-menu-item {
   width: 100%;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: none;
+  border: none;
+  color: white;
+  text-align: left;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  position: relative;
+}
+
+.playlist-menu-item:hover {
+  background: rgba(118, 75, 162, 0.1);
+}
+
+.playlist-menu-item-button {
+  flex: 1;
   padding: 12px 16px;
   display: flex;
   align-items: center;
@@ -1417,17 +1435,17 @@ body.electron .main-area {
   cursor: pointer;
   text-align: left;
   transition: background 0.2s;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   position: relative;
 }
 
-.playlist-menu-item:hover:not(:disabled) {
+.playlist-menu-item-button:hover:not(:disabled) {
   background: rgba(118, 75, 162, 0.1);
 }
 
-.playlist-menu-item:disabled {
-  cursor: not-allowed;
-  opacity: 0.6;
+.playlist-menu-item-button:disabled {
+  /* keep appearance normal so the row doesn't look grayed */
+  cursor: default;
+  opacity: 1;
 }
 
 .playlist-menu-item-artwork {
@@ -1452,6 +1470,36 @@ body.electron .main-area {
   flex-shrink: 0;
   filter: brightness(0) saturate(100%) invert(52%) sepia(97%) saturate(571%)
     hue-rotate(80deg) brightness(96%) contrast(95%);
+}
+
+.playlist-menu-item-remove {
+  background: none;
+  border: none;
+  padding: 4px;
+  margin-right: 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition:
+    background 0.2s,
+    transform 0.2s;
+  flex-shrink: 0;
+}
+
+.playlist-menu-item-remove:hover:not(:disabled) {
+  background: rgba(118, 75, 162, 0.2);
+  transform: scale(1.15);
+}
+
+.playlist-menu-item-remove:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.playlist-menu-item-remove:active:not(:disabled) {
+  transform: scale(0.95);
 }
 
 @keyframes like-bounce {

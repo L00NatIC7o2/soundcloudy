@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, memo } from "react";
+import { io, Socket } from "socket.io-client";
 import { useRouter } from "next/router";
 import PlaylistMenu from "./PlaylistMenu";
 
@@ -28,6 +29,54 @@ const Player = memo(function Player({
 }: PlayerProps) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const router = useRouter();
+  // --- SOCKET.IO SYNC ---
+  // Replace with real user/session id in production
+  const userId =
+    typeof window !== "undefined"
+      ? localStorage.getItem("soundcloudy_user_id") ||
+        (() => {
+          const id = Math.random().toString(36).slice(2);
+          localStorage.setItem("soundcloudy_user_id", id);
+          return id;
+        })()
+      : "";
+  const [socket, setSocket] = useState<Socket | null>(null);
+  // Setup socket.io connection
+  useEffect(() => {
+    if (!userId) return;
+    const s = io("http://localhost:3001");
+    setSocket(s);
+    s.emit("join", userId);
+
+    // Listen for remote playback updates (from other device)
+    s.on("playback-update", (remoteState) => {
+      // Only update if not already in sync
+      if (remoteState.trackId !== currentTrack?.id) {
+        // Optionally: auto-load the track
+      }
+      if (typeof remoteState.position === "number" && audioRef.current) {
+        audioRef.current.currentTime = remoteState.position;
+      }
+      if (typeof remoteState.playing === "boolean") {
+        setIsPlaying(remoteState.playing);
+        if (audioRef.current) {
+          if (remoteState.playing) audioRef.current.play();
+          else audioRef.current.pause();
+        }
+      }
+    });
+    // Listen for remote control commands
+    s.on("remote-command", (command) => {
+      if (command === "play") setIsPlaying(true);
+      if (command === "pause") setIsPlaying(false);
+      if (command === "next") handleNext();
+      if (command === "prev") handlePrevious();
+    });
+    return () => {
+      s.disconnect();
+    };
+    // eslint-disable-next-line
+  }, [userId]);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -266,16 +315,21 @@ const Player = memo(function Player({
     setIsPlaying(!isPlaying);
   };
 
+  // Emit playback state to socket.io when it changes
   useEffect(() => {
-    window.dispatchEvent(
-      new CustomEvent("player-state", {
-        detail: {
-          isPlaying,
-          trackId: currentTrack?.id ?? null,
-        },
-      }),
-    );
+    if (!socket || !currentTrack) return;
+    socket.emit("playback-update", {
+      userId,
+      state: {
+        trackId: currentTrack.id,
+        position: audioRef.current?.currentTime || 0,
+        playing: isPlaying,
+      },
+    });
+    // eslint-disable-next-line
   }, [isPlaying, currentTrack?.id]);
+  // Example: send remote command (call from UI or another component)
+  // socket?.emit("remote-command", { userId, command: "pause" });
 
   useEffect(() => {
     const handleExternalToggle = () => {

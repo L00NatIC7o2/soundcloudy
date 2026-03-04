@@ -1,0 +1,55 @@
+{
+  "name": "soundcloudy-mobile",
+  "version": "0.1.0",
+  "private": true,
+  "main": "node_modules/expo/AppEntry.js",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "web": "expo start --web",
+    "eas:build": "eas build"
+  },
+  "dependencies": {
+    "expo": "~48.0.0",
+    "expo-av": "~14.2.1",
+    "react": "18.2.0",
+    "react-dom": "18.2.0",
+    "react-native": "0.71.8",
+    "socket.io-client": "^4.8.3",
+    "@react-native-async-storage/async-storage": "^1.17.11"
+  },
+  "devDependencies": {
+    "@types/react": "~18.0.28",
+    "@types/react-native": "^0.71.6",
+    "typescript": "~5.0.4"
+  },
+  "private": true,
+  "expo": {
+    "name": "Soundcloudy Mobile",
+    "slug": "soundcloudy-mobile",
+    "platforms": [
+      "ios",
+      "android",
+      "web"
+    ],
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "updates": {
+      "fallbackToCacheTimeout": 0
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true
+    }
+  }
+}

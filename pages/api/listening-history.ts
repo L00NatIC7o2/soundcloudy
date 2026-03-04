@@ -151,7 +151,7 @@ const refreshAccessToken = async (refreshToken: string) => {
     });
 
     const response = await axios.post(
-      "https://api.soundcloud.com/oauth2/token",
+      "https://secure.soundcloud.com/oauth/token",
       params.toString(),
       {
         headers: {
@@ -886,7 +886,7 @@ export default async function handler(
         });
 
         const refreshResponse = await axios.post(
-          "https://api.soundcloud.com/oauth2/token",
+          "https://secure.soundcloud.com/oauth/token",
           params.toString(),
           {
             headers: {

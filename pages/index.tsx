@@ -92,6 +92,7 @@ export default function Home() {
     y: number;
     trackId: number | string;
   } | null>(null);
+  const [playlistsWithTrack, setPlaylistsWithTrack] = useState<number[]>([]);
   const [isInSelectedPlaylist, setIsInSelectedPlaylist] = useState(false);
   const [checkingSelectedPlaylist, setCheckingSelectedPlaylist] =
     useState(false);
@@ -193,6 +194,63 @@ export default function Home() {
       isPlaying: prev.trackId === currentTrack?.id ? prev.isPlaying : false,
     }));
   }, [currentTrack?.id]);
+
+  useEffect(() => {
+    if (!contextPlaylistMenu?.trackId) {
+      setPlaylistsWithTrack([]);
+      return;
+    }
+
+    const fetchPlaylistsWithTrack = async () => {
+      try {
+        const response = await fetch(
+          `/api/check-track-in-playlists?trackId=${contextPlaylistMenu.trackId}`,
+        );
+        const data = await response.json();
+        setPlaylistsWithTrack(
+          data.playlistsWithTrack?.map((p: any) => p.id) || [],
+        );
+      } catch (error) {
+        console.error("Failed to fetch playlists with track:", error);
+        setPlaylistsWithTrack([]);
+      }
+    };
+
+    fetchPlaylistsWithTrack();
+  }, [contextPlaylistMenu?.trackId]);
+
+  // Listen for playlist membership changes from PlaylistMenu and update cached state
+  useEffect(() => {
+    const handler = (e: any) => {
+      try {
+        const d = e.detail;
+        if (!d || !contextPlaylistMenu?.trackId) return;
+        if (String(d.trackId) !== String(contextPlaylistMenu.trackId)) return;
+        const pid = Number(d.playlistId);
+        if (d.action === "add") {
+          setPlaylistsWithTrack((prev) =>
+            prev.includes(pid) ? prev : [...prev, pid],
+          );
+        } else if (d.action === "remove") {
+          setPlaylistsWithTrack((prev) => prev.filter((id) => id !== pid));
+        }
+      } catch (err) {
+        console.error(
+          "Failed to handle playlist-membership-changed event:",
+          err,
+        );
+      }
+    };
+    window.addEventListener(
+      "playlist-membership-changed",
+      handler as EventListener,
+    );
+    return () =>
+      window.removeEventListener(
+        "playlist-membership-changed",
+        handler as EventListener,
+      );
+  }, [contextPlaylistMenu?.trackId]);
 
   useEffect(() => {
     const isEditableTarget = (target: EventTarget | null) => {
@@ -469,6 +527,17 @@ export default function Home() {
       const data = await response.json();
       const likes = data.likes || data.tracks || [];
       setPlaylistTracks(likes);
+
+      // Sync likedTracks cache with the server so context menu is up-to-date
+      const likedMap: Record<number, boolean> = {};
+      for (const t of likes) {
+        if (t && t.id) {
+          likedMap[t.id] = true;
+        }
+      }
+      // Use authoritative mapping from server (replace) so removals are reflected everywhere
+      setLikedTracks(likedMap);
+
       if (!currentTrack) {
         setQueue(likes);
         setQueueSource("playlist");
@@ -1307,22 +1376,119 @@ export default function Home() {
     }
   };
 
+  const seedLikedPlaylists = async () => {
+    try {
+      const resp = await fetch(`/api/likes-playlists`);
+      if (!resp.ok) return;
+      const data = await resp.json();
+      const list = data.playlists || [];
+      const map: Record<number, boolean> = {};
+      for (const p of list) {
+        if (p && p.id) map[p.id] = true;
+      }
+      setLikedPlaylists((prev) => ({ ...prev, ...map }));
+    } catch (error) {
+      console.error("Failed to seed liked playlists:", error);
+    }
+  };
+
+  const seedLikes = async (fetchAll = false) => {
+    try {
+      const map: Record<number, boolean> = {};
+      const collected: any[] = [];
+      let offset = 0;
+      const limit = 100; // keep page size conservative to avoid SoundCloud offset limits
+      while (true) {
+        // SoundCloud rejects offsets >= 200 for this endpoint; stop before that
+        if (offset >= 200) break;
+        const resp = await fetch(`/api/likes?offset=${offset}&limit=${limit}`);
+        if (!resp.ok) break;
+        const data = await resp.json();
+        const likes = data.likes || data.tracks || [];
+        for (const t of likes) {
+          if (t && t.id) {
+            map[t.id] = true;
+            collected.push(t);
+          }
+        }
+        if (!fetchAll || !data.hasMore || likes.length < limit) break;
+        offset += likes.length;
+      }
+      // Replace likedTracks with the authoritative set from server
+      setLikedTracks(map);
+      // If user is currently viewing Likes, update the list immediately
+      if (viewingLikes) {
+        setPlaylistTracks(collected);
+      }
+    } catch (error) {
+      console.error("Failed to seed likes:", error);
+    }
+  };
+
   const toggleTrackLike = async (trackId: number) => {
     if (!trackId) return;
+    const wasViewing = viewingLikes; // Capture current state
     const nextLiked = !likedTracks[trackId];
     setLikedTracks((prev) => ({ ...prev, [trackId]: nextLiked }));
     try {
-      const response = await fetch("/api/like", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ trackId, like: nextLiked }),
-      });
+      // Ensure token is fresh before making the like request
+      try {
+        await fetch("/api/auth/refresh", { method: "POST" });
+      } catch (err) {
+        console.warn("Token refresh failed before like (continuing):", err);
+      }
+      const makeRequest = async () => {
+        const resp = await fetch("/api/like", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ trackId, like: nextLiked }),
+        });
+        if (!resp.ok && resp.status === 401) {
+          // try refreshing and retry once
+          try {
+            await fetch("/api/auth/refresh", { method: "POST" });
+          } catch (e) {
+            console.warn("refresh failed during like retry", e);
+          }
+          const resp2 = await fetch("/api/like", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ trackId, like: nextLiked }),
+          });
+          return resp2;
+        }
+        return resp;
+      };
+      const response = await makeRequest();
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.error || "Failed to update track like");
       }
       const isLiked = await checkTrackLikeStatus(trackId);
       setLikedTracks((prev) => ({ ...prev, [trackId]: isLiked }));
+
+      // If user was viewing Likes when the toggle happened, refetch the list
+      // to ensure it's in sync with the server
+      if (wasViewing) {
+        console.log(
+          `[toggleTrackLike] Refetching likes for immediate UI update...`,
+        );
+        try {
+          const resp = await fetch(`/api/likes?limit=100&_=${Date.now()}`);
+          const data = await resp.json();
+          const likes = data.likes || data.tracks || [];
+          setPlaylistTracks(likes);
+          // also update likedTracks map from server response
+          const map: Record<number, boolean> = {};
+          for (const t of likes) {
+            if (t && t.id) map[t.id] = true;
+          }
+          // Replace the likedTracks map with the server's authoritative set
+          setLikedTracks(map);
+        } catch (err) {
+          console.error("Failed to refetch likes:", err);
+        }
+      }
     } catch (error) {
       console.error("Failed to toggle track like:", error);
       setLikedTracks((prev) => ({ ...prev, [trackId]: !nextLiked }));
@@ -1409,6 +1575,14 @@ export default function Home() {
 
   const addToSelectedPlaylist = async (track: any) => {
     if (!track?.id || !currentPlaylistId) return;
+
+    // Refresh token to ensure it's fresh
+    try {
+      await fetch("/api/auth/refresh", { method: "POST" });
+    } catch (err) {
+      console.warn("Token refresh failed (continuing anyway):", err);
+    }
+
     try {
       const response = await fetch("/api/add-to-playlist", {
         method: "POST",
@@ -1419,8 +1593,11 @@ export default function Home() {
         }),
       });
       if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || "Failed to add to playlist");
+        const data = await response.json().catch(() => ({}));
+        console.error("add-to-playlist failed", response.status, data);
+        throw new Error(
+          data.error || data.message || "Failed to add to playlist",
+        );
       }
     } catch (error) {
       console.error("Failed to add to playlist:", error);
@@ -1616,6 +1793,9 @@ export default function Home() {
         } else {
           setIsAuthenticated(true);
           fetchPlaylists();
+          // Seed likes and liked-playlists cache so UI reflects server state immediately
+          seedLikes(true);
+          seedLikedPlaylists();
           // fetchLastPlayedTrack(); // Removed autoplay on login
         }
       } catch (error) {
@@ -1642,6 +1822,42 @@ export default function Home() {
     const interval = window.setInterval(refresh, 45 * 60 * 1000);
     return () => window.clearInterval(interval);
   }, [isAuthenticated]);
+
+  // Global listener to react to like changes from anywhere in the app
+  useEffect(() => {
+    const handler = (e: any) => {
+      try {
+        const d = e.detail;
+        if (!d) return;
+        const { trackId, isLiked } = d;
+        if (viewingLikes) {
+          if (isLiked) {
+            setPlaylistTracks((prev) =>
+              prev.some((t) => t?.id === trackId)
+                ? prev
+                : [{ id: trackId }, ...prev],
+            );
+            setLikedTracks((prev) => ({ ...prev, [trackId]: true }));
+          } else {
+            setPlaylistTracks((prev) => prev.filter((t) => t?.id !== trackId));
+            setLikedTracks((prev) => {
+              const copy = { ...prev } as Record<number, boolean>;
+              delete copy[trackId as number];
+              return copy;
+            });
+          }
+        } else {
+          setLikedTracks((prev) => ({ ...prev, [trackId]: Boolean(isLiked) }));
+        }
+      } catch (err) {
+        console.error("likes-updated handler error:", err);
+      }
+    };
+
+    window.addEventListener("likes-updated", handler as EventListener);
+    return () =>
+      window.removeEventListener("likes-updated", handler as EventListener);
+  }, [viewingLikes]);
 
   const handleLogout = async () => {
     try {
@@ -3864,12 +4080,14 @@ export default function Home() {
           {isTrackItem(contextMenu.item) && (
             <button
               className="context-menu-item"
-              onClick={() => {
-                addToLikedSongs(contextMenu.item);
+              onClick={async () => {
+                await toggleTrackLike(contextMenu.item.id);
                 closeContextMenu();
               }}
             >
-              Add to liked songs
+              {likedTracks[contextMenu.item.id]
+                ? "Remove from liked songs"
+                : "Add to liked songs"}
             </button>
           )}
 
@@ -3981,18 +4199,23 @@ export default function Home() {
         </div>
       )}
 
-      {contextPlaylistMenu && (
-        <div
-          className="context-playlist-menu"
-          style={{ top: contextPlaylistMenu.y, left: contextPlaylistMenu.x }}
-        >
-          <PlaylistMenu
-            trackId={contextPlaylistMenu.trackId}
-            isOpen={true}
-            onClose={() => setContextPlaylistMenu(null)}
-          />
-        </div>
-      )}
+      {/* Always render PlaylistMenu to keep Toast alive */}
+      <div
+        className="context-playlist-menu"
+        style={{
+          top: contextPlaylistMenu?.y,
+          left: contextPlaylistMenu?.x,
+          visibility: contextPlaylistMenu ? "visible" : "hidden",
+          pointerEvents: contextPlaylistMenu ? "auto" : "none",
+        }}
+      >
+        <PlaylistMenu
+          trackId={contextPlaylistMenu?.trackId || ""}
+          isOpen={!!contextPlaylistMenu}
+          onClose={() => setContextPlaylistMenu(null)}
+          playlistsWithTrack={playlistsWithTrack}
+        />
+      </div>
 
       <Player
         currentTrack={currentTrack}

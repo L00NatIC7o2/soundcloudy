@@ -21,25 +21,32 @@ export default async function handler(
       `https://api.soundcloud.com/playlists/${playlistId}`,
       {
         headers: { Authorization: `OAuth ${token}` },
-        params: { limit: 200, linked_partitioning: 1 },
         timeout: 10000,
       },
     );
 
-    const playlist = playlistResponse.data;
-    const tracks = Array.isArray(playlist?.tracks) ? playlist.tracks : [];
-    const trackIdNum = Number(trackId);
+    const tracks = Array.isArray(playlistResponse.data?.tracks)
+      ? playlistResponse.data.tracks
+      : [];
     const filteredTracks = tracks.filter(
-      (track: any) => Number(track?.id) !== trackIdNum,
+      (track: any) => Number(track?.id) !== Number(trackId),
     );
 
     await axios.put(
       `https://api.soundcloud.com/playlists/${playlistId}`,
       {
-        title: playlist?.title,
-        tracks: filteredTracks.map((track: any) => ({ id: track.id })),
+        playlist: {
+          tracks: filteredTracks.map((track: any) => ({
+            id: String(track.id),
+          })),
+        },
       },
-      { headers: { Authorization: `OAuth ${token}` } },
+      {
+        headers: {
+          Authorization: `OAuth ${token}`,
+          "Content-Type": "application/json",
+        },
+      },
     );
 
     res.json({ success: true });
