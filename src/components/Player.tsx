@@ -111,11 +111,14 @@ const Player = memo(function Player({
   const [isLiked, setIsLiked] = useState(false);
   const [loading, setLoading] = useState(false);
   const [isPlaylistMenuOpen, setIsPlaylistMenuOpen] = useState(false);
+  const [isMobilePlayerOpen, setIsMobilePlayerOpen] = useState(false);
   const [playlistsWithTrack, setPlaylistsWithTrack] = useState<number[]>([]);
   const [isInAnyPlaylist, setIsInAnyPlaylist] = useState(false);
   const lastBackClickRef = useRef<number>(0);
   const lastRemoteSyncRef = useRef<number>(0);
   const pendingRemoteSeekRef = useRef<number | null>(null);
+  const mobileSheetTouchStartRef = useRef<number | null>(null);
+  const mobileSheetTouchCurrentRef = useRef<number | null>(null);
   const playlistLabel =
     currentTrack?.playlistTitle ||
     currentTrack?.publisher_metadata?.album_title ||
@@ -286,6 +289,20 @@ const Player = memo(function Player({
     if (!currentTrack?.id || !isPlaylistMenuOpen) return;
     checkPlaylistsForTrack(currentTrack.id);
   }, [currentTrack?.id, isPlaylistMenuOpen]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const handleResize = () => {
+      if (window.innerWidth > 900) {
+        setIsMobilePlayerOpen(false);
+      }
+    };
+
+    handleResize();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
 
   const checkIfLiked = async (trackId: number | string) => {
     if (!trackId) return;
@@ -583,6 +600,42 @@ const Player = memo(function Player({
     onNext?.();
   };
 
+  const openMobilePlayer = () => {
+    if (typeof window !== "undefined" && window.innerWidth <= 900) {
+      setIsMobilePlayerOpen(true);
+    }
+  };
+
+  const closeMobilePlayer = () => {
+    setIsMobilePlayerOpen(false);
+  };
+
+  const handleMobileSheetTouchStart = (
+    event: React.TouchEvent<HTMLDivElement>,
+  ) => {
+    mobileSheetTouchStartRef.current = event.touches[0]?.clientY ?? null;
+    mobileSheetTouchCurrentRef.current = mobileSheetTouchStartRef.current;
+  };
+
+  const handleMobileSheetTouchMove = (
+    event: React.TouchEvent<HTMLDivElement>,
+  ) => {
+    mobileSheetTouchCurrentRef.current = event.touches[0]?.clientY ?? null;
+  };
+
+  const handleMobileSheetTouchEnd = () => {
+    if (
+      mobileSheetTouchStartRef.current !== null &&
+      mobileSheetTouchCurrentRef.current !== null &&
+      mobileSheetTouchCurrentRef.current - mobileSheetTouchStartRef.current > 90
+    ) {
+      closeMobilePlayer();
+    }
+
+    mobileSheetTouchStartRef.current = null;
+    mobileSheetTouchCurrentRef.current = null;
+  };
+
   if (!currentTrack) {
     return null;
   }
@@ -595,7 +648,7 @@ const Player = memo(function Player({
         onLoadedMetadata={handleLoadedMetadata}
         onEnded={handleTrackEnd}
       />
-      <div className="player-container" style={playerStyle}>
+      <div className="player-container player-desktop-shell" style={playerStyle}>
         {loading && <div className="player-loading">Loading track...</div>}
         <div className="player-content">
           <div className="player-left">
@@ -857,6 +910,204 @@ const Player = memo(function Player({
               value={isMuted ? 0 : volume}
               onChange={handleVolumeChange}
             />
+          </div>
+        </div>
+      </div>
+      <div
+        role="button"
+        tabIndex={0}
+        className="mobile-player-collapsed"
+        onClick={openMobilePlayer}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            openMobilePlayer();
+          }
+        }}
+        aria-label={`Open player for ${currentTrack.title}`}
+      >
+        <img
+          src={getTrackArtwork(currentTrack)}
+          alt={currentTrack.title}
+          className="mobile-player-cover"
+        />
+        <div className="mobile-player-meta">
+          <div className="mobile-player-artist">
+            {currentTrack.user?.username || "Unknown"}
+          </div>
+          <div className="mobile-player-title">{currentTrack.title}</div>
+        </div>
+        <button
+          type="button"
+          className="mobile-player-icon-btn"
+          onClick={(event) => {
+            event.stopPropagation();
+            togglePlayPause();
+          }}
+          aria-label={isPlaying ? "Pause" : "Play"}
+        >
+          {isPlaying ? (
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+              <rect x="6" y="4" width="4" height="16" />
+              <rect x="14" y="4" width="4" height="16" />
+            </svg>
+          ) : (
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+              <polygon points="5 3 19 12 5 21 5 3" />
+            </svg>
+          )}
+        </button>
+        <button
+          type="button"
+          className={`mobile-player-icon-btn mobile-like-btn ${isLiked ? "liked" : ""}`}
+          onClick={(event) => {
+            event.stopPropagation();
+            void toggleLike();
+          }}
+          aria-label={isLiked ? "Unlike" : "Like"}
+        >
+          <img
+            src="https://img.icons8.com/parakeet-line/48/like.png"
+            alt={isLiked ? "Unlike" : "Like"}
+            className="player-like-icon"
+          />
+        </button>
+      </div>
+      <div
+        className={`mobile-player-sheet ${isMobilePlayerOpen ? "open" : ""}`}
+        onClick={closeMobilePlayer}
+      >
+        <div
+          className="mobile-player-sheet-panel"
+          onClick={(event) => event.stopPropagation()}
+          onTouchStart={handleMobileSheetTouchStart}
+          onTouchMove={handleMobileSheetTouchMove}
+          onTouchEnd={handleMobileSheetTouchEnd}
+        >
+          <div className="mobile-player-sheet-handle" />
+          <div className="mobile-player-sheet-top">
+            <button
+              type="button"
+              className="mobile-player-minimize"
+              onClick={closeMobilePlayer}
+              aria-label="Minimize player"
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                <path
+                  d="M6 15l6-6 6 6"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
+          </div>
+          <div className="mobile-player-sheet-body">
+            <img
+              src={getTrackArtwork(currentTrack)}
+              alt={currentTrack.title}
+              className="mobile-player-sheet-cover"
+            />
+            <div className="mobile-player-sheet-meta">
+              <div className="mobile-player-sheet-artist">
+                {currentTrack.user?.username || "Unknown"}
+              </div>
+              <div className="mobile-player-sheet-title">{currentTrack.title}</div>
+              {playlistLabel ? (
+                <div className="mobile-player-sheet-context">{playlistLabel}</div>
+              ) : null}
+            </div>
+            <div className="mobile-player-sheet-progress">
+              <span className="player-time">{formatTime(currentTime)}</span>
+              <input
+                type="range"
+                className="player-seek"
+                min="0"
+                max={duration || 0}
+                value={currentTime}
+                onChange={handleSeek}
+              />
+              <span className="player-time">{formatTime(duration)}</span>
+            </div>
+            <div className="mobile-player-sheet-controls">
+              <button
+                type="button"
+                className="player-btn"
+                onClick={handlePrevious}
+                title="Previous"
+              >
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                  <line
+                    x1="5"
+                    y1="4"
+                    x2="5"
+                    y2="20"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  />
+                  <polygon points="19 3 19 21 5 12 19 3" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                className="player-btn player-btn-play"
+                onClick={togglePlayPause}
+                disabled={loading}
+              >
+                {isPlaying ? (
+                  <svg
+                    width="24"
+                    height="24"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  >
+                    <rect x="6" y="4" width="4" height="16" />
+                    <rect x="14" y="4" width="4" height="16" />
+                  </svg>
+                ) : (
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                    <polygon points="5 3 19 12 5 21 5 3" />
+                  </svg>
+                )}
+              </button>
+              <button
+                type="button"
+                className="player-btn"
+                onClick={handleNext}
+                title="Next"
+              >
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                  <polygon points="5 3 5 21 19 12 5 3" />
+                  <line
+                    x1="19"
+                    y1="4"
+                    x2="19"
+                    y2="20"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  />
+                </svg>
+              </button>
+            </div>
+            <div className="mobile-player-sheet-actions">
+              <button
+                type="button"
+                className={`mobile-player-sheet-action ${isLiked ? "liked" : ""}`}
+                onClick={() => void toggleLike()}
+              >
+                {isLiked ? "Unlike" : "Like"}
+              </button>
+              <button
+                type="button"
+                className={`mobile-player-sheet-action ${isShuffle ? "active" : ""}`}
+                onClick={() => onShuffleChange?.(!isShuffle)}
+              >
+                Shuffle
+              </button>
+            </div>
           </div>
         </div>
       </div>

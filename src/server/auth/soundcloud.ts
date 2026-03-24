@@ -1,4 +1,4 @@
-﻿import type { NextApiRequest, NextApiResponse } from "next";
+import type { NextApiRequest, NextApiResponse } from "next";
 import axios from "axios";
 
 export type SoundCloudAuthContext = {
@@ -43,6 +43,14 @@ export const setSoundCloudAuthCookies = (
   res.setHeader("Set-Cookie", cookies);
 };
 
+export const clearSoundCloudAuthCookies = (res: NextApiResponse) => {
+  const isProd = process.env.NODE_ENV === "production";
+  res.setHeader("Set-Cookie", [
+    `soundcloud_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${isProd ? "; Secure" : ""}`,
+    `soundcloud_refresh_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${isProd ? "; Secure" : ""}`,
+  ]);
+};
+
 export const refreshSoundCloudAuth = async (
   req: NextApiRequest,
   res: NextApiResponse,
@@ -67,16 +75,27 @@ export const refreshSoundCloudAuth = async (
     refresh_token: refreshToken,
   });
 
-  const response = await axios.post(
-    "https://secure.soundcloud.com/oauth/token",
-    params.toString(),
-    {
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
+  let response;
+  try {
+    response = await axios.post(
+      "https://secure.soundcloud.com/oauth/token",
+      params.toString(),
+      {
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        timeout: 10000,
       },
-      timeout: 10000,
-    },
-  );
+    );
+  } catch (error: any) {
+    if (error.response?.data?.error === "invalid_grant") {
+      clearSoundCloudAuthCookies(res);
+      req.cookies.soundcloud_token = "";
+      req.cookies.soundcloud_refresh_token = "";
+      return null;
+    }
+    throw error;
+  }
 
   const accessToken = response.data?.access_token;
   const nextRefreshToken = response.data?.refresh_token || refreshToken;
