@@ -55,13 +55,14 @@ export default async function handler(
   res: NextApiResponse,
 ) {
   let { trackId, for: forHomepage } = req.query;
+  const normalizedTrackId = Array.isArray(trackId) ? trackId[0] : trackId;
   let auth = getSoundCloudAuthContext(req.cookies.soundcloud_token);
 
   if (!auth) {
     auth = await refreshSoundCloudAuth(req, res);
   }
 
-  if (!trackId && forHomepage) {
+  if (!normalizedTrackId && forHomepage) {
     const recentTracks = await getRecentUniqueTracks(req);
     if (!recentTracks.length) {
       trackId = "308946187";
@@ -108,7 +109,9 @@ export default async function handler(
     }
   }
 
-  if (!trackId) {
+  const resolvedTrackId = Array.isArray(trackId) ? trackId[0] : trackId;
+
+  if (!resolvedTrackId) {
     return res.status(400).json({ error: "Missing trackId" });
   }
   if (!auth) {
@@ -116,14 +119,18 @@ export default async function handler(
   }
 
   try {
-    const tracks = await fetchRelatedTracks(trackId, auth, 20);
+    const tracks = await fetchRelatedTracks(resolvedTrackId, auth, 20);
     res.json({ tracks });
   } catch (error: any) {
     if ([401, 403].includes(error.response?.status)) {
       try {
         const refreshedAuth = await refreshSoundCloudAuth(req, res);
         if (refreshedAuth) {
-          const tracks = await fetchRelatedTracks(trackId, refreshedAuth, 20);
+          const tracks = await fetchRelatedTracks(
+            resolvedTrackId,
+            refreshedAuth,
+            20,
+          );
           return res.json({ tracks });
         }
       } catch (refreshError: any) {
