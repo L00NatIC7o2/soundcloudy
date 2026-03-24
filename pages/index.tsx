@@ -11,6 +11,7 @@
 import { useRouter } from "next/router";
 import Player from "../src/components/Player";
 import PlaylistMenu from "../src/components/PlaylistMenu";
+import MobilePlaylistSheet from "../src/components/MobilePlaylistSheet";
 import TrackDetailView from "../src/components/TrackDetailView";
 import Toast from "../src/components/Toast";
 import dynamic from "next/dynamic";
@@ -119,6 +120,13 @@ export default function Home() {
     trackId: number | string;
   } | null>(null);
   const [playlistsWithTrack, setPlaylistsWithTrack] = useState<number[]>([]);
+  const [rowPlaylistMenuTrackId, setRowPlaylistMenuTrackId] = useState<
+    number | null
+  >(null);
+  const [rowTrackPlaylistsMap, setRowTrackPlaylistsMap] = useState<
+    Record<number, number[]>
+  >({});
+  const [mobileRowPlaylistTrack, setMobileRowPlaylistTrack] = useState<any>(null);
   const [isInSelectedPlaylist, setIsInSelectedPlaylist] = useState(false);
   const [checkingSelectedPlaylist, setCheckingSelectedPlaylist] =
     useState(false);
@@ -355,16 +363,33 @@ export default function Home() {
     const handler = (e: any) => {
       try {
         const d = e.detail;
-        if (!d || !contextPlaylistMenu?.trackId) return;
-        if (String(d.trackId) !== String(contextPlaylistMenu.trackId)) return;
+        if (!d?.trackId) return;
         const pid = Number(d.playlistId);
-        if (d.action === "add") {
-          setPlaylistsWithTrack((prev) =>
-            prev.includes(pid) ? prev : [...prev, pid],
-          );
-        } else if (d.action === "remove") {
-          setPlaylistsWithTrack((prev) => prev.filter((id) => id !== pid));
+        const numericTrackId = Number(d.trackId);
+        if (
+          contextPlaylistMenu?.trackId &&
+          String(d.trackId) === String(contextPlaylistMenu.trackId)
+        ) {
+          if (d.action === "add") {
+            setPlaylistsWithTrack((prev) =>
+              prev.includes(pid) ? prev : [...prev, pid],
+            );
+          } else if (d.action === "remove") {
+            setPlaylistsWithTrack((prev) => prev.filter((id) => id !== pid));
+          }
         }
+        setRowTrackPlaylistsMap((prev) => {
+          const current = prev[numericTrackId] || [];
+          return {
+            ...prev,
+            [numericTrackId]:
+              d.action === "add"
+                ? current.includes(pid)
+                  ? current
+                  : [...current, pid]
+                : current.filter((id) => id !== pid),
+          };
+        });
       } catch (err) {
         console.error(
           "Failed to handle playlist-membership-changed event:",
@@ -382,6 +407,64 @@ export default function Home() {
         handler as EventListener,
       );
   }, [contextPlaylistMenu?.trackId]);
+
+  useEffect(() => {
+    const nextMembership: Record<number, number[]> = {};
+    const addPlaylistTracks = (playlist: any) => {
+      if (!playlist?.id || !Array.isArray(playlist.tracks)) return;
+      for (const track of playlist.tracks) {
+        const trackId = Number(track?.id);
+        if (!Number.isFinite(trackId) || trackId <= 0) continue;
+        if (!nextMembership[trackId]) nextMembership[trackId] = [];
+        if (!nextMembership[trackId].includes(playlist.id)) {
+          nextMembership[trackId].push(playlist.id);
+        }
+      }
+    };
+
+    playlists.forEach(addPlaylistTracks);
+    libraryPlaylists.forEach(addPlaylistTracks);
+    profilePlaylists.forEach(addPlaylistTracks);
+    artistPlaylists.forEach(addPlaylistTracks);
+
+    if (currentPlaylistId && playlistTracks.length) {
+      for (const track of playlistTracks) {
+        const trackId = Number(track?.id);
+        if (!Number.isFinite(trackId) || trackId <= 0) continue;
+        if (!nextMembership[trackId]) nextMembership[trackId] = [];
+        if (!nextMembership[trackId].includes(currentPlaylistId)) {
+          nextMembership[trackId].push(currentPlaylistId);
+        }
+      }
+    }
+
+    if (!Object.keys(nextMembership).length) return;
+
+    setRowTrackPlaylistsMap((prev) => {
+      let changed = false;
+      const merged = { ...prev };
+      for (const [trackId, playlistIds] of Object.entries(nextMembership)) {
+        const numericTrackId = Number(trackId);
+        const current = merged[numericTrackId] || [];
+        const combined = Array.from(new Set([...current, ...playlistIds]));
+        if (
+          combined.length !== current.length ||
+          combined.some((id, index) => id !== current[index])
+        ) {
+          merged[numericTrackId] = combined;
+          changed = true;
+        }
+      }
+      return changed ? merged : prev;
+    });
+  }, [
+    playlists,
+    libraryPlaylists,
+    profilePlaylists,
+    artistPlaylists,
+    currentPlaylistId,
+    playlistTracks,
+  ]);
 
   useEffect(() => {
     const isEditableTarget = (target: EventTarget | null) => {
@@ -1821,6 +1904,25 @@ export default function Home() {
     }
   };
 
+  const fetchTrackPlaylistsMembership = async (trackId: number | string) => {
+    if (!trackId) return [];
+    try {
+      const response = await fetch(
+        `/api/check-track-in-playlists?trackId=${trackId}`,
+      );
+      const data = await response.json();
+      const ids = data.playlistsWithTrack?.map((p: any) => p.id) || [];
+      setRowTrackPlaylistsMap((prev) => ({
+        ...prev,
+        [Number(trackId)]: ids,
+      }));
+      return ids;
+    } catch (error) {
+      console.error("Failed to fetch row track playlists:", error);
+      return [];
+    }
+  };
+
   const removeFromSelectedPlaylist = async (track: any) => {
     if (!track?.id || !currentPlaylistId) return;
     try {
@@ -2405,14 +2507,6 @@ export default function Home() {
     else setViewingHomepage(false);
   };
 
-  if (authChecking) {
-    return <div style={{ padding: "20px", color: "white" }}>Loading...</div>;
-  }
-
-  if (!isAuthenticated) {
-    return null;
-  }
-
     const displayTitle = viewingLikes ? "Liked Songs" : selectedPlaylist?.title;
     const displayCover = viewingLikes
       ? getLikedSongsCover()
@@ -2472,7 +2566,28 @@ export default function Home() {
     return title.includes(term) || artist.includes(term);
   });
 
-  const renderTrackRows = (trackItems: any[], rowKeyPrefix: string) => (
+  useEffect(() => {
+    if (!currentPlaylistId || !visiblePlaylistTracks.length) return;
+    setRowTrackPlaylistsMap((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      for (const track of visiblePlaylistTracks) {
+        if (!track?.id) continue;
+        const current = next[track.id] || [];
+        if (!current.includes(currentPlaylistId)) {
+          next[track.id] = [...current, currentPlaylistId];
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [currentPlaylistId, visiblePlaylistTracks]);
+
+  const renderTrackRows = (
+    trackItems: any[],
+    rowKeyPrefix: string,
+    playlistContextId: number | null = null,
+  ) => (
     <div className="track-list">
       {trackItems.map((track: any, index: number) => (
         <div
@@ -2506,6 +2621,72 @@ export default function Home() {
               {track.user?.username || "Unknown"}
             </div>
           </div>
+          <div
+            className="track-row-actions"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button
+              type="button"
+              className={`track-like-btn track-row-like-btn ${
+                likedTracks[track.id] ? "liked" : ""
+              }`}
+              onClick={() => void toggleTrackLike(track.id, track)}
+              aria-label={
+                likedTracks[track.id] ? "Remove like" : "Add like"
+              }
+            >
+              {renderHeartIcon(Boolean(likedTracks[track.id]))}
+            </button>
+            <div className="track-row-playlist-wrap">
+              <button
+                type="button"
+                className={`track-row-playlist-btn ${
+                  (
+                    rowTrackPlaylistsMap[track.id] ||
+                    (playlistContextId ? [playlistContextId] : [])
+                  ).length
+                    ? "in-playlist"
+                    : ""
+                }`}
+                onClick={async () => {
+                  await fetchTrackPlaylistsMembership(track.id);
+                  if (
+                    typeof window !== "undefined" &&
+                    window.innerWidth <= 1000
+                  ) {
+                    setMobileRowPlaylistTrack(track);
+                    return;
+                  }
+                  setRowPlaylistMenuTrackId((prev) =>
+                    prev === track.id ? null : track.id,
+                  );
+                }}
+                aria-label="Add to playlist"
+              >
+                <img
+                  src={
+                    (
+                      rowTrackPlaylistsMap[track.id] ||
+                      (playlistContextId ? [playlistContextId] : [])
+                    ).length
+                      ? "https://img.icons8.com/parakeet-line/50/checked.png"
+                      : "https://img.icons8.com/parakeet-line/48/add.png"
+                  }
+                  alt="Add to playlist"
+                  className="player-add-playlist-icon"
+                />
+              </button>
+              <PlaylistMenu
+                trackId={track.id}
+                isOpen={rowPlaylistMenuTrackId === track.id}
+                onClose={() => setRowPlaylistMenuTrackId(null)}
+                playlistsWithTrack={
+                  rowTrackPlaylistsMap[track.id] ||
+                  (playlistContextId ? [playlistContextId] : [])
+                }
+              />
+            </div>
+          </div>
           <div className="track-row-duration">
             {formatDuration(track.duration)}
           </div>
@@ -2523,6 +2704,14 @@ export default function Home() {
       ))}
     </div>
   );
+
+  if (authChecking) {
+    return <div style={{ padding: "20px", color: "white" }}>Loading...</div>;
+  }
+
+  if (!isAuthenticated) {
+    return null;
+  }
   const appShellStyle = {
     "--app-bg-current": appBackgroundCurrent ? `url("${appBackgroundCurrent}")` : "none",
     "--app-bg-previous": appBackgroundPrevious
@@ -3704,7 +3893,11 @@ export default function Home() {
                   </section>
                 )}
                 {!(viewingProfile || viewingArtist) &&
-                  renderTrackRows(visiblePlaylistTracks, "playlist-track")}
+                  renderTrackRows(
+                    visiblePlaylistTracks,
+                    "playlist-track",
+                    currentPlaylistId,
+                  )}
                 {viewingLikes && likesHasMore && (
                   <div
                     ref={scrollTriggerRef}
@@ -3950,110 +4143,21 @@ export default function Home() {
                 <div className="search-section-header">
                   <h3 className="search-section-title">Tracks</h3>
                 </div>
-                <div className="search-tracks-grid">
-                  {tracks.map((t: any) => (
-                    <div
-                      key={t.id}
-                      className="track-card search-track-card"
-                      onClick={() => handleTrackClick(t, "search", tracks)}
-                      onContextMenu={(event) =>
-                        handleContextMenu(event, t, "search", tracks)
-                      }
-                    >
-                      <button
-                        type="button"
-                        className={`card-play-btn ${
-                          isTrackPlaying(t.id) ? "pause" : "play"
-                        }`}
-                        style={getCardCoverStyle(t)}
-                        onClick={(event) =>
-                          handleCardPlayClick(event, t, "search", tracks)
-                        }
-                        aria-label={isTrackPlaying(t.id) ? "Pause" : "Play"}
-                      >
-                        {isTrackPlaying(t.id) ? (
-                          <svg
-                            width="40"
-                            height="40"
-                            viewBox="0 0 24 24"
-                            fill="currentColor"
-                          >
-                            <rect x="6" y="4" width="4" height="16" />
-                            <rect x="14" y="4" width="4" height="16" />
-                          </svg>
-                        ) : (
-                          <svg
-                            width="40"
-                            height="40"
-                            viewBox="0 0 24 24"
-                            fill="currentColor"
-                          >
-                            <polygon points="5 3 19 12 5 21 5 3" />
-                          </svg>
-                        )}
-                      </button>
-                      <img
-                        src={
-                          t.artwork_url?.replace("-large", "-t500x500") ||
-                          "/placeholder.png"
-                        }
-                        alt={t.title}
-                        className="track-cover"
-                        loading="lazy"
-                        decoding="async"
-                      />
-                      <div
-                        className="track-info clickable"
-                        onClick={(event) => handleInfoClick(event, t)}
-                      >
-                        <div className="track-title">{t.title}</div>
-                        <div
-                          className="track-artist clickable"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleArtistClick(t.user);
-                          }}
-                          style={{
-                            cursor: "pointer",
-                            textDecoration: "underline",
-                          }}
-                        >
-                          {t.user?.username || "Unknown"}
-                        </div>
-                        <button
-                          type="button"
-                          className={`track-like-btn ${
-                            likedTracks[t.id] ? "liked" : ""
-                          }`}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            toggleTrackLike(t.id, t);
-                          }}
-                          aria-label={
-                            likedTracks[t.id] ? "Remove like" : "Add like"
-                          }
-                        >
-                          {renderHeartIcon(Boolean(likedTracks[t.id]))}
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+                {renderTrackRows(tracks, "search-track")}
 
-                  {searchHasMore && (
-                    <div
-                      ref={scrollTriggerRef}
-                      style={{
-                        textAlign: "center",
-                        padding: "40px",
-                        gridColumn: "1 / -1",
-                        color: "rgba(255,255,255,0.5)",
-                        fontSize: "14px",
-                      }}
-                    >
-                      {isLoadingMore ? "Loading more..." : ""}
-                    </div>
-                  )}
-                </div>
+                {searchHasMore && (
+                  <div
+                    ref={scrollTriggerRef}
+                    style={{
+                      textAlign: "center",
+                      padding: "24px 0 0",
+                      color: "rgba(255,255,255,0.5)",
+                      fontSize: "14px",
+                    }}
+                  >
+                    {isLoadingMore ? "Loading more..." : ""}
+                  </div>
+                )}
               </section>
             ) : (
               <>
@@ -4319,106 +4423,21 @@ export default function Home() {
                   <div className="search-section-header">
                     <h3 className="search-section-title">Tracks</h3>
                   </div>
-                  <div className="search-tracks-grid">
-                    {tracks.map((t: any) => (
-                      <div
-                        key={t.id}
-                        className="track-card search-track-card"
-                        onClick={() => handleTrackClick(t, "search", tracks)}
-                        onContextMenu={(event) =>
-                          handleContextMenu(event, t, "search", tracks)
-                        }
-                      >
-                        <button
-                          type="button"
-                          className={`card-play-btn ${
-                            isTrackPlaying(t.id) ? "pause" : "play"
-                          }`}
-                          style={getCardCoverStyle(t)}
-                          onClick={(event) =>
-                            handleCardPlayClick(event, t, "search", tracks)
-                          }
-                          aria-label={isTrackPlaying(t.id) ? "Pause" : "Play"}
-                        >
-                          {isTrackPlaying(t.id) ? (
-                            <svg
-                              width="40"
-                              height="40"
-                              viewBox="0 0 24 24"
-                              fill="currentColor"
-                            >
-                              <rect x="6" y="4" width="4" height="16" />
-                              <rect x="14" y="4" width="4" height="16" />
-                            </svg>
-                          ) : (
-                            <svg
-                              width="40"
-                              height="40"
-                              viewBox="0 0 24 24"
-                              fill="currentColor"
-                            >
-                              <polygon points="5 3 19 12 5 21 5 3" />
-                            </svg>
-                          )}
-                        </button>
-                        <img
-                          src={
-                            t.artwork_url?.replace("-large", "-t500x500") ||
-                            "/placeholder.png"
-                          }
-                          alt={t.title}
-                          className="track-cover"
-                          loading="lazy"
-                          decoding="async"
-                        />
-                        <div
-                          className="track-info clickable"
-                          onClick={(event) => handleInfoClick(event, t)}
-                        >
-                          <div className="track-title">{t.title}</div>
-                          <div
-                            className="track-artist clickable"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleArtistClick(t.user);
-                            }}
-                          >
-                            {t.user?.username || "Unknown"}
-                          </div>
-                          <button
-                            type="button"
-                            className={`track-like-btn ${
-                              likedTracks[t.id] ? "liked" : ""
-                            }`}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              toggleTrackLike(t.id, t);
-                            }}
-                            aria-label={
-                              likedTracks[t.id] ? "Remove like" : "Add like"
-                            }
-                          >
-                            {renderHeartIcon(Boolean(likedTracks[t.id]))}
-                          </button>
-                        </div>
-                      </div>
-                    ))}
+                  {renderTrackRows(tracks, "search-track")}
 
-                    {searchHasMore && (
-                      <div
-                        ref={scrollTriggerRef}
-                        style={{
-                          textAlign: "center",
-                          padding: "40px",
-                          gridColumn: "1 / -1",
-                          color: "rgba(255,255,255,0.5)",
-                          fontSize: "14px",
-                        }}
-                      >
-                        {isLoadingMore ? "Loading more..." : ""}
-                      </div>
-                    )}
-                  </div>
+                  {searchHasMore && (
+                    <div
+                      ref={scrollTriggerRef}
+                      style={{
+                        textAlign: "center",
+                        padding: "24px 0 0",
+                        color: "rgba(255,255,255,0.5)",
+                        fontSize: "14px",
+                      }}
+                    >
+                      {isLoadingMore ? "Loading more..." : ""}
+                    </div>
+                  )}
                 </section>
               </>
             )}
@@ -4590,6 +4609,17 @@ export default function Home() {
           playlistsWithTrack={playlistsWithTrack}
         />
       </div>
+
+      <MobilePlaylistSheet
+        trackId={mobileRowPlaylistTrack?.id || ""}
+        isOpen={!!mobileRowPlaylistTrack}
+        onClose={() => setMobileRowPlaylistTrack(null)}
+        playlistsWithTrack={
+          mobileRowPlaylistTrack?.id
+            ? rowTrackPlaylistsMap[mobileRowPlaylistTrack.id] || []
+            : []
+        }
+      />
 
       <Toast
         playlistName=""

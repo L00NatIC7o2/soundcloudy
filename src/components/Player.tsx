@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, memo, type CSSProperties } from "react";
 import { io, Socket } from "socket.io-client";
 import PlaylistMenu from "./PlaylistMenu";
+import MobilePlaylistSheet from "./MobilePlaylistSheet";
 import { prefetchTrackDetails } from "../lib/trackDetails";
 import { getClientSocketUrl } from "../lib/runtimeConfig";
 
@@ -112,13 +113,45 @@ const Player = memo(function Player({
   const [loading, setLoading] = useState(false);
   const [isPlaylistMenuOpen, setIsPlaylistMenuOpen] = useState(false);
   const [isMobilePlayerOpen, setIsMobilePlayerOpen] = useState(false);
+  const [isMobilePlaylistSheetOpen, setIsMobilePlaylistSheetOpen] =
+    useState(false);
+  const [shouldMarqueeMobileTitle, setShouldMarqueeMobileTitle] = useState(false);
+  const [isVolumePopoverOpen, setIsVolumePopoverOpen] = useState(false);
   const [playlistsWithTrack, setPlaylistsWithTrack] = useState<number[]>([]);
   const [isInAnyPlaylist, setIsInAnyPlaylist] = useState(false);
   const lastBackClickRef = useRef<number>(0);
   const lastRemoteSyncRef = useRef<number>(0);
   const pendingRemoteSeekRef = useRef<number | null>(null);
+  const mobileTitleRef = useRef<HTMLDivElement>(null);
+  const mobileTitleSpanRef = useRef<HTMLSpanElement>(null);
   const mobileSheetTouchStartRef = useRef<number | null>(null);
   const mobileSheetTouchCurrentRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!isMobilePlayerOpen) {
+      setShouldMarqueeMobileTitle(false);
+      return;
+    }
+
+    const updateMobileTitleOverflow = () => {
+      const element = mobileTitleRef.current;
+      const span = mobileTitleSpanRef.current;
+      if (!element || !span) return;
+
+      const elementRect = element.getBoundingClientRect();
+      const spanRect = span.getBoundingClientRect();
+      setShouldMarqueeMobileTitle(spanRect.right > elementRect.right + 6);
+    };
+
+    const frame = window.requestAnimationFrame(updateMobileTitleOverflow);
+    window.addEventListener("resize", updateMobileTitleOverflow);
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("resize", updateMobileTitleOverflow);
+    };
+  }, [currentTrack?.title, isMobilePlayerOpen]);
+  const volumePopoverRef = useRef<HTMLDivElement | null>(null);
   const playlistLabel =
     currentTrack?.playlistTitle ||
     currentTrack?.publisher_metadata?.album_title ||
@@ -286,9 +319,31 @@ const Player = memo(function Player({
   }, [currentTrack?.id]);
 
   useEffect(() => {
-    if (!currentTrack?.id || !isPlaylistMenuOpen) return;
+    if (
+      !currentTrack?.id ||
+      (!isPlaylistMenuOpen && !isMobilePlaylistSheetOpen)
+    )
+      return;
     checkPlaylistsForTrack(currentTrack.id);
-  }, [currentTrack?.id, isPlaylistMenuOpen]);
+  }, [currentTrack?.id, isPlaylistMenuOpen, isMobilePlaylistSheetOpen]);
+
+  useEffect(() => {
+    if (!isVolumePopoverOpen) return;
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (
+        volumePopoverRef.current &&
+        !volumePopoverRef.current.contains(event.target as Node)
+      ) {
+        setIsVolumePopoverOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handlePointerDown);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+    };
+  }, [isVolumePopoverOpen]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -296,6 +351,7 @@ const Player = memo(function Player({
     const handleResize = () => {
       if (window.innerWidth > 900) {
         setIsMobilePlayerOpen(false);
+        setIsMobilePlaylistSheetOpen(false);
       }
     };
 
@@ -608,6 +664,7 @@ const Player = memo(function Player({
 
   const closeMobilePlayer = () => {
     setIsMobilePlayerOpen(false);
+    setIsMobilePlaylistSheetOpen(false);
   };
 
   const handleMobileSheetTouchStart = (
@@ -874,42 +931,70 @@ const Player = memo(function Player({
           </div>
 
           <div className="player-right">
-            <button className="player-volume-btn" onClick={toggleMute}>
-              {isMuted || volume === 0 ? (
-                <img
-                  src="https://img.icons8.com/parakeet-line/48/mute.png"
-                  alt="Mute"
-                  className="player-volume-icon"
+            <div
+              className={`player-volume-wrap ${isVolumePopoverOpen ? "open" : ""}`}
+              ref={volumePopoverRef}
+            >
+              <button
+                className="player-volume-btn"
+                onClick={() => setIsVolumePopoverOpen((open) => !open)}
+                title="Volume"
+                aria-label="Volume"
+              >
+                {isMuted || volume === 0 ? (
+                  <img
+                    src="https://img.icons8.com/parakeet-line/48/mute.png"
+                    alt="Mute"
+                    className="player-volume-icon"
+                  />
+                ) : volume < 0.33 ? (
+                  <img
+                    src="https://img.icons8.com/parakeet-line/48/low-volume.png"
+                    alt="Low volume"
+                    className="player-volume-icon"
+                  />
+                ) : volume < 0.66 ? (
+                  <img
+                    src="https://img.icons8.com/parakeet-line/48/medium-volume.png"
+                    alt="Medium volume"
+                    className="player-volume-icon"
+                  />
+                ) : (
+                  <img
+                    src="https://img.icons8.com/parakeet-line/48/high-volume.png"
+                    alt="High volume"
+                    className="player-volume-icon"
+                  />
+                )}
+              </button>
+              <input
+                type="range"
+                className="player-volume-slider"
+                min="0"
+                max="1"
+                step="0.01"
+                value={isMuted ? 0 : volume}
+                onChange={handleVolumeChange}
+              />
+              <div className="player-volume-popover">
+                <button
+                  type="button"
+                  className="player-volume-mute"
+                  onClick={toggleMute}
+                >
+                  {isMuted || volume === 0 ? "Unmute" : "Mute"}
+                </button>
+                <input
+                  type="range"
+                  className="player-volume-slider-vertical"
+                  min="0"
+                  max="1"
+                  step="0.01"
+                  value={isMuted ? 0 : volume}
+                  onChange={handleVolumeChange}
                 />
-              ) : volume < 0.33 ? (
-                <img
-                  src="https://img.icons8.com/parakeet-line/48/low-volume.png"
-                  alt="Low volume"
-                  className="player-volume-icon"
-                />
-              ) : volume < 0.66 ? (
-                <img
-                  src="https://img.icons8.com/parakeet-line/48/medium-volume.png"
-                  alt="Medium volume"
-                  className="player-volume-icon"
-                />
-              ) : (
-                <img
-                  src="https://img.icons8.com/parakeet-line/48/high-volume.png"
-                  alt="High volume"
-                  className="player-volume-icon"
-                />
-              )}
-            </button>
-            <input
-              type="range"
-              className="player-volume-slider"
-              min="0"
-              max="1"
-              step="0.01"
-              value={isMuted ? 0 : volume}
-              onChange={handleVolumeChange}
-            />
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -986,6 +1071,11 @@ const Player = memo(function Player({
         >
           <div className="mobile-player-sheet-handle" />
           <div className="mobile-player-sheet-top">
+            {playlistLabel ? (
+              <div className="mobile-player-sheet-top-context">{playlistLabel}</div>
+            ) : (
+              <div />
+            )}
             <button
               type="button"
               className="mobile-player-minimize"
@@ -1009,14 +1099,75 @@ const Player = memo(function Player({
               alt={currentTrack.title}
               className="mobile-player-sheet-cover"
             />
+            <div className="mobile-player-sheet-actions-row">
+              <div className="mobile-player-sheet-actions-left">
+                <button
+                  type="button"
+                  className={`mobile-player-icon-btn mobile-like-btn ${isLiked ? "liked" : ""}`}
+                  onClick={() => void toggleLike()}
+                  aria-label={isLiked ? "Unlike" : "Like"}
+                >
+                  <img
+                    src="https://img.icons8.com/parakeet-line/48/like.png"
+                    alt={isLiked ? "Unlike" : "Like"}
+                    className="player-like-icon"
+                  />
+                </button>
+                <button
+                  type="button"
+                  className={`mobile-player-icon-btn mobile-shuffle-btn ${isShuffle ? "active" : ""}`}
+                  onClick={() => onShuffleChange?.(!isShuffle)}
+                  aria-label={isShuffle ? "Shuffle Off" : "Shuffle On"}
+                >
+                  <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  >
+                    <polyline points="16 3 21 3 21 8"></polyline>
+                    <line x1="4" y1="20" x2="21" y2="3"></line>
+                    <polyline points="21 16 21 21 16 21"></polyline>
+                    <line x1="15" y1="15" x2="21" y2="21"></line>
+                    <line x1="4" y1="4" x2="9" y2="9"></line>
+                  </svg>
+                </button>
+              </div>
+              <div className="mobile-player-sheet-actions-right">
+                <div className="mobile-player-sheet-playlist-wrap">
+                  <button
+                    type="button"
+                    className={`mobile-player-icon-btn mobile-playlist-btn ${isInAnyPlaylist ? "in-playlist" : ""}`}
+                    onClick={() => setIsMobilePlaylistSheetOpen(true)}
+                    aria-label={
+                      isInAnyPlaylist ? "Added to playlist" : "Add to playlist"
+                    }
+                  >
+                    <img
+                      src={
+                        isInAnyPlaylist
+                          ? "https://img.icons8.com/parakeet-line/50/checked.png"
+                          : "https://img.icons8.com/parakeet-line/48/add.png"
+                      }
+                      alt="Add to playlist"
+                      className="player-add-playlist-icon"
+                    />
+                  </button>
+                </div>
+              </div>
+            </div>
             <div className="mobile-player-sheet-meta">
               <div className="mobile-player-sheet-artist">
                 {currentTrack.user?.username || "Unknown"}
               </div>
-              <div className="mobile-player-sheet-title">{currentTrack.title}</div>
-              {playlistLabel ? (
-                <div className="mobile-player-sheet-context">{playlistLabel}</div>
-              ) : null}
+              <div
+                ref={mobileTitleRef}
+                className={`mobile-player-sheet-title ${shouldMarqueeMobileTitle ? "is-marquee" : ""}`}
+              >
+                <span ref={mobileTitleSpanRef}>{currentTrack.title}</span>
+              </div>
             </div>
             <div className="mobile-player-sheet-progress">
               <span className="player-time">{formatTime(currentTime)}</span>
@@ -1092,25 +1243,15 @@ const Player = memo(function Player({
                 </svg>
               </button>
             </div>
-            <div className="mobile-player-sheet-actions">
-              <button
-                type="button"
-                className={`mobile-player-sheet-action ${isLiked ? "liked" : ""}`}
-                onClick={() => void toggleLike()}
-              >
-                {isLiked ? "Unlike" : "Like"}
-              </button>
-              <button
-                type="button"
-                className={`mobile-player-sheet-action ${isShuffle ? "active" : ""}`}
-                onClick={() => onShuffleChange?.(!isShuffle)}
-              >
-                Shuffle
-              </button>
-            </div>
           </div>
         </div>
       </div>
+      <MobilePlaylistSheet
+        trackId={currentTrack.id}
+        isOpen={isMobilePlaylistSheetOpen}
+        onClose={() => setIsMobilePlaylistSheetOpen(false)}
+        playlistsWithTrack={playlistsWithTrack}
+      />
     </div>
   );
 });
