@@ -2413,12 +2413,12 @@ export default function Home() {
     return null;
   }
 
-  const displayTitle = viewingLikes ? "Liked Songs" : selectedPlaylist?.title;
-  const displayCover = viewingLikes
-    ? getLikedSongsCover()
-    : selectedPlaylist
-      ? getPlaylistCover(selectedPlaylist)
-      : null;
+    const displayTitle = viewingLikes ? "Liked Songs" : selectedPlaylist?.title;
+    const displayCover = viewingLikes
+      ? getLikedSongsCover()
+      : selectedPlaylist
+        ? getPlaylistCover(selectedPlaylist)
+        : undefined;
   const activeProfileBanner = viewingProfile
     ? normalizeArtworkUrl(userProfile?.banner_url)
     : normalizeArtworkUrl(
