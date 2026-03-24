@@ -1,6 +1,7 @@
 import { Server } from "socket.io";
 
-const io = new Server(3001, { cors: { origin: "*" } });
+const port = Number(process.env.PORT || 3001);
+const io = new Server(port, { cors: { origin: "*" } });
 const playbackByRoom = new Map();
 
 io.on("connection", (socket) => {
@@ -34,3 +35,5 @@ io.on("connection", (socket) => {
     socket.to(userId).emit("remote-command", command);
   });
 });
+
+console.log(`Socket server listening on port ${port}`);
