@@ -3480,3 +3480,421 @@ body.electron .main-area {
     filter: blur(48px) saturate(194%);
   }
 }
+
+/* Final responsive overrides */
+@media (max-width: 1280px) {
+  .main-area {
+    padding-right: 20px;
+  }
+
+  .search-box {
+    width: min(640px, calc(100vw - 220px));
+  }
+
+  .playlist-header-sticky:not(.track-panel-header),
+  .profile-header {
+    padding-left: 20px;
+    padding-right: 20px;
+  }
+
+  .search-tracks-grid {
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 18px;
+  }
+
+  .search-profiles-grid,
+  .search-albums-grid,
+  .search-playlists-grid,
+  .library-grid {
+    grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+    gap: 16px;
+  }
+
+  .card-play-btn {
+    width: 88px;
+    height: 88px;
+  }
+}
+
+@media (max-width: 1100px) {
+  .sidebar.collapsed {
+    width: 84px;
+  }
+
+  .app-shell:has(.sidebar.expanded) .main-area {
+    margin-left: 200px;
+  }
+
+  .main-area {
+    padding-left: 16px;
+    padding-right: 16px;
+    padding-bottom: 150px;
+  }
+
+  .tracks-grid {
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 16px;
+    padding: 16px 8px 0;
+  }
+
+  .track-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .track-row {
+    grid-template-columns: 56px minmax(0, 1fr) auto;
+    gap: 12px;
+  }
+
+  .track-row-year,
+  .track-row-added {
+    display: none;
+  }
+
+  .playlist-header-sticky:not(.track-panel-header),
+  .profile-header {
+    gap: 18px;
+  }
+
+  .profile-header-right {
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 900px) {
+  .top-bar {
+    top: 8px;
+    padding: 10px 12px;
+  }
+
+  .search-box {
+    width: min(100%, calc(100vw - 32px));
+    max-width: none;
+  }
+
+  .main-area {
+    margin-left: 0 !important;
+    padding: 88px 14px 170px;
+  }
+
+  .sidebar {
+    width: 88px;
+  }
+
+  .sidebar.expanded,
+  .sidebar.collapsed {
+    width: 88px;
+  }
+
+  .sidebar-toggle,
+  .sidebar-playlists,
+  .sidebar-divider,
+  .sidebar-footer,
+  .sidebar .nav-label,
+  .sidebar.expanded .playlist-title-sidebar,
+  .sidebar.collapsed .playlist-title-sidebar {
+    display: none !important;
+  }
+
+  .sidebar {
+    top: auto;
+    bottom: 0;
+    width: 100%;
+    height: calc(72px + env(safe-area-inset-bottom));
+    min-height: 72px;
+    padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 -10px 28px rgba(0, 0, 0, 0.32);
+    backdrop-filter: blur(22px);
+    overflow: hidden;
+    z-index: 120;
+  }
+
+  .sidebar-nav {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 0;
+    height: 100%;
+  }
+
+  .nav-item,
+  .sidebar.collapsed .nav-item {
+    flex: 1 1 0;
+    min-width: 0;
+    justify-content: center;
+    padding: 10px 8px;
+    border-radius: 14px;
+  }
+
+  .nav-icon-img {
+    width: 22px;
+    height: 22px;
+    min-width: 22px;
+  }
+
+  .playlist-view {
+    margin-top: 0;
+  }
+
+  .playlist-header-sticky:not(.track-panel-header),
+  .profile-header {
+    position: relative;
+    top: 0;
+    min-height: 0;
+    height: auto;
+    border-radius: 18px;
+    margin-bottom: 18px;
+  }
+
+  .profile-header,
+  .profile-header-left {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .profile-header-right,
+  .profile-stat,
+  .profile-header-stats {
+    align-items: flex-start;
+    text-align: left;
+  }
+
+  .playlist-header-sticky:not(.track-panel-header) {
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 18px 16px;
+  }
+
+  .playlist-header-cover {
+    width: 96px;
+    height: 96px;
+  }
+
+  .playlist-header-main {
+    width: 100%;
+    min-width: 0;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .playlist-header-title {
+    font-size: clamp(22px, 5vw, 30px);
+    white-space: normal;
+  }
+
+  .playlist-track-search-banner {
+    position: static;
+    width: 100%;
+    margin-top: 0;
+    padding-bottom: 0;
+  }
+
+  .search-results-container,
+  .homepage-container {
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  .search-section {
+    margin-bottom: 24px;
+  }
+
+  .search-section-header {
+    margin: 0 0 12px;
+  }
+
+  .search-tracks-grid,
+  .search-profiles-grid,
+  .search-albums-grid,
+  .search-playlists-grid,
+  .library-grid,
+  .tracks-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+    padding: 8px 0 0;
+  }
+
+  .horizontal-scroll .track-card,
+  .home-track-card {
+    flex-basis: 220px;
+    width: 220px;
+    min-width: 220px;
+    max-width: 220px;
+  }
+
+  .card-play-btn {
+    width: 72px;
+    height: 72px;
+    opacity: 1;
+    background-color: rgba(0, 0, 0, 0.28);
+  }
+
+  .track-card:hover {
+    transform: none;
+  }
+
+  .track-detail-grid,
+  .track-panel-body,
+  .track-panel-stats {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .track-panel-shell {
+    width: calc(100vw - 20px);
+    bottom: 160px;
+  }
+
+  .track-panel-scroll {
+    max-height: calc(100vh - 220px);
+  }
+
+  .player-bar {
+    left: 0;
+    right: 0;
+    bottom: calc(72px + env(safe-area-inset-bottom));
+    width: 100%;
+    padding: 10px 12px;
+    min-height: 88px;
+    height: auto;
+    z-index: 119;
+  }
+
+  .player-container {
+    width: 100%;
+    max-width: none;
+    border-radius: 20px;
+  }
+
+  .player-content {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .player-left,
+  .player-center,
+  .player-right {
+    width: 100%;
+    max-width: none;
+  }
+
+  .player-left {
+    min-width: 0;
+  }
+
+  .player-info-container,
+  .player-info {
+    min-width: 0;
+  }
+
+  .player-center {
+    order: 3;
+  }
+
+  .player-right {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .top-bar {
+    padding: 8px 10px;
+  }
+
+  .search-box {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .search-input-wrap {
+    flex-basis: 100%;
+  }
+
+  .search-submit-btn {
+    width: 100%;
+  }
+
+  .main-area {
+    padding: 122px 12px 174px;
+  }
+
+  .playlist-header-sticky:not(.track-panel-header),
+  .profile-header {
+    padding: 16px 14px;
+  }
+
+  .profile-header-bio,
+  .profile-header-right {
+    max-width: 100%;
+  }
+
+  .search-tracks-grid,
+  .search-profiles-grid,
+  .search-albums-grid,
+  .search-playlists-grid,
+  .library-grid,
+  .tracks-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .track-row {
+    grid-template-columns: 52px minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .track-row-duration {
+    display: none;
+  }
+
+  .horizontal-scroll .track-card,
+  .home-track-card {
+    flex-basis: 72vw;
+    width: 72vw;
+    min-width: 72vw;
+    max-width: 72vw;
+  }
+
+  .track-panel-shell {
+    width: calc(100vw - 14px);
+    bottom: 154px;
+  }
+
+  .track-panel-header {
+    gap: 14px;
+    padding-right: 82px;
+  }
+
+  .track-panel-header .playlist-header-cover {
+    width: 72px;
+    height: 72px;
+  }
+
+  .player-bar {
+    padding: 8px 10px;
+  }
+
+  .player-container {
+    padding: 10px 12px;
+  }
+
+  .player-controls {
+    gap: 10px;
+  }
+
+  .player-btn {
+    width: 40px;
+    height: 40px;
+  }
+
+  .player-btn-play {
+    width: 50px;
+    height: 50px;
+  }
+
+  .context-menu {
+    left: 12px !important;
+    right: 12px;
+    min-width: 0;
+  }
+}
