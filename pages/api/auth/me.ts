@@ -1,5 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from "next";
-import axios from "axios";
+import axios, { type AxiosResponse } from "axios";
 import puppeteer, { type Browser, type Page } from "puppeteer";
 
 const profileCache = new Map<
@@ -37,7 +37,7 @@ const fetchPaginatedCollection = async (
   let firstRequest = true;
 
   while (nextUrl && items.length < maxItems) {
-    const response = await axios.get(nextUrl, {
+    const response: AxiosResponse<any> = await axios.get(nextUrl, {
       headers: { Authorization: `OAuth ${token}` },
       params: firstRequest
         ? { ...params, limit: 200, linked_partitioning: 1 }
@@ -45,7 +45,7 @@ const fetchPaginatedCollection = async (
       timeout: 8000,
     });
 
-    const data = response.data;
+    const data: any = response.data;
     const collection = Array.isArray(data) ? data : data?.collection || [];
     items = items.concat(collection);
     nextUrl = data?.next_href || null;
