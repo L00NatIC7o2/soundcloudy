@@ -26,7 +26,6 @@ export default async function handler(
     return res.status(401).json({ error: "Not authenticated", sections: [] });
 
   const cachePath = getStoragePath();
-  const authHeader = { Authorization: `OAuth ${token}` };
 
   // 2. Check Local File Cache
   if (fs.existsSync(cachePath)) {
@@ -41,6 +40,7 @@ export default async function handler(
   const sections: any[] = [];
   const protocol = req.headers["x-forwarded-proto"] || "http";
   const baseUrl = `${protocol}://${req.headers.host}`;
+  const requestHeaders = { Cookie: req.headers.cookie || "" };
 
   try {
     // 3. API Fetching (Fastest)
@@ -49,53 +49,75 @@ export default async function handler(
     // Recently Played (calling your local endpoint)
     try {
       const hist = await axios.get(`${baseUrl}/api/recently-played?limit=20`, {
-        headers: { Cookie: `soundcloud_token=${token}` },
+        headers: requestHeaders,
       });
-      if (hist.data.items)
+      if (Array.isArray(hist.data.items) && hist.data.items.length)
         sections.push({ title: "Recently Played", items: hist.data.items });
     } catch (e) {
       console.log("Recent API skip");
     }
 
-    // 4. Puppeteer Sniffer (For personalized mixed-selections)
-    console.log("Launching browser to sniff api-v2...");
-    const browser = await puppeteer.launch({
-      headless: true,
-      args: ["--no-sandbox"],
-    });
-
-    const page = await browser.newPage();
-    await page.setCookie({
-      name: "oauth_token",
-      value: token,
-      domain: ".soundcloud.com",
-      path: "/",
-      secure: true,
-    });
-
-    // Listen for the internal mixed-selections API
-    page.on("response", async (response) => {
-      const url = response.url();
-      if (url.includes("api-v2.soundcloud.com/mixed-selections")) {
-        try {
-          const data = await response.json();
-          data.collection?.forEach((s: any) => {
-            if (s.items?.collection?.length) {
-              sections.push({
-                title: s.title || "For You",
-                items: s.items.collection,
-              });
-            }
-          });
-        } catch {}
+    // Homepage recommendation fallback, independent of Puppeteer sniffing.
+    try {
+      const related = await axios.get(`${baseUrl}/api/related-tracks?for=homepage`, {
+        headers: requestHeaders,
+      });
+      if (Array.isArray(related.data?.tracks) && related.data.tracks.length) {
+        sections.push({
+          title: "Recommended For You",
+          items: related.data.tracks,
+        });
       }
-    });
+    } catch (e) {
+      console.log("Homepage recommendations skip");
+    }
 
-    await page.goto("https://soundcloud.com/discover", {
-      waitUntil: "networkidle2",
-      timeout: 30000,
-    });
-    await browser.close();
+    // 4. Puppeteer Sniffer (For personalized mixed-selections)
+    try {
+      console.log("Launching browser to sniff api-v2...");
+      const browser = await puppeteer.launch({
+        headless: true,
+        args: ["--no-sandbox"],
+      });
+
+      try {
+        const page = await browser.newPage();
+        await page.setCookie({
+          name: "oauth_token",
+          value: token,
+          domain: ".soundcloud.com",
+          path: "/",
+          secure: true,
+        });
+
+        // Listen for the internal mixed-selections API
+        page.on("response", async (response) => {
+          const url = response.url();
+          if (url.includes("api-v2.soundcloud.com/mixed-selections")) {
+            try {
+              const data = await response.json();
+              data.collection?.forEach((s: any) => {
+                if (s.items?.collection?.length) {
+                  sections.push({
+                    title: s.title || "For You",
+                    items: s.items.collection,
+                  });
+                }
+              });
+            } catch {}
+          }
+        });
+
+        await page.goto("https://soundcloud.com/discover", {
+          waitUntil: "networkidle2",
+          timeout: 30000,
+        });
+      } finally {
+        await browser.close();
+      }
+    } catch (error: any) {
+      console.error("Discover Puppeteer fallback failed:", error?.message || error);
+    }
 
     // 5. Save to Local Cache
     const result = { sections };
