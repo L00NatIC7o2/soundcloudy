@@ -1,10 +1,13 @@
-import type { NextApiRequest, NextApiResponse } from "next";
+﻿import type { NextApiRequest, NextApiResponse } from "next";
 import axios from "axios";
 import { IncomingMessage } from "http";
+import {
+  getSoundCloudAuthContext,
+  refreshSoundCloudAuth,
+  type SoundCloudAuthContext,
+} from "../../src/server/auth/soundcloud";
 
-// Helper to get last 5 unique-artist tracks from recently played
 async function getRecentUniqueTracks(req: IncomingMessage) {
-  // Call the recently-played API route
   const baseUrl = req.headers.host?.startsWith("localhost")
     ? `http://${req.headers.host}`
     : `https://${req.headers.host}`;
@@ -24,48 +27,81 @@ async function getRecentUniqueTracks(req: IncomingMessage) {
   return uniqueTracks;
 }
 
+const fetchRelatedTracks = async (
+  trackId: string | number,
+  auth: SoundCloudAuthContext,
+  limit: number,
+) => {
+  const response = await axios.get(
+    `https://api.soundcloud.com/tracks/${trackId}/related`,
+    {
+      headers: {
+        Authorization: auth.headerValue,
+      },
+      params: {
+        limit,
+        linked_partitioning: true,
+        access: "playable,preview",
+      },
+      timeout: 10000,
+    },
+  );
+
+  return response.data.collection || response.data || [];
+};
+
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
   let { trackId, for: forHomepage } = req.query;
-  const token = req.cookies.soundcloud_token;
+  let auth = getSoundCloudAuthContext(req.cookies.soundcloud_token);
 
-  // If called for homepage, aggregate related tracks from last 5 unique-artist tracks
+  if (!auth) {
+    auth = await refreshSoundCloudAuth(req, res);
+  }
+
   if (!trackId && forHomepage) {
     const recentTracks = await getRecentUniqueTracks(req);
     if (!recentTracks.length) {
-      // fallback
       trackId = "308946187";
     } else {
-      // For each unique track, fetch related tracks and merge
+      if (!auth) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
       const allRelated: any[] = [];
       const seenTrackIds = new Set();
+      let activeAuth = auth;
+
       for (const t of recentTracks) {
         try {
-          const response = await axios.get(
-            `https://api.soundcloud.com/tracks/${t.id}/related`,
-            {
-              headers: {
-                Authorization: `OAuth ${token}`,
-              },
-              params: {
-                limit: 10,
-                linked_partitioning: true,
-                access: "playable,preview",
-              },
-              timeout: 10000,
-            },
-          );
-          const tracks = response.data.collection || response.data || [];
+          const tracks = await fetchRelatedTracks(t.id, activeAuth, 10);
           for (const track of tracks) {
             if (!seenTrackIds.has(track.id)) {
               seenTrackIds.add(track.id);
               allRelated.push(track);
             }
           }
-        } catch (e) {
-          // Ignore errors for individual tracks
+        } catch (error: any) {
+          if ([401, 403].includes(error.response?.status)) {
+            try {
+              const refreshedAuth = await refreshSoundCloudAuth(req, res);
+              if (refreshedAuth) {
+                activeAuth = refreshedAuth;
+                const tracks = await fetchRelatedTracks(t.id, activeAuth, 10);
+                for (const track of tracks) {
+                  if (!seenTrackIds.has(track.id)) {
+                    seenTrackIds.add(track.id);
+                    allRelated.push(track);
+                  }
+                }
+                continue;
+              }
+            } catch {
+              // Ignore refresh errors for homepage aggregation.
+            }
+          }
         }
       }
       return res.json({ tracks: allRelated });
@@ -75,29 +111,29 @@ export default async function handler(
   if (!trackId) {
     return res.status(400).json({ error: "Missing trackId" });
   }
-  if (!token) {
+  if (!auth) {
     return res.status(401).json({ error: "Not authenticated" });
   }
 
   try {
-    const response = await axios.get(
-      `https://api.soundcloud.com/tracks/${trackId}/related`,
-      {
-        headers: {
-          Authorization: `OAuth ${token}`,
-        },
-        params: {
-          limit: 20,
-          linked_partitioning: true,
-          access: "playable,preview",
-        },
-        timeout: 10000,
-      },
-    );
-    // SoundCloud returns { collection: [...], next_href: ... }
-    const tracks = response.data.collection || response.data || [];
+    const tracks = await fetchRelatedTracks(trackId, auth, 20);
     res.json({ tracks });
   } catch (error: any) {
+    if ([401, 403].includes(error.response?.status)) {
+      try {
+        const refreshedAuth = await refreshSoundCloudAuth(req, res);
+        if (refreshedAuth) {
+          const tracks = await fetchRelatedTracks(trackId, refreshedAuth, 20);
+          return res.json({ tracks });
+        }
+      } catch (refreshError: any) {
+        console.error(
+          "Related tracks refresh error:",
+          refreshError.response?.data || refreshError.message,
+        );
+      }
+    }
+
     console.error(
       "Related tracks error:",
       error.response?.status,

@@ -1,14 +1,8 @@
 import type { NextApiRequest, NextApiResponse } from "next";
+import { getConnectStore } from "../../../src/server/auth/connectStore";
+import { getAuthCallbackUrl } from "../../../src/server/http/origin";
 
 // Helper to ensure we access the same global store for Bridge/Connect flows
-const getStore = () => {
-  const globalAny = globalThis as any;
-  if (!globalAny.__SC_CONNECT_CODES) {
-    globalAny.__SC_CONNECT_CODES = new Map<string, any>();
-  }
-  return globalAny.__SC_CONNECT_CODES;
-};
-
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
@@ -29,8 +23,7 @@ export default async function handler(
 
   const clientId = process.env.SOUNDCLOUD_CLIENT_ID;
   const clientSecret = process.env.SOUNDCLOUD_CLIENT_SECRET;
-  const base = process.env.NEXT_PUBLIC_BASE_URL || `http://localhost:3000`;
-  const redirectUri = `${base.replace(/\/$/, "")}/api/auth/callback`;
+  const redirectUri = getAuthCallbackUrl(req);
 
   if (!clientId || !clientSecret) {
     return res
@@ -39,7 +32,6 @@ export default async function handler(
   }
 
   try {
-    // 1. Exchange the code for actual tokens
     const tokenRes = await fetch("https://api.soundcloud.com/oauth2/token", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -49,7 +41,7 @@ export default async function handler(
         grant_type: "authorization_code",
         redirect_uri: redirectUri,
         code: code,
-        code_verifier: verifier, // REQUIRED for PKCE
+        code_verifier: verifier,
       }),
     });
 
@@ -62,18 +54,17 @@ export default async function handler(
       });
     }
 
-    // 2. Handle the "Bridge" flow (if a state/connect_code exists)
     if (state && typeof state === "string") {
-      const store = getStore();
+      const store = getConnectStore();
       if (store.has(state)) {
         store.set(state, {
           ...store.get(state),
           status: "complete",
           tokens: tokenJson,
           createdAt: Date.now(),
+          expires_in: Number(tokenJson.expires_in) || 600,
         });
 
-        // Return a simple 'close window' page for the bridge user
         res.setHeader("Content-Type", "text/html");
         return res.send(`
           <html>
@@ -87,11 +78,9 @@ export default async function handler(
       }
     }
 
-    // 3. Standard Login Flow (if not using bridge, set cookies directly)
     const isProd = process.env.NODE_ENV === "production";
     const cookies = [
       `soundcloud_token=${tokenJson.access_token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${tokenJson.expires_in || 3600}${isProd ? "; Secure" : ""}`,
-      // Clear the verifier cookie as it's no longer needed
       `soundcloud_code_verifier=; Path=/; Max-Age=0`,
     ];
 
@@ -110,3 +99,4 @@ export default async function handler(
       .json({ error: "Internal server error during callback" });
   }
 }
+

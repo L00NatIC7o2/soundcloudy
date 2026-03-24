@@ -78,6 +78,7 @@ html,
   position: fixed;
   top: 8px;
   right: 10px;
+  left: auto;
   height: auto;
   display: none;
   align-items: center;
@@ -101,6 +102,16 @@ html,
 
 body.electron .titlebar {
   display: flex;
+  position: fixed;
+  top: 8px;
+  right: 10px;
+  z-index: 3005;
+}
+
+body.electron .titlebar-drag {
+  position: fixed;
+  top: 0;
+  z-index: 3004;
 }
 
 .titlebar-right {
@@ -260,9 +271,87 @@ body::-webkit-scrollbar-track-piece {
 
 /* App Shell */
 .app-shell {
+  position: relative;
   min-height: 100vh;
   background: linear-gradient(135deg, #000000 0%, #000000 100%);
   color: #fff;
+  isolation: isolate;
+  overflow: hidden;
+}
+
+.app-shell::before,
+.app-shell::after {
+  content: "";
+  position: fixed;
+  inset: -12%;
+  pointer-events: none;
+  z-index: 0;
+  background-image:
+    radial-gradient(circle at 16% 20%, rgba(255, 255, 255, 0.14), transparent 28%),
+    radial-gradient(circle at 80% 18%, rgba(255, 120, 72, 0.18), transparent 26%),
+    radial-gradient(circle at 42% 82%, rgba(72, 122, 255, 0.16), transparent 32%),
+    var(--app-bg-current);
+  background-size: 160% 160%, 140% 140%, 150% 150%, cover;
+  background-position:
+    14% 18%,
+    82% 16%,
+    44% 78%,
+    center;
+  filter: blur(50px) saturate(190%);
+  transform: scale(1.16);
+  opacity: 0.64;
+  transition:
+    opacity 0.85s ease,
+    filter 0.85s ease,
+    transform 0.85s ease;
+  animation: app-shell-visualizer 12s cubic-bezier(0.42, 0, 0.24, 1) infinite alternate;
+  will-change: transform, opacity, background-position, filter;
+}
+
+.app-shell::before {
+  opacity: 0.68;
+}
+
+.app-shell::after {
+  background-image:
+    radial-gradient(circle at 18% 22%, rgba(255, 255, 255, 0.12), transparent 30%),
+    radial-gradient(circle at 78% 24%, rgba(255, 110, 48, 0.16), transparent 28%),
+    radial-gradient(circle at 50% 76%, rgba(120, 92, 255, 0.14), transparent 30%),
+    var(--app-bg-previous);
+  background-size: 150% 150%, 138% 138%, 145% 145%, cover;
+  opacity: 0;
+  animation-duration: 14s;
+  animation-direction: alternate-reverse;
+}
+
+.app-shell-transitioning::after {
+  opacity: 0.58;
+}
+
+.app-shell-reactive::before,
+.app-shell-reactive::after {
+  mix-blend-mode: screen;
+}
+
+.app-shell-playing::before {
+  animation:
+    app-shell-visualizer 6.5s cubic-bezier(0.38, 0, 0.22, 1) infinite alternate,
+    app-shell-pulse 2.4s ease-in-out infinite;
+  filter: blur(42px) saturate(235%);
+  opacity: 0.82;
+}
+
+.app-shell-playing::after {
+  animation:
+    app-shell-visualizer 8.2s cubic-bezier(0.38, 0, 0.22, 1) infinite alternate-reverse,
+    app-shell-pulse-secondary 3.1s ease-in-out infinite;
+  filter: blur(46px) saturate(210%);
+  opacity: 0.42;
+}
+
+.app-shell > * {
+  position: relative;
+  z-index: 1;
 }
 
 /* Sidebar - Fixed position with dark blur effect */
@@ -640,7 +729,7 @@ body.electron .main-area {
 }
 
 .track-card {
-  background: rgba(24, 24, 24, 0.12);
+  background: rgba(24, 24, 24, 0.34);
   border-radius: 12px;
   padding: 12px;
   cursor: pointer;
@@ -652,7 +741,7 @@ body.electron .main-area {
 
 .track-card:hover {
   transform: translateY(-4px);
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.26);
   box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
 }
 
@@ -699,16 +788,12 @@ body.electron .main-area {
 }
 
 /* Update playlist header with will-change for better performance */
-.playlist-header-sticky {
+.playlist-header-sticky:not(.track-panel-header) {
   position: sticky;
-  top: 0;
-  background: linear-gradient(
-    135deg,
-    rgba(235, 235, 235, 0.95) 0%,
-    rgb(0, 0, 0) 100%
-  );
-  backdrop-filter: blur(10px);
-  z-index: 10;
+  top: 72px;
+  background: rgba(7, 7, 8, 0.86);
+  backdrop-filter: blur(22px) saturate(140%);
+  z-index: 98;
   --header-padding: calc(24px - (12px * var(--scroll-progress)));
   --header-gap: calc(24px - (8px * var(--scroll-progress)));
   padding: var(--header-padding);
@@ -721,19 +806,17 @@ body.electron .main-area {
   transition: none;
   will-change: padding, height;
   min-height: 248px; /* Prevents layout shift */
+  overflow: hidden;
+  isolation: isolate;
 }
 
 /* Playlist header with dynamic sizing */
-.playlist-header-sticky {
+.playlist-header-sticky:not(.track-panel-header) {
   position: sticky;
-  top: 0;
-  background: linear-gradient(
-    135deg,
-    rgba(0, 0, 0, 0.95) 0%,
-    rgba(0, 0, 0, 0.95) 100%
-  );
-  backdrop-filter: blur(10px);
-  z-index: 10;
+  top: 72px;
+  background: rgba(8, 8, 10, 0.82);
+  backdrop-filter: blur(22px) saturate(145%);
+  z-index: 98;
   --header-padding-y: calc(24px - (12px * var(--scroll-progress)));
   --header-padding-x: 24px;
   --header-gap: calc(24px - (8px * var(--scroll-progress)));
@@ -754,6 +837,44 @@ body.electron .main-area {
       var(--scroll-progress)
   );
   min-height: var(--playlist-min-height);
+}
+
+.playlist-header-sticky:not(.track-panel-header)::before {
+  content: "";
+  position: absolute;
+  inset: -10%;
+  background-image:
+    radial-gradient(circle at 16% 24%, rgba(255, 255, 255, 0.14), transparent 30%),
+    radial-gradient(circle at 84% 18%, rgba(255, 120, 70, 0.18), transparent 28%),
+    var(--playlist-banner-image);
+  background-size: 140% 140%, 132% 132%, cover;
+  background-position:
+    18% 24%,
+    82% 18%,
+    center;
+  filter: blur(36px) saturate(175%);
+  transform: scale(1.14);
+  opacity: 0.88;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.playlist-header-sticky:not(.track-panel-header)::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    180deg,
+    rgba(0, 0, 0, 0.22) 0%,
+    rgba(0, 0, 0, 0.52) 100%
+  );
+  z-index: 0;
+  pointer-events: none;
+}
+
+.playlist-header-sticky:not(.track-panel-header) > * {
+  position: relative;
+  z-index: 1;
 }
 
 /* Profile/Artist Header */
@@ -1003,6 +1124,59 @@ body.electron .main-area {
   gap: 8px;
 }
 
+.playlist-track-search {
+  width: min(360px, 100%);
+}
+
+.playlist-track-search-inline {
+  width: min(360px, 42vw);
+  margin-left: auto;
+}
+
+.profile-section-header {
+  gap: 16px;
+  align-items: center;
+}
+
+.playlist-header-main {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  justify-content: flex-start;
+  padding-top: 6px;
+}
+
+.playlist-track-search-banner {
+  position: absolute;
+  right: 24px;
+  bottom: 18px;
+}
+
+.playlist-track-search input {
+  width: 100%;
+  height: 40px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  padding: 0 16px;
+  font-size: 14px;
+  outline: none;
+  box-sizing: border-box;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.playlist-track-search input::placeholder {
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.playlist-track-search input:focus {
+  border-color: rgba(255, 85, 0, 0.55);
+  background: rgba(255, 255, 255, 0.12);
+}
+
 .track-row {
   display: grid;
   grid-template-columns: 60px 1fr 80px 80px 120px;
@@ -1073,12 +1247,45 @@ body.electron .main-area {
 }
 
 .player-container {
+  position: relative;
   width: 1000px;
   background: rgba(255, 255, 255, 0.22);
   backdrop-filter: blur(12px);
   border-radius: 12px;
   padding: 5px 5px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  overflow: hidden;
+}
+
+.player-container::before {
+  content: "";
+  position: absolute;
+  inset: -20%;
+  background-image:
+    radial-gradient(circle at 18% 22%, rgba(255, 255, 255, 0.16), transparent 34%),
+    radial-gradient(circle at 82% 20%, rgba(255, 140, 92, 0.2), transparent 30%),
+    radial-gradient(circle at 50% 78%, rgba(95, 115, 255, 0.18), transparent 34%),
+    var(--player-artwork);
+  background-size: cover;
+  background-position: center;
+  filter: blur(42px) saturate(160%);
+  opacity: 0.62;
+  transform: scale(1.16);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.player-container::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    180deg,
+    rgba(8, 8, 10, 0.05) 0%,
+    rgba(8, 8, 10, 0.16) 100%
+  );
+  pointer-events: none;
+  z-index: 0;
 }
 
 .player-loading {
@@ -1093,6 +1300,7 @@ body.electron .main-area {
   align-items: center;
   justify-content: space-between;
   position: relative;
+  z-index: 1;
 }
 
 .player-left {
@@ -2049,6 +2257,21 @@ body.electron .main-area {
     margin-bottom: 4px;
   }
 
+  .playlist-header-main {
+    width: 100%;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 10px;
+    padding-top: 0;
+  }
+
+  .playlist-track-search-banner {
+    position: static;
+    align-self: stretch;
+    margin-top: 0;
+    padding-bottom: 0;
+  }
+
   .track-row {
     flex-direction: column;
     align-items: flex-start;
@@ -2416,10 +2639,13 @@ body.electron .main-area {
   cursor: pointer;
   transition: transform 0.2s;
   position: relative;
+  background: rgba(18, 18, 18, 0.38);
+  border: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .track-card:hover {
   transform: scale(1.05);
+  background: rgba(32, 32, 32, 0.5);
 }
 
 /* Play overlay button for track/playlist cards */
@@ -2860,6 +3086,10 @@ body.electron .main-area {
 
 /* Mobile responsiveness for horizontal scroll */
 @media (max-width: 768px) {
+  .playlist-header-sticky:not(.track-panel-header) {
+    top: 68px;
+  }
+
   .homepage-container {
     padding: 16px;
   }
@@ -2874,5 +3104,379 @@ body.electron .main-area {
 
   .horizontal-scroll {
     gap: 12px;
+  }
+}
+.track-panel-shell {
+  position: fixed;
+  left: 50%;
+  bottom: 98px;
+  transform: translateX(-50%);
+  width: min(86vw, 1180px);
+  z-index: 45;
+  pointer-events: none;
+  transform-origin: center bottom;
+}
+
+.track-panel-card {
+  position: relative;
+  pointer-events: auto;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(12px) saturate(120%);
+  -webkit-backdrop-filter: blur(12px) saturate(120%);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 24px;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+
+.track-panel-card::before {
+  content: "";
+  position: absolute;
+  inset: -10%;
+  background: none;
+  filter: none;
+  opacity: 0;
+  transform: none;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.track-panel-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  z-index: 0;
+  pointer-events: none;
+}
+
+.track-panel-shell-open {
+  opacity: 1;
+}
+
+.track-panel-shell-opening {
+  animation: track-panel-open 320ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.track-panel-shell-minimizing,
+.track-panel-shell-closing {
+  animation: track-panel-dock 320ms cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+.track-panel-scroll {
+  position: relative;
+  z-index: 1;
+  max-height: calc(100vh - 170px);
+  overflow-y: auto;
+}
+
+.track-panel-header {
+  position: relative;
+  z-index: 3;
+  margin-top: 0;
+  padding: 18px 22px 0;
+  padding-right: 108px;
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  background: linear-gradient(
+    180deg,
+    rgba(0, 0, 0, 0.4) 0%,
+    rgba(0, 0, 0, 0.22) 100%
+  );
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.track-panel-header-actions {
+  position: absolute;
+  top: 16px;
+  right: 18px;
+  display: flex;
+  gap: 6px;
+  z-index: 4;
+}
+
+.track-panel-window-btn {
+  width: 28px;
+  height: 24px;
+  border: 0;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.9);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.track-panel-window-btn:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.track-panel-window-btn.close:hover {
+  background: rgba(235, 87, 87, 0.7);
+}
+
+.track-panel-body {
+  position: relative;
+  z-index: 1;
+  padding: 24px;
+  display: grid;
+  gap: 24px;
+}
+
+.track-page-text {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 8px;
+  padding-bottom: 12px;
+}
+
+.track-panel-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.track-panel-stat {
+  padding: 16px;
+  border-radius: 14px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.08);
+}
+
+.track-panel-stat-label {
+  color: rgba(255,255,255,0.6);
+  font-size: 12px;
+}
+
+.track-panel-stat-value {
+  color: #fff;
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.track-panel-copy {
+  padding: 18px;
+  border-radius: 14px;
+  background: rgba(255,255,255,0.04);
+  color: rgba(255,255,255,0.82);
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.track-panel-comments {
+  display: grid;
+  gap: 12px;
+}
+
+.track-panel-comment {
+  padding: 14px;
+  border-radius: 14px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+}
+
+.track-panel-comment-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.track-panel-comment-user {
+  color: #fff;
+  font-weight: 600;
+}
+
+.track-panel-comment-time {
+  color: rgba(255,255,255,0.55);
+  font-size: 12px;
+}
+
+.track-panel-comment-body {
+  color: rgba(255,255,255,0.82);
+  line-height: 1.5;
+}
+
+.track-panel-more {
+  justify-self: center;
+  padding: 10px 18px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.07);
+  color: #fff;
+  font-size: 13px;
+  cursor: pointer;
+  transition:
+    background 0.2s,
+    transform 0.2s;
+}
+
+.track-panel-more:hover {
+  background: rgba(255, 255, 255, 0.14);
+  transform: translateY(-1px);
+}
+
+.track-panel-restore {
+  position: fixed;
+  left: 50%;
+  bottom: 96px;
+  transform: translateX(-50%);
+  z-index: 46;
+  width: 44px;
+  height: 44px;
+  border: none;
+  border-radius: 999px;
+  background: rgba(28, 28, 30, 0.74);
+  backdrop-filter: blur(22px);
+  -webkit-backdrop-filter: blur(22px);
+  color: #fff;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+}
+
+.track-panel-restore:hover {
+  background: rgba(34, 34, 38, 0.98);
+}
+
+@media (max-width: 900px) {
+  .track-panel-shell {
+    width: calc(100vw - 24px);
+    bottom: 92px;
+  }
+
+  .track-panel-scroll {
+    max-height: calc(100vh - 154px);
+  }
+
+  .track-panel-header {
+    padding: 16px 16px 0;
+    padding-right: 96px;
+  }
+
+  .track-panel-body {
+    padding: 16px;
+  }
+}
+
+@keyframes track-panel-open {
+  from {
+    opacity: 0.18;
+    transform: translateX(-50%) translateY(74px) scale(0.24);
+    filter: blur(12px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+@keyframes track-panel-dock {
+  from {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
+    filter: blur(0);
+  }
+
+  to {
+    opacity: 0.15;
+    transform: translateX(-50%) translateY(74px) scale(0.24);
+    filter: blur(12px);
+  }
+}
+
+@keyframes app-shell-visualizer {
+  0% {
+    transform: scale(1.18) translate3d(-4.8%, -2.8%, 0) rotate(-1.8deg);
+    background-position:
+      6% 12%,
+      88% 12%,
+      38% 84%,
+      center;
+  }
+
+  25% {
+    transform: scale(1.28) translate3d(5.2%, -2.2%, 0) rotate(1.6deg);
+    background-position:
+      24% 22%,
+      72% 16%,
+      50% 66%,
+      center;
+  }
+
+  50% {
+    transform: scale(1.22) translate3d(-1.8%, 3.8%, 0) rotate(-1.1deg);
+    background-position:
+      14% 34%,
+      86% 28%,
+      58% 88%,
+      center;
+  }
+
+  75% {
+    transform: scale(1.3) translate3d(4.2%, 1.8%, 0) rotate(1.4deg);
+    background-position:
+      20% 18%,
+      78% 22%,
+      44% 72%,
+      center;
+  }
+
+  100% {
+    transform: scale(1.24) translate3d(-3.2%, -1.2%, 0) rotate(-1.2deg);
+    background-position:
+      10% 20%,
+      84% 18%,
+      52% 78%,
+      center;
+  }
+}
+
+@keyframes app-shell-pulse {
+  0% {
+    opacity: 0.7;
+    filter: blur(48px) saturate(205%);
+  }
+
+  35% {
+    opacity: 0.9;
+    filter: blur(38px) saturate(248%);
+  }
+
+  65% {
+    opacity: 0.78;
+    filter: blur(44px) saturate(228%);
+  }
+
+  100% {
+    opacity: 0.72;
+    filter: blur(46px) saturate(214%);
+  }
+}
+
+@keyframes app-shell-pulse-secondary {
+  0% {
+    opacity: 0.28;
+    filter: blur(50px) saturate(182%);
+  }
+
+  40% {
+    opacity: 0.5;
+    filter: blur(42px) saturate(218%);
+  }
+
+  100% {
+    opacity: 0.32;
+    filter: blur(48px) saturate(194%);
   }
 }

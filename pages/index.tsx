@@ -1,15 +1,18 @@
-import {
+﻿import {
   useState,
   useEffect,
   useRef,
   useCallback,
   useMemo,
   startTransition,
+  type CSSProperties,
   type MouseEvent as ReactMouseEvent,
 } from "react";
 import { useRouter } from "next/router";
 import Player from "../src/components/Player";
 import PlaylistMenu from "../src/components/PlaylistMenu";
+import TrackDetailView from "../src/components/TrackDetailView";
+import Toast from "../src/components/Toast";
 import dynamic from "next/dynamic";
 import GirlfriendLogin from "./girlfriend";
 
@@ -17,6 +20,19 @@ const HomePage = dynamic(() => import("./homepage"), { ssr: false });
 
 export default function Home() {
   const router = useRouter();
+  const renderHeartIcon = (filled: boolean) => (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill={filled ? "currentColor" : "none"}
+      stroke="currentColor"
+      strokeWidth="2"
+      aria-hidden="true"
+    >
+      <path d="M12 21s-6.7-4.35-9.2-8.02C.87 10.15 1.16 6.5 4.3 4.6c2.19-1.32 4.94-.66 6.7 1.1 1.76-1.76 4.51-2.42 6.7-1.1 3.15 1.9 3.43 5.55 1.5 8.38C18.7 16.65 12 21 12 21z" />
+    </svg>
+  );
   const [query, setQuery] = useState("");
   const [tracks, setTracks] = useState<any[]>([]);
   const [artistResults, setArtistResults] = useState<any[]>([]);
@@ -39,6 +55,8 @@ export default function Home() {
   const [playlists, setPlaylists] = useState<any[]>([]);
   const [selectedPlaylist, setSelectedPlaylist] = useState<any>(null);
   const [playlistTracks, setPlaylistTracks] = useState<any[]>([]);
+  const [playlistTrackQuery, setPlaylistTrackQuery] = useState("");
+  const [profileTracksExpanded, setProfileTracksExpanded] = useState(false);
   const [loading, setLoading] = useState(false);
   const [currentTrack, setCurrentTrack] = useState<any>(null);
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
@@ -49,6 +67,7 @@ export default function Home() {
   const [userProfile, setUserProfile] = useState<any>(null);
   const [profilePlaylists, setProfilePlaylists] = useState<any[]>([]);
   const [profileAlbums, setProfileAlbums] = useState<any[]>([]);
+  const [profileReposts, setProfileReposts] = useState<any[]>([]);
   const [listeningHistory, setListeningHistory] = useState<any[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
@@ -57,8 +76,13 @@ export default function Home() {
   const [artistTracks, setArtistTracks] = useState<any[]>([]);
   const [artistPlaylists, setArtistPlaylists] = useState<any[]>([]);
   const [artistAlbums, setArtistAlbums] = useState<any[]>([]);
+  const [artistReposts, setArtistReposts] = useState<any[]>([]);
   const [viewingTrack, setViewingTrack] = useState(false);
   const [selectedTrack, setSelectedTrack] = useState<any>(null);
+  const [trackPanelMinimized, setTrackPanelMinimized] = useState(false);
+  const [trackPanelState, setTrackPanelState] = useState<
+    "open" | "opening" | "minimizing" | "minimized" | "closing"
+  >("open");
   const [viewingHomepage, setViewingHomepage] = useState(true);
   const [viewingLibrary, setViewingLibrary] = useState(false);
   const [libraryPlaylists, setLibraryPlaylists] = useState<any[]>([]);
@@ -67,6 +91,8 @@ export default function Home() {
   const [searchOffset, setSearchOffset] = useState<number>(0);
   const [searchHasMore, setSearchHasMore] = useState<boolean>(false);
   const [searchNextHref, setSearchNextHref] = useState<string | null>(null);
+  const [likesNextHref, setLikesNextHref] = useState<string | null>(null);
+  const [likesHasMore, setLikesHasMore] = useState<boolean>(false);
   const [isLoadingMore, setIsLoadingMore] = useState<boolean>(false);
   const [queue, setQueue] = useState<any[]>([]);
   const [currentQueueIndex, setCurrentQueueIndex] = useState(-1);
@@ -115,6 +141,19 @@ export default function Home() {
   const [playlistCoverOverrides, setPlaylistCoverOverrides] = useState<
     Record<number, string>
   >({});
+  const [likeToast, setLikeToast] = useState<{
+    message: string;
+    artwork: string;
+    visible: boolean;
+  }>({
+    message: "",
+    artwork: "",
+    visible: false,
+  });
+  const [appBackgroundCurrent, setAppBackgroundCurrent] = useState<string>("");
+  const [appBackgroundPrevious, setAppBackgroundPrevious] = useState<string>("");
+  const [appBackgroundTransitioning, setAppBackgroundTransitioning] =
+    useState(false);
   const [isWindowMaximized, setIsWindowMaximized] = useState(false);
   const [playerState, setPlayerState] = useState<{
     trackId: number | null;
@@ -134,7 +173,27 @@ export default function Home() {
     null,
   );
   const playlistCoverFetchRef = useRef<Set<number>>(new Set());
+  const trackPanelTimerRef = useRef<number | null>(null);
+  const appBackgroundTimerRef = useRef<number | null>(null);
   const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+  const TRACK_PANEL_ANIMATION_MS = 320;
+
+  const clearTrackPanelTimer = () => {
+    if (typeof window === "undefined") return;
+    if (trackPanelTimerRef.current !== null) {
+      window.clearTimeout(trackPanelTimerRef.current);
+      trackPanelTimerRef.current = null;
+    }
+  };
+
+  const scheduleTrackPanelState = (callback: () => void) => {
+    if (typeof window === "undefined") return;
+    clearTrackPanelTimer();
+    trackPanelTimerRef.current = window.setTimeout(() => {
+      trackPanelTimerRef.current = null;
+      callback();
+    }, TRACK_PANEL_ANIMATION_MS);
+  };
 
   const scrollToTop = () => {
     if (typeof window !== "undefined") {
@@ -175,6 +234,15 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    return () => {
+      clearTrackPanelTimer();
+      if (appBackgroundTimerRef.current !== null && typeof window !== "undefined") {
+        window.clearTimeout(appBackgroundTimerRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     const handler = (event: Event) => {
       const detail = (event as CustomEvent).detail || {};
       setPlayerState({
@@ -189,11 +257,74 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent).detail || {};
+      if (!detail.track) return;
+
+      const incomingTrack = {
+        ...detail.track,
+        remoteStartPosition:
+          typeof detail.position === "number" ? detail.position : 0,
+      };
+
+      setCurrentTrack(incomingTrack);
+      setQueue([incomingTrack]);
+      setCurrentQueueIndex(0);
+      setQueueSource("search-related");
+      setCurrentPlaylistId(null);
+      setCurrentPlaylistTitle(null);
+    };
+
+    window.addEventListener("remote-load-track", handler as EventListener);
+    return () =>
+      window.removeEventListener("remote-load-track", handler as EventListener);
+  }, []);
+
+  useEffect(() => {
     setPlayerState((prev) => ({
       trackId: currentTrack?.id ?? null,
       isPlaying: prev.trackId === currentTrack?.id ? prev.isPlaying : false,
     }));
   }, [currentTrack?.id]);
+
+  useEffect(() => {
+    const nextBackground =
+      currentTrack?.artwork_url?.replace?.("-large", "-t500x500") ||
+      currentTrack?.user?.avatar_url?.replace?.("-large", "-t500x500") ||
+      "";
+
+    if (!nextBackground || nextBackground === appBackgroundCurrent) {
+      return;
+    }
+
+    if (typeof window !== "undefined" && appBackgroundTimerRef.current !== null) {
+      window.clearTimeout(appBackgroundTimerRef.current);
+      appBackgroundTimerRef.current = null;
+    }
+
+    setAppBackgroundPrevious(appBackgroundCurrent);
+    setAppBackgroundCurrent(nextBackground);
+    setAppBackgroundTransitioning(Boolean(appBackgroundCurrent));
+
+    if (typeof window !== "undefined" && appBackgroundCurrent) {
+      appBackgroundTimerRef.current = window.setTimeout(() => {
+        setAppBackgroundPrevious("");
+        setAppBackgroundTransitioning(false);
+        appBackgroundTimerRef.current = null;
+      }, 1200);
+    }
+  }, [currentTrack?.id, appBackgroundCurrent, currentTrack]);
+
+  useEffect(() => {
+    if (!viewingTrack || !currentTrack?.id) return;
+    if (selectedTrack?.id === currentTrack.id) return;
+    setSelectedTrack(currentTrack);
+  }, [viewingTrack, currentTrack, selectedTrack?.id]);
+
+  useEffect(() => {
+    setPlaylistTrackQuery("");
+    setProfileTracksExpanded(false);
+  }, [selectedPlaylist?.id, viewingLikes, viewingProfile, viewingArtist]);
 
   useEffect(() => {
     if (!contextPlaylistMenu?.trackId) {
@@ -353,24 +484,27 @@ export default function Home() {
     return item;
   };
 
-  const handleTrackPageOpen = (track: any, skipHistory = false) => {
+  const handleTrackPageOpen = (track: any, _skipHistory = false) => {
     if (!track) return;
+    const wasMinimized = trackPanelMinimized || trackPanelState === "minimized";
+    const wasClosed = !viewingTrack;
+    clearTrackPanelTimer();
+    setTrackPanelMinimized(false);
     setViewingTrack(true);
     setSelectedTrack(track);
-    setViewingHomepage(false);
-    setSelectedPlaylist(null);
-    setViewingLikes(false);
-    setViewingProfile(false);
-    setViewingArtist(false);
-    setViewingLibrary(false);
-    setSelectedArtist(null);
-    setUserProfile(null);
-    scrollToTop();
-    if (!skipHistory && track?.id) {
-      pushTabState("track", { trackId: track.id });
+    if (wasMinimized || wasClosed) {
+      setTrackPanelState("opening");
+      scheduleTrackPanelState(() => setTrackPanelState("open"));
+      return;
     }
+    setTrackPanelState("open");
   };
 
+  const handleTrackPanelPlay = (track: any) => {
+    if (!track) return;
+    handleTrackClick(track, "search");
+    handleTrackPageOpen(track, true);
+  };
   const handleInfoClick = (event: ReactMouseEvent, item: any) => {
     event.stopPropagation();
     if (isTrackItem(item)) {
@@ -460,8 +594,6 @@ export default function Home() {
       return;
     }
     if (navigate) {
-      setViewingTrack(false);
-      setSelectedTrack(null);
       setSelectedPlaylist(resolvedPlaylist);
       setViewingHomepage(false);
       setViewingLibrary(false);
@@ -513,8 +645,6 @@ export default function Home() {
     setViewingHomepage(false);
     setViewingLibrary(false);
     setSelectedPlaylist(null);
-    setViewingTrack(false);
-    setSelectedTrack(null);
     setViewingProfile(false);
     setViewingArtist(false);
     setUserProfile(null);
@@ -522,21 +652,20 @@ export default function Home() {
     setSectionLoading(true);
     setTracks([]);
     setPlaylistTracks([]);
+    setLikesNextHref(null);
+    setLikesHasMore(false);
     try {
-      const response = await fetch("/api/likes");
-      const data = await response.json();
-      const likes = data.likes || data.tracks || [];
-      setPlaylistTracks(likes);
-
-      // Sync likedTracks cache with the server so context menu is up-to-date
+      const { likes, hasMore, nextHref } = await fetchLikesPage();
       const likedMap: Record<number, boolean> = {};
       for (const t of likes) {
         if (t && t.id) {
           likedMap[t.id] = true;
         }
       }
-      // Use authoritative mapping from server (replace) so removals are reflected everywhere
+      setPlaylistTracks(likes);
       setLikedTracks(likedMap);
+      setLikesNextHref(nextHref);
+      setLikesHasMore(hasMore);
 
       if (!currentTrack) {
         setQueue(likes);
@@ -559,8 +688,6 @@ export default function Home() {
     setViewingHomepage(false);
     setSelectedPlaylist(null);
     setViewingLikes(false);
-    setViewingTrack(false);
-    setSelectedTrack(null);
     setViewingProfile(false);
     setViewingArtist(false);
     setSelectedArtist(null);
@@ -663,14 +790,13 @@ export default function Home() {
     setViewingArtist(false); // <-- Reset artist view
     setSelectedArtist(null); // <-- Clear selected artist
     setSelectedPlaylist(null);
-    setViewingTrack(false);
-    setSelectedTrack(null);
     setViewingLikes(false);
     setSectionLoading(true);
     setTracks([]);
     setArtistTracks([]); // <-- Clear artist tracks
     setProfilePlaylists([]);
     setProfileAlbums([]);
+    setProfileReposts([]);
     setPlaylistTracks([]);
     setListeningHistory([]);
     setHistoryLoading(true);
@@ -686,6 +812,7 @@ export default function Home() {
       }
       setProfilePlaylists(data.playlists || []);
       setProfileAlbums(data.albums || []);
+      setProfileReposts(data.reposts || []);
     } catch (error) {
       console.error("Failed to fetch profile:", error);
     } finally {
@@ -795,14 +922,13 @@ export default function Home() {
     setSelectedPlaylist(null);
     setViewingProfile(false);
     setViewingLikes(false);
-    setViewingTrack(false);
-    setSelectedTrack(null);
     setTracks([]);
     setSelectedArtist(artist);
     setSectionLoading(true);
     setArtistTracks([]);
     setArtistPlaylists([]);
     setArtistAlbums([]);
+    setArtistReposts([]);
     setIsFollowingArtist(false);
     setCheckingArtistFollow(false);
     if (!skipScroll) {
@@ -819,6 +945,7 @@ export default function Home() {
       setArtistTracks(data.tracks || []);
       setArtistPlaylists(data.playlists || []);
       setArtistAlbums(data.albums || []);
+      setArtistReposts(data.reposts || []);
     } catch (error) {
       console.error("Failed to fetch artist tracks:", error);
     } finally {
@@ -915,8 +1042,6 @@ export default function Home() {
     setViewingLikes(false);
     setViewingProfile(false);
     setViewingArtist(false);
-    setViewingTrack(false);
-    setSelectedTrack(null);
     setSelectedArtist(null);
     setUserProfile(null);
     setViewingHomepage(false);
@@ -1392,31 +1517,50 @@ export default function Home() {
     }
   };
 
+  const fetchPagedLikes = async (fetchAll = false) => {
+    const map: Record<number, boolean> = {};
+    const collected: any[] = [];
+    let offset = 0;
+    const limit = 50;
+    while (true) {
+      if (offset >= 200) break;
+      const resp = await fetch(`/api/likes?offset=${offset}&limit=${limit}`);
+      if (!resp.ok) break;
+      const data = await resp.json();
+      const likes = data.likes || data.tracks || [];
+      for (const t of likes) {
+        if (t && t.id) {
+          map[t.id] = true;
+          collected.push(t);
+        }
+      }
+      if (!fetchAll || !data.hasMore || likes.length < limit) break;
+      offset += likes.length;
+    }
+    return { collected, map };
+  };
+
+  const fetchLikesPage = async (nextHref?: string | null, limit = 50) => {
+    const url = nextHref
+      ? `/api/likes?nextHref=${encodeURIComponent(nextHref)}`
+      : `/api/likes?limit=${limit}`;
+    const resp = await fetch(url);
+    if (!resp.ok) {
+      throw new Error(`Failed to fetch likes page: ${resp.status}`);
+    }
+    const data = await resp.json();
+    const likes = data.likes || data.tracks || [];
+    return {
+      likes,
+      hasMore: Boolean(data.hasMore),
+      nextHref: typeof data.nextHref === "string" ? data.nextHref : null,
+    };
+  };
+
   const seedLikes = async (fetchAll = false) => {
     try {
-      const map: Record<number, boolean> = {};
-      const collected: any[] = [];
-      let offset = 0;
-      const limit = 100; // keep page size conservative to avoid SoundCloud offset limits
-      while (true) {
-        // SoundCloud rejects offsets >= 200 for this endpoint; stop before that
-        if (offset >= 200) break;
-        const resp = await fetch(`/api/likes?offset=${offset}&limit=${limit}`);
-        if (!resp.ok) break;
-        const data = await resp.json();
-        const likes = data.likes || data.tracks || [];
-        for (const t of likes) {
-          if (t && t.id) {
-            map[t.id] = true;
-            collected.push(t);
-          }
-        }
-        if (!fetchAll || !data.hasMore || likes.length < limit) break;
-        offset += likes.length;
-      }
-      // Replace likedTracks with the authoritative set from server
+      const { collected, map } = await fetchPagedLikes(fetchAll);
       setLikedTracks(map);
-      // If user is currently viewing Likes, update the list immediately
       if (viewingLikes) {
         setPlaylistTracks(collected);
       }
@@ -1425,11 +1569,86 @@ export default function Home() {
     }
   };
 
-  const toggleTrackLike = async (trackId: number) => {
+  const loadMoreLikedSongs = async () => {
+    if (
+      !viewingLikes ||
+      !likesHasMore ||
+      isLoadingMore ||
+      sectionLoading ||
+      !likesNextHref
+    ) {
+      return;
+    }
+
+    try {
+      setIsLoadingMore(true);
+      const { likes, hasMore, nextHref } = await fetchLikesPage(likesNextHref);
+      if (likes.length > 0) {
+        setPlaylistTracks((prev) => {
+          const seen = new Set(prev.map((track: any) => track?.id));
+          const merged = [...prev];
+          for (const like of likes) {
+            if (like?.id && !seen.has(like.id)) {
+              seen.add(like.id);
+              merged.push(like);
+            }
+          }
+          return merged;
+        });
+        setLikedTracks((prev) => {
+          const next = { ...prev };
+          for (const like of likes) {
+            if (like?.id) next[like.id] = true;
+          }
+          return next;
+        });
+      }
+      setLikesNextHref(nextHref);
+      setLikesHasMore(hasMore);
+    } catch (error) {
+      console.error("Failed to load more liked songs:", error);
+    } finally {
+      setIsLoadingMore(false);
+    }
+  };
+
+  const emitLikeUpdate = (
+    trackId: number,
+    isLiked: boolean,
+    track?: any,
+  ) => {
+    try {
+      window.dispatchEvent(
+        new CustomEvent("likes-updated", {
+          detail: { trackId, isLiked, track },
+        }),
+      );
+    } catch (error) {
+      console.error("Failed to dispatch likes-updated:", error);
+    }
+  };
+  const emitLikedSongsToast = (isLiked: boolean, track?: any) => {
+    try {
+      window.dispatchEvent(
+        new CustomEvent("show-toast", {
+          detail: {
+            message: isLiked
+              ? "Added to Liked Songs"
+              : "Removed from Liked Songs",
+            artwork: track ? getTrackCover(track) : "",
+          },
+        }),
+      );
+    } catch (error) {
+      console.error("Failed to dispatch liked songs toast:", error);
+    }
+  };
+  const toggleTrackLike = async (trackId: number, track?: any) => {
     if (!trackId) return;
     const wasViewing = viewingLikes; // Capture current state
     const nextLiked = !likedTracks[trackId];
     setLikedTracks((prev) => ({ ...prev, [trackId]: nextLiked }));
+    emitLikeUpdate(trackId, nextLiked, track);
     try {
       // Ensure token is fresh before making the like request
       try {
@@ -1466,6 +1685,8 @@ export default function Home() {
       }
       const isLiked = await checkTrackLikeStatus(trackId);
       setLikedTracks((prev) => ({ ...prev, [trackId]: isLiked }));
+      emitLikeUpdate(trackId, isLiked, track);
+      emitLikedSongsToast(isLiked, track);
 
       // If user was viewing Likes when the toggle happened, refetch the list
       // to ensure it's in sync with the server
@@ -1474,16 +1695,8 @@ export default function Home() {
           `[toggleTrackLike] Refetching likes for immediate UI update...`,
         );
         try {
-          const resp = await fetch(`/api/likes?limit=100&_=${Date.now()}`);
-          const data = await resp.json();
-          const likes = data.likes || data.tracks || [];
+          const { collected: likes, map } = await fetchPagedLikes(true);
           setPlaylistTracks(likes);
-          // also update likedTracks map from server response
-          const map: Record<number, boolean> = {};
-          for (const t of likes) {
-            if (t && t.id) map[t.id] = true;
-          }
-          // Replace the likedTracks map with the server's authoritative set
           setLikedTracks(map);
         } catch (err) {
           console.error("Failed to refetch likes:", err);
@@ -1492,6 +1705,7 @@ export default function Home() {
     } catch (error) {
       console.error("Failed to toggle track like:", error);
       setLikedTracks((prev) => ({ ...prev, [trackId]: !nextLiked }));
+      emitLikeUpdate(trackId, !nextLiked, track);
       alert(
         `Error: ${error instanceof Error ? error.message : "Unknown error"}`,
       );
@@ -1723,6 +1937,23 @@ export default function Home() {
     return url.includes("-large") ? url.replace("-large", "-t500x500") : url;
   };
 
+  const getTrackCover = (track: any) => {
+    const artworkUrl =
+      track?.artwork_url ||
+      track?.track?.artwork_url ||
+      track?.origin?.artwork_url;
+    const userAvatar =
+      track?.user?.avatar_url ||
+      track?.artist?.avatar_url ||
+      track?.track?.user?.avatar_url ||
+      track?.origin?.user?.avatar_url;
+    return (
+      normalizeArtworkUrl(artworkUrl) ||
+      normalizeArtworkUrl(userAvatar) ||
+      "/placeholder.png"
+    );
+  };
+
   const getPlaylistCover = (playlist: any) => {
     const resolved = resolvePlaylistItem(playlist) || playlist;
     const override = resolved?.id ? playlistCoverOverrides[resolved.id] : null;
@@ -1746,9 +1977,7 @@ export default function Home() {
   const getCardCover = (item: any) => {
     if (!item) return "/placeholder.png";
     if (isTrackItem(item)) {
-      return (
-        item.artwork_url?.replace("-large", "-t500x500") || "/placeholder.png"
-      );
+      return getTrackCover(item);
     }
     const resolved = resolvePlaylistItem(item);
     return resolved ? getPlaylistCover(resolved) : "/placeholder.png";
@@ -1771,8 +2000,8 @@ export default function Home() {
   };
 
   const getLikedSongsCover = () => {
-    if (playlistTracks.length > 0 && playlistTracks[0].artwork_url) {
-      return playlistTracks[0].artwork_url.replace("-large", "-t500x500");
+    if (playlistTracks.length > 0) {
+      return getTrackCover(playlistTracks[0]);
     }
     return "/placeholder.png";
   };
@@ -1829,13 +2058,15 @@ export default function Home() {
       try {
         const d = e.detail;
         if (!d) return;
-        const { trackId, isLiked } = d;
+        const { trackId, isLiked, track } = d;
         if (viewingLikes) {
           if (isLiked) {
             setPlaylistTracks((prev) =>
               prev.some((t) => t?.id === trackId)
                 ? prev
-                : [{ id: trackId }, ...prev],
+                : track
+                  ? [track, ...prev]
+                  : [{ id: trackId }, ...prev],
             );
             setLikedTracks((prev) => ({ ...prev, [trackId]: true }));
           } else {
@@ -1858,6 +2089,21 @@ export default function Home() {
     return () =>
       window.removeEventListener("likes-updated", handler as EventListener);
   }, [viewingLikes]);
+
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent).detail || {};
+      setLikeToast({
+        message: String(detail.message || ""),
+        artwork: String(detail.artwork || ""),
+        visible: true,
+      });
+    };
+
+    window.addEventListener("show-toast", handler as EventListener);
+    return () =>
+      window.removeEventListener("show-toast", handler as EventListener);
+  }, []);
 
   const handleLogout = async () => {
     try {
@@ -1939,15 +2185,12 @@ export default function Home() {
   }, [showSuggestions]);
 
   useEffect(() => {
-    // Only enable infinite scroll when viewing search results
+    // Enable infinite scroll for search results and liked songs.
     if (
       !scrollTriggerRef.current ||
-      !searchHasMore ||
       isLoadingMore ||
       loading ||
-      !searchNextHref ||
       selectedPlaylist ||
-      viewingLikes ||
       viewingProfile ||
       viewingArtist ||
       viewingTrack
@@ -1955,9 +2198,22 @@ export default function Home() {
       return;
     }
 
+    if (!viewingLikes && (!searchHasMore || !searchNextHref)) {
+      return;
+    }
+
+    if (viewingLikes && !likesHasMore) {
+      return;
+    }
+
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries[0].isIntersecting && searchHasMore && !isLoadingMore) {
+        if (!entries[0].isIntersecting || isLoadingMore) return;
+        if (viewingLikes) {
+          loadMoreLikedSongs();
+          return;
+        }
+        if (searchHasMore) {
           handleSearch(searchNextHref);
         }
       },
@@ -1970,13 +2226,15 @@ export default function Home() {
   }, [
     searchHasMore,
     isLoadingMore,
+    likesHasMore,
     loading,
     searchNextHref,
-    selectedPlaylist,
     viewingLikes,
+    selectedPlaylist,
     viewingProfile,
     viewingArtist,
     viewingTrack,
+    likesNextHref,
   ]);
 
   useEffect(() => {
@@ -1991,33 +2249,23 @@ export default function Home() {
           setViewingLikes(false);
           setViewingProfile(false);
           setViewingArtist(false);
-          setViewingTrack(false);
-          setSelectedTrack(null);
           setSelectedArtist(null);
           setUserProfile(null);
           break;
         case "profile":
           setViewingHomepage(false);
-          setViewingTrack(false);
-          setSelectedTrack(null);
           handleProfileClick(true);
           break;
         case "library":
           setViewingHomepage(false);
-          setViewingTrack(false);
-          setSelectedTrack(null);
           handleLibraryClick(true);
           break;
         case "likes":
           setViewingHomepage(false);
-          setViewingTrack(false);
-          setSelectedTrack(null);
           handleLikesClick(true);
           break;
         case "playlist":
           setViewingHomepage(false);
-          setViewingTrack(false);
-          setSelectedTrack(null);
           if (state.playlistId) {
             const playlist = playlists.find((p) => p.id === state.playlistId);
             if (playlist) handlePlaylistClick(playlist, true);
@@ -2025,8 +2273,6 @@ export default function Home() {
           break;
         case "artist":
           setViewingHomepage(false);
-          setViewingTrack(false);
-          setSelectedTrack(null);
           if (state.artistId) {
             handleArtistClick({ id: state.artistId }, true, true);
           }
@@ -2058,8 +2304,6 @@ export default function Home() {
             setViewingLikes(false);
             setViewingProfile(false);
             setViewingArtist(false);
-            setViewingTrack(false);
-            setSelectedTrack(null);
             setSelectedArtist(null);
             setUserProfile(null);
             setSearchView("all");
@@ -2079,8 +2323,6 @@ export default function Home() {
             setViewingLikes(false);
             setViewingProfile(false);
             setViewingArtist(false);
-            setViewingTrack(false);
-            setSelectedTrack(null);
             setSelectedArtist(null);
             setUserProfile(null);
             setSearchView(restoredView);
@@ -2096,8 +2338,6 @@ export default function Home() {
           setViewingLikes(false);
           setViewingProfile(false);
           setViewingArtist(false);
-          setViewingTrack(false);
-          setSelectedTrack(null);
           setSelectedArtist(null);
           setUserProfile(null);
           break;
@@ -2179,6 +2419,15 @@ export default function Home() {
     : selectedPlaylist
       ? getPlaylistCover(selectedPlaylist)
       : null;
+  const activeProfileBanner = viewingProfile
+    ? normalizeArtworkUrl(userProfile?.banner_url)
+    : normalizeArtworkUrl(
+        selectedArtist?.banner_url ||
+          selectedArtist?.visuals?.visuals?.[0]?.visual_url ||
+          selectedArtist?.visuals?.visual_url ||
+          selectedArtist?.picture_url ||
+          selectedArtist?.avatar_url,
+      );
   const visibleArtists = showAllArtists
     ? artistResults
     : artistResults.slice(0, 8);
@@ -2190,9 +2439,102 @@ export default function Home() {
   const activeProfilePlaylists = viewingProfile
     ? profilePlaylists
     : artistPlaylists;
+  const activeProfileTracks = viewingProfile
+    ? playlistTracks
+    : viewingArtist
+      ? artistTracks
+      : [];
+  const filteredProfileTracks = activeProfileTracks.filter((track: any) => {
+    const term = playlistTrackQuery.trim().toLowerCase();
+    if (!term) return true;
+    const title = String(track?.title || "").toLowerCase();
+    const artist = String(track?.user?.username || "").toLowerCase();
+    return title.includes(term) || artist.includes(term);
+  });
+  const visibleProfileTracks = profileTracksExpanded
+    ? filteredProfileTracks
+    : filteredProfileTracks.slice(0, 5);
+  const activeProfileReposts = viewingProfile ? profileReposts : artistReposts;
+  const filteredProfileReposts = activeProfileReposts.filter((track: any) => {
+    const term = playlistTrackQuery.trim().toLowerCase();
+    if (!term) return true;
+    const title = String(track?.title || "").toLowerCase();
+    const artist = String(track?.user?.username || "").toLowerCase();
+    return title.includes(term) || artist.includes(term);
+  });
+  const visiblePlaylistTracks = (
+    viewingProfile || viewingArtist ? [] : playlistTracks
+  ).filter((track: any) => {
+    const term = playlistTrackQuery.trim().toLowerCase();
+    if (!term) return true;
+    const title = String(track?.title || "").toLowerCase();
+    const artist = String(track?.user?.username || "").toLowerCase();
+    return title.includes(term) || artist.includes(term);
+  });
+
+  const renderTrackRows = (trackItems: any[], rowKeyPrefix: string) => (
+    <div className="track-list">
+      {trackItems.map((track: any, index: number) => (
+        <div
+          key={`${rowKeyPrefix}-${track.id || index}`}
+          className="track-row"
+          onClick={() => handleTrackClick(track, "playlist", trackItems)}
+          onContextMenu={(event) =>
+            handleContextMenu(event, track, "playlist", trackItems)
+          }
+        >
+          <img
+            src={getTrackCover(track)}
+            alt={track.title}
+            className="track-row-cover"
+            loading="lazy"
+            decoding="async"
+          />
+          <div className="track-row-info">
+            <div className="track-row-title">{track.title}</div>
+            <div
+              className="track-row-artist"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleArtistClick(track.user);
+              }}
+              style={{
+                cursor: "pointer",
+                textDecoration: "underline",
+              }}
+            >
+              {track.user?.username || "Unknown"}
+            </div>
+          </div>
+          <div className="track-row-duration">
+            {formatDuration(track.duration)}
+          </div>
+          <div className="track-row-year">
+            {track.created_at ? getYear(track.created_at) : "-"}
+          </div>
+          <div className="track-row-added">
+            {track.added_at
+              ? formatTimeAgo(track.added_at)
+              : track.created_at
+                ? formatTimeAgo(track.created_at)
+                : "-"}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+  const appShellStyle = {
+    "--app-bg-current": appBackgroundCurrent ? `url("${appBackgroundCurrent}")` : "none",
+    "--app-bg-previous": appBackgroundPrevious
+      ? `url("${appBackgroundPrevious}")`
+      : "none",
+  } as CSSProperties;
 
   return (
-    <div className="app-shell">
+    <div
+      className={`app-shell app-shell-reactive ${appBackgroundTransitioning ? "app-shell-transitioning" : ""} ${playerState.isPlaying ? "app-shell-playing" : ""}`}
+      style={appShellStyle}
+    >
       <aside
         className={`sidebar ${sidebarExpanded ? "expanded" : "collapsed"}`}
       >
@@ -2383,7 +2725,7 @@ export default function Home() {
               ))
             ) : (
               <div className="empty-state">
-                {sidebarExpanded ? "No playlists yet" : "—"}
+                {sidebarExpanded ? "No playlists yet" : "-"}
               </div>
             )}
           </div>
@@ -2396,7 +2738,7 @@ export default function Home() {
             onClick={handleLogout}
           >
             {sidebarExpanded && <span className="nav-label">Log out</span>}
-            {!sidebarExpanded && <span aria-hidden="true">⎋</span>}
+            {!sidebarExpanded && <span aria-hidden="true">≋</span>}
           </button>
         </div>
       </aside>
@@ -2412,7 +2754,14 @@ export default function Home() {
             }
             aria-label="Minimize"
           >
-            —
+            <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+              <path
+                d="M1 5h8"
+                stroke="currentColor"
+                strokeWidth="1.4"
+                strokeLinecap="round"
+              />
+            </svg>
           </button>
           <button
             type="button"
@@ -2422,7 +2771,50 @@ export default function Home() {
             }
             aria-label={isWindowMaximized ? "Restore" : "Maximize"}
           >
-            {isWindowMaximized ? "❐" : "▢"}
+            {isWindowMaximized ? (
+              <svg
+                width="10"
+                height="10"
+                viewBox="0 0 10 10"
+                fill="none"
+                aria-hidden="true"
+              >
+                <rect
+                  x="1.75"
+                  y="3"
+                  width="5.75"
+                  height="5.25"
+                  rx="0.5"
+                  stroke="currentColor"
+                  strokeWidth="1.2"
+                />
+                <path
+                  d="M3 3V1.75h5.25V7H7.1"
+                  stroke="currentColor"
+                  strokeWidth="1.2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            ) : (
+              <svg
+                width="10"
+                height="10"
+                viewBox="0 0 10 10"
+                fill="none"
+                aria-hidden="true"
+              >
+                <rect
+                  x="1.75"
+                  y="1.75"
+                  width="6.5"
+                  height="6.5"
+                  rx="0.5"
+                  stroke="currentColor"
+                  strokeWidth="1.2"
+                />
+              </svg>
+            )}
           </button>
           <button
             type="button"
@@ -2430,7 +2822,14 @@ export default function Home() {
             onClick={() => (window as any).electronAPI?.windowControls?.close()}
             aria-label="Close"
           >
-            ×
+            <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+              <path
+                d="M2 2l6 6M8 2L2 8"
+                stroke="currentColor"
+                strokeWidth="1.4"
+                strokeLinecap="round"
+              />
+            </svg>
           </button>
         </div>
       </div>
@@ -2468,7 +2867,7 @@ export default function Home() {
                 }}
                 aria-label="Clear search"
               >
-                ×
+                <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M2 2l6 6M8 2L2 8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" /></svg>
               </button>
             )}
           </div>
@@ -2656,37 +3055,6 @@ export default function Home() {
             onNext={handleNext}
             onTrackEnd={handleNext}
           />
-        ) : viewingTrack ? (
-          <div className="track-view">
-            <div className="playlist-header-sticky">
-              <img
-                src={
-                  selectedTrack?.artwork_url?.replace("-large", "-t500x500") ||
-                  "/placeholder.png"
-                }
-                alt={selectedTrack?.title || "Track"}
-                className="playlist-header-cover"
-                loading="eager"
-                decoding="async"
-              />
-              <div className="track-page-text">
-                <h2 className="playlist-header-title">
-                  {selectedTrack?.title || "Track"}
-                </h2>
-                <div
-                  className="track-page-artist"
-                  onClick={() =>
-                    selectedTrack?.user && handleArtistClick(selectedTrack.user)
-                  }
-                >
-                  {selectedTrack?.user?.username || "Unknown"}
-                </div>
-              </div>
-            </div>
-            <div className="track-page-placeholder">
-              Track page coming soon.
-            </div>
-          </div>
         ) : selectedPlaylist ||
           viewingLikes ||
           viewingProfile ||
@@ -2796,7 +3164,7 @@ export default function Home() {
                                         : "Add like"
                                     }
                                   >
-                                    {likedPlaylists[playlist.id] ? "♥" : "♡"}
+                                    {renderHeartIcon(Boolean(likedPlaylists[playlist.id]))}
                                   </button>
                                 )}
                             </div>
@@ -2817,12 +3185,8 @@ export default function Home() {
                       }
                     }}
                     style={{
-                      backgroundImage: (
-                        viewingProfile
-                          ? userProfile?.banner_url
-                          : selectedArtist?.banner_url
-                      )
-                        ? `url(${viewingProfile ? userProfile?.banner_url : selectedArtist?.banner_url})`
+                      backgroundImage: activeProfileBanner
+                        ? `url(${activeProfileBanner})`
                         : "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
                       backgroundSize: "cover",
                       backgroundPosition: "center",
@@ -2859,7 +3223,7 @@ export default function Home() {
                             ? userProfile?.verified
                             : selectedArtist?.verified) && (
                             <span className="verified-badge" title="Verified">
-                              ✓
+                              <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true"><path d="M4.5 9.2l2.4 2.4 6.6-6.6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
                             </span>
                           )}
                         </h2>
@@ -2973,7 +3337,14 @@ export default function Home() {
                     </div>
                   </div>
                 ) : (
-                  <div className="playlist-header-sticky">
+                  <div
+                    className="playlist-header-sticky"
+                    style={{
+                      "--playlist-banner-image": displayCover
+                        ? `url(${displayCover})`
+                        : "none",
+                    } as CSSProperties}
+                  >
                     <img
                       src={displayCover}
                       alt={displayTitle}
@@ -2981,7 +3352,20 @@ export default function Home() {
                       loading="eager"
                       decoding="async"
                     />
-                    <h2 className="playlist-header-title">{displayTitle}</h2>
+                    <div className="playlist-header-main">
+                      <h2 className="playlist-header-title">{displayTitle}</h2>
+                    </div>
+                    <div className="playlist-track-search playlist-track-search-banner">
+                      <input
+                        type="text"
+                        value={playlistTrackQuery}
+                        onChange={(event) =>
+                          setPlaylistTrackQuery(event.target.value)
+                        }
+                        placeholder={`Search in ${displayTitle || "playlist"}`}
+                        aria-label="Search playlist tracks"
+                      />
+                    </div>
                   </div>
                 )}
                 {(viewingProfile || viewingArtist) &&
@@ -3070,7 +3454,7 @@ export default function Home() {
                                     : "Add like"
                                 }
                               >
-                                {likedPlaylists[album.id] ? "♥" : "♡"}
+                                {renderHeartIcon(Boolean(likedPlaylists[album.id]))}
                               </button>
                             </div>
                           </div>
@@ -3172,7 +3556,7 @@ export default function Home() {
                                     : "Add like"
                                 }
                               >
-                                {likedPlaylists[playlist.id] ? "♥" : "♡"}
+                                {renderHeartIcon(Boolean(likedPlaylists[playlist.id]))}
                               </button>
                             </div>
                           </div>
@@ -3180,6 +3564,57 @@ export default function Home() {
                       </div>
                     </section>
                   )}
+                {(viewingProfile || viewingArtist) && (
+                  <section className="search-section">
+                    <div className="search-section-header profile-section-header">
+                      <h3 className="search-section-title">Tracks</h3>
+                      <div className="playlist-track-search playlist-track-search-inline">
+                        <input
+                          type="text"
+                          value={playlistTrackQuery}
+                          onChange={(event) =>
+                            setPlaylistTrackQuery(event.target.value)
+                          }
+                          placeholder={`Search in ${viewingProfile ? userProfile?.username || "profile" : selectedArtist?.username || "profile"}`}
+                          aria-label="Search profile tracks"
+                        />
+                      </div>
+                    </div>
+                    {filteredProfileTracks.length === 0 ? (
+                      <div className="playlist-loading">
+                        No tracks found.
+                      </div>
+                    ) : (
+                      <>
+                        {renderTrackRows(visibleProfileTracks, "profile-track")}
+                        {!profileTracksExpanded &&
+                          filteredProfileTracks.length > 5 && (
+                            <button
+                              type="button"
+                              className="load-more-btn"
+                              onClick={() => setProfileTracksExpanded(true)}
+                            >
+                              View all
+                            </button>
+                          )}
+                      </>
+                    )}
+                  </section>
+                )}
+                {(viewingProfile || viewingArtist) && (
+                  <section className="search-section">
+                    <div className="search-section-header">
+                      <h3 className="search-section-title">Reposts</h3>
+                    </div>
+                    {filteredProfileReposts.length === 0 ? (
+                      <div className="playlist-loading">
+                        No reposted songs yet.
+                      </div>
+                    ) : (
+                      renderTrackRows(filteredProfileReposts, "profile-repost")
+                    )}
+                  </section>
+                )}
                 {viewingProfile && (
                   <section className="search-section">
                     <div className="search-section-header">
@@ -3253,14 +3688,14 @@ export default function Home() {
                             <div className="track-row-year">
                               {track.created_at
                                 ? getYear(track.created_at)
-                                : "—"}
+                                : "-"}
                             </div>
                             <div className="track-row-added">
                               {track.added_at
                                 ? formatTimeAgo(track.added_at)
                                 : track.created_at
                                   ? formatTimeAgo(track.created_at)
-                                  : "—"}
+                                  : "-"}
                             </div>
                           </div>
                         ))}
@@ -3268,82 +3703,21 @@ export default function Home() {
                     )}
                   </section>
                 )}
-                <div className="track-list">
-                  {(viewingProfile
-                    ? playlistTracks
-                    : viewingArtist
-                      ? artistTracks
-                      : playlistTracks
-                  ).map((track: any, index: number) => (
-                    <div
-                      key={track.id || index}
-                      className="track-row"
-                      onClick={() =>
-                        handleTrackClick(
-                          track,
-                          "playlist",
-                          viewingProfile
-                            ? playlistTracks
-                            : viewingArtist
-                              ? artistTracks
-                              : playlistTracks,
-                        )
-                      }
-                      onContextMenu={(event) =>
-                        handleContextMenu(
-                          event,
-                          track,
-                          "playlist",
-                          viewingProfile
-                            ? playlistTracks
-                            : viewingArtist
-                              ? artistTracks
-                              : playlistTracks,
-                        )
-                      }
-                    >
-                      <img
-                        src={
-                          track.artwork_url?.replace("-large", "-t200x200") ||
-                          "/placeholder.png"
-                        }
-                        alt={track.title}
-                        className="track-row-cover"
-                        loading="lazy"
-                        decoding="async"
-                      />
-                      <div className="track-row-info">
-                        <div className="track-row-title">{track.title}</div>
-                        <div
-                          className="track-row-artist"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleArtistClick(track.user);
-                          }}
-                          style={{
-                            cursor: "pointer",
-                            textDecoration: "underline",
-                          }}
-                        >
-                          {track.user?.username || "Unknown"}
-                        </div>
-                      </div>
-                      <div className="track-row-duration">
-                        {formatDuration(track.duration)}
-                      </div>
-                      <div className="track-row-year">
-                        {track.created_at ? getYear(track.created_at) : "—"}
-                      </div>
-                      <div className="track-row-added">
-                        {track.added_at
-                          ? formatTimeAgo(track.added_at)
-                          : track.created_at
-                            ? formatTimeAgo(track.created_at)
-                            : "—"}
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                {!(viewingProfile || viewingArtist) &&
+                  renderTrackRows(visiblePlaylistTracks, "playlist-track")}
+                {viewingLikes && likesHasMore && (
+                  <div
+                    ref={scrollTriggerRef}
+                    style={{
+                      textAlign: "center",
+                      padding: "32px 0 8px",
+                      color: "rgba(255,255,255,0.5)",
+                      fontSize: "14px",
+                    }}
+                  >
+                    {isLoadingMore ? "Loading more..." : ""}
+                  </div>
+                )}
               </>
             )}
           </div>
@@ -3472,7 +3846,7 @@ export default function Home() {
                               : "Add like"
                           }
                         >
-                          {likedPlaylists[album.id] ? "♥" : "♡"}
+                          {renderHeartIcon(Boolean(likedPlaylists[album.id]))}
                         </button>
                       </div>
                     </div>
@@ -3564,7 +3938,7 @@ export default function Home() {
                               : "Add like"
                           }
                         >
-                          {likedPlaylists[playlist.id] ? "♥" : "♡"}
+                          {renderHeartIcon(Boolean(likedPlaylists[playlist.id]))}
                         </button>
                       </div>
                     </div>
@@ -3653,13 +4027,13 @@ export default function Home() {
                           }`}
                           onClick={(event) => {
                             event.stopPropagation();
-                            toggleTrackLike(t.id);
+                            toggleTrackLike(t.id, t);
                           }}
                           aria-label={
                             likedTracks[t.id] ? "Remove like" : "Add like"
                           }
                         >
-                          {likedTracks[t.id] ? "♥" : "♡"}
+                          {renderHeartIcon(Boolean(likedTracks[t.id]))}
                         </button>
                       </div>
                     </div>
@@ -3676,7 +4050,7 @@ export default function Home() {
                         fontSize: "14px",
                       }}
                     >
-                      {isLoadingMore ? "⏳ Loading more..." : ""}
+                      {isLoadingMore ? "Loading more..." : ""}
                     </div>
                   )}
                 </div>
@@ -3828,7 +4202,7 @@ export default function Home() {
                                   : "Add like"
                               }
                             >
-                              {likedPlaylists[album.id] ? "♥" : "♡"}
+                              {renderHeartIcon(Boolean(likedPlaylists[album.id]))}
                             </button>
                           </div>
                         </div>
@@ -3932,7 +4306,7 @@ export default function Home() {
                                   : "Add like"
                               }
                             >
-                              {likedPlaylists[playlist.id] ? "♥" : "♡"}
+                              {renderHeartIcon(Boolean(likedPlaylists[playlist.id]))}
                             </button>
                           </div>
                         </div>
@@ -4018,13 +4392,13 @@ export default function Home() {
                             }`}
                             onClick={(event) => {
                               event.stopPropagation();
-                              toggleTrackLike(t.id);
+                              toggleTrackLike(t.id, t);
                             }}
                             aria-label={
                               likedTracks[t.id] ? "Remove like" : "Add like"
                             }
                           >
-                            {likedTracks[t.id] ? "♥" : "♡"}
+                            {renderHeartIcon(Boolean(likedTracks[t.id]))}
                           </button>
                         </div>
                       </div>
@@ -4041,7 +4415,7 @@ export default function Home() {
                           fontSize: "14px",
                         }}
                       >
-                        {isLoadingMore ? "⏳ Loading more..." : ""}
+                        {isLoadingMore ? "Loading more..." : ""}
                       </div>
                     )}
                   </div>
@@ -4081,7 +4455,7 @@ export default function Home() {
             <button
               className="context-menu-item"
               onClick={async () => {
-                await toggleTrackLike(contextMenu.item.id);
+                await toggleTrackLike(contextMenu.item.id, contextMenu.item);
                 closeContextMenu();
               }}
             >
@@ -4217,6 +4591,72 @@ export default function Home() {
         />
       </div>
 
+      <Toast
+        playlistName=""
+        playlistArtwork=""
+        message={likeToast.message}
+        artwork={likeToast.artwork}
+        isVisible={likeToast.visible}
+        onDismiss={() =>
+          setLikeToast((prev) => ({
+            ...prev,
+            visible: false,
+          }))
+        }
+      />
+
+      {viewingTrack && trackPanelMinimized && selectedTrack ? (
+        <button
+          className="track-panel-restore"
+          onClick={() => {
+            clearTrackPanelTimer();
+            setTrackPanelMinimized(false);
+            setTrackPanelState("opening");
+            scheduleTrackPanelState(() => setTrackPanelState("open"));
+          }}
+          aria-label="Restore track panel"
+        >
+          <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+            <path
+              d="M2 7.5L6 3.5l4 4"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </button>
+      ) : null}
+
+      {viewingTrack && !trackPanelMinimized && selectedTrack ? (
+        <TrackDetailView
+          track={selectedTrack}
+          panelState={trackPanelState}
+          onArtistClick={handleArtistClick}
+          onPlayTrack={handleTrackPanelPlay}
+          onClose={() => {
+            clearTrackPanelTimer();
+            setTrackPanelMinimized(false);
+            setTrackPanelState("closing");
+            scheduleTrackPanelState(() => {
+              setViewingTrack(false);
+              setSelectedTrack(null);
+              setTrackPanelMinimized(false);
+              setTrackPanelState("open");
+            });
+          }}
+          onMinimize={() => {
+            clearTrackPanelTimer();
+            setTrackPanelState("minimizing");
+            scheduleTrackPanelState(() => {
+              setTrackPanelMinimized(true);
+              setTrackPanelState("minimized");
+            });
+          }}
+        />
+      ) : null}
+
       <Player
         currentTrack={currentTrack}
         onPrevious={handlePrevious}
@@ -4224,9 +4664,32 @@ export default function Home() {
         onTrackEnd={handleNext}
         onArtistClick={handleArtistClick}
         onPlaylistClick={handlePlayerPlaylistClick}
+        onTrackOpen={handleTrackPageOpen}
         isShuffle={isShuffle}
         onShuffleChange={setIsShuffle}
       />
     </div>
   );
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

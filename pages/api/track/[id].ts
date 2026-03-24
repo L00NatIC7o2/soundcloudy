@@ -1,130 +1,236 @@
-import type { NextApiRequest, NextApiResponse } from "next";
+﻿import type { NextApiRequest, NextApiResponse } from "next";
 import axios from "axios";
-import puppeteer from "puppeteer";
+import {
+  getSoundCloudAuthContext,
+  refreshSoundCloudAuth,
+  type SoundCloudAuthContext,
+} from "../../../src/server/auth/soundcloud";
+import type { TrackDetails } from "../../../src/lib/trackDetails";
+
+type SoundCloudHeaders = {
+  Authorization?: string;
+};
+
+type TrackApiResponse = TrackDetails;
+
+type CacheEntry = {
+  data: TrackApiResponse;
+  updatedAt: number;
+};
+
+const TRACK_CACHE_TTL_MS = 60 * 1000;
+const trackResponseCache = new Map<string, CacheEntry>();
+
+const getPublicClientId = () =>
+  process.env.SOUNDCLOUD_V2_CLIENT_ID ||
+  process.env.SOUNDCLOUD_CLIENT_ID ||
+  "BecG5WJDDxYMffAfWcjJleNqrGyJyZhI";
+
+const readCache = (trackId: string) => {
+  const cached = trackResponseCache.get(trackId);
+  if (!cached) return null;
+  if (Date.now() - cached.updatedAt > TRACK_CACHE_TTL_MS) {
+    trackResponseCache.delete(trackId);
+    return null;
+  }
+  return cached.data;
+};
+
+const writeCache = (trackId: string, data: TrackApiResponse) => {
+  trackResponseCache.set(trackId, {
+    data,
+    updatedAt: Date.now(),
+  });
+};
+
+const requestWithFallback = async <T>(
+  urls: string[],
+  auth: SoundCloudAuthContext | null,
+  refreshAuth?: () => Promise<SoundCloudAuthContext | null>,
+  params: Record<string, string | number> = {},
+) => {
+  const errors: any[] = [];
+  let activeAuth = auth;
+  let didRefresh = false;
+
+  for (const url of urls) {
+    const attemptAuthRequest = async (ctx: SoundCloudAuthContext) => {
+      const headers: SoundCloudHeaders = { Authorization: ctx.headerValue };
+      return axios.get<T>(url, { headers, params, timeout: 10000 });
+    };
+
+    if (activeAuth) {
+      try {
+        return await attemptAuthRequest(activeAuth);
+      } catch (error: any) {
+        errors.push(error);
+
+        if (
+          !didRefresh &&
+          refreshAuth &&
+          (error?.response?.status === 401 || error?.response?.status === 403)
+        ) {
+          try {
+            const refreshedAuth = await refreshAuth();
+            if (refreshedAuth) {
+              activeAuth = refreshedAuth;
+              didRefresh = true;
+              return await attemptAuthRequest(activeAuth);
+            }
+          } catch (refreshError: any) {
+            errors.push(refreshError);
+          }
+        }
+
+        if (
+          error?.response?.status === 401 ||
+          error?.response?.status === 403
+        ) {
+          try {
+            return await axios.get<T>(url, {
+              params: { ...params, oauth_token: activeAuth.queryValue },
+              timeout: 10000,
+            });
+          } catch (oauthError: any) {
+            errors.push(oauthError);
+          }
+        }
+      }
+    }
+
+    try {
+      return await axios.get<T>(url, {
+        params: { ...params, client_id: getPublicClientId() },
+        timeout: 10000,
+      });
+    } catch (publicError: any) {
+      errors.push(publicError);
+    }
+  }
+
+  throw errors[errors.length - 1] || new Error("Failed to load SoundCloud data");
+};
+
+const buildArtist = (user: any) => ({
+  id: user?.id,
+  username: user?.username || "Unknown",
+  permalink_url: user?.permalink
+    ? `https://soundcloud.com/${user.permalink}`
+    : "#",
+  avatar_url: user?.avatar_url || "/placeholder.png",
+});
+
+const fetchTrackPayload = async (
+  trackId: string,
+  auth: SoundCloudAuthContext | null,
+  refreshAuth: () => Promise<SoundCloudAuthContext | null>,
+): Promise<TrackApiResponse> => {
+  const trackRes = await requestWithFallback<any>(
+    [
+      `https://api-v2.soundcloud.com/tracks/${trackId}`,
+      `https://api.soundcloud.com/tracks/${trackId}`,
+    ],
+    auth,
+    refreshAuth,
+  );
+  const track = trackRes.data;
+
+  const [commentsResult, relatedResult] = await Promise.allSettled([
+    requestWithFallback<any>(
+      [
+        `https://api-v2.soundcloud.com/tracks/${trackId}/comments`,
+        `https://api.soundcloud.com/tracks/${trackId}/comments`,
+      ],
+      auth,
+      refreshAuth,
+      { limit: 50 },
+    ),
+    requestWithFallback<any>(
+      [
+        `https://api-v2.soundcloud.com/tracks/${trackId}/related`,
+        `https://api.soundcloud.com/tracks/${trackId}/related`,
+      ],
+      auth,
+      refreshAuth,
+      { limit: 8 },
+    ),
+  ]);
+
+  const comments =
+    commentsResult.status === "fulfilled"
+      ? (commentsResult.value.data.collection || commentsResult.value.data || []).map(
+          (c: any) => ({
+            id: c.id,
+            user: {
+              username: c.user?.username || "Unknown",
+              permalink_url: c.user?.permalink
+                ? `https://soundcloud.com/${c.user.permalink}`
+                : "#",
+              avatar_url: c.user?.avatar_url || "/placeholder.png",
+            },
+            body: c.body,
+            timestamp: c.timestamp,
+          }),
+        )
+      : [];
+
+  const related_tracks =
+    relatedResult.status === "fulfilled"
+      ? (relatedResult.value.data.collection || relatedResult.value.data || []).map(
+          (t: any) => ({
+            id: t.id,
+            title: t.title,
+            artist: buildArtist(t.user),
+            user: buildArtist(t.user),
+            artwork_url: t.artwork_url || "/placeholder.png",
+          }),
+        )
+      : [];
+
+  return {
+    id: track.id,
+    title: track.title,
+    artwork_url: track.artwork_url || "/placeholder.png",
+    artist: buildArtist(track.user),
+    play_count: track.playback_count || track.play_count || 0,
+    likes_count: track.likes_count || track.favoritings_count || 0,
+    reposts_count: track.reposts_count || track.reposts || 0,
+    bio: track.description || "",
+    comments,
+    related_tracks,
+  };
+};
 
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
   const { id } = req.query;
-  // Use the provided OAuth token for v2api requests
-  // Retrieve the user's OAuth token from cookies and ensure correct format for v2api
-  let token = req.cookies.soundcloud_token;
-  const isLikelyJwt = token && token.split(".").length === 3;
-  if (!token || isLikelyJwt) {
-    return res.status(401).json({ error: "Not authenticated" });
+  const trackId = Array.isArray(id) ? id[0] : id;
+  let auth = getSoundCloudAuthContext(req.cookies.soundcloud_token);
+
+  if (!trackId) {
+    return res.status(400).json({ error: "Missing track id" });
   }
-  if (token && !token.startsWith("OAuth ")) {
-    token = `OAuth ${token}`;
+
+  const cached = readCache(trackId);
+  if (cached) {
+    return res.json(cached);
   }
-  console.log("[track-api] Using Authorization header:", token);
-  if (!id) return res.status(400).json({ error: "Missing track id" });
+
+  const refreshAuth = async () => {
+    auth = await refreshSoundCloudAuth(req, res);
+    return auth;
+  };
 
   try {
-    // Fetch track details
-    let trackRes;
-    try {
-      trackRes = await axios.get(`https://api-v2.soundcloud.com/tracks/${id}`, {
-        headers: token ? { Authorization: token } : {},
-      });
-    } catch (e: any) {
-      if (e?.response?.status === 401 || e?.response?.status === 403) {
-        // Fallback to oauth_token param if header auth is rejected
-        trackRes = await axios.get(
-          `https://api-v2.soundcloud.com/tracks/${id}`,
-          {
-            params: { oauth_token: token },
-          },
-        );
-      } else {
-        throw e;
-      }
-    }
-    const track = trackRes.data;
-    console.log("[track-api] Track response:", JSON.stringify(track, null, 2));
-
-    // Fetch comments
-    let commentsRes;
-    try {
-      commentsRes = await axios.get(
-        `https://api-v2.soundcloud.com/tracks/${id}/comments`,
-        {
-          headers: token ? { Authorization: token } : {},
-          params: { limit: 50 },
-        },
-      );
-    } catch (e: any) {
-      if (e?.response?.status === 401 || e?.response?.status === 403) {
-        commentsRes = await axios.get(
-          `https://api-v2.soundcloud.com/tracks/${id}/comments`,
-          {
-            params: { limit: 50, oauth_token: token },
-          },
-        );
-      } else {
-        throw e;
-      }
-    }
-    const comments = (commentsRes.data.collection || []).map((c: any) => ({
-      id: c.id,
-      user: {
-        username: c.user.username,
-        permalink_url: `https://soundcloud.com/${c.user.permalink}`,
-        avatar_url: c.user.avatar_url,
-      },
-      body: c.body,
-      timestamp: c.timestamp,
-    }));
-    console.log(
-      "[track-api] Comments response:",
-      JSON.stringify(commentsRes.data, null, 2),
-    );
-
-    // Fetch related tracks
-    const relatedRes = await axios.get(
-      `https://api-v2.soundcloud.com/tracks/${id}/related`,
-      {
-        headers: token ? { Authorization: token } : {},
-        params: { limit: 8 },
-      },
-    );
-    const related_tracks = (relatedRes.data.collection || []).map((t: any) => ({
-      id: t.id,
-      title: t.title,
-      artist: {
-        username: t.user.username,
-        permalink_url: `https://soundcloud.com/${t.user.permalink}`,
-      },
-      artwork_url: t.artwork_url,
-    }));
-    console.log(
-      "[track-api] Related tracks response:",
-      JSON.stringify(relatedRes.data, null, 2),
-    );
-
-    // Track bio and stats
-    const bio = track.description || "";
-    const play_count = track.playback_count || 0;
-    const likes_count = track.likes_count || 0;
-    const reposts_count = track.reposts_count || 0;
-
-    res.json({
-      id: track.id,
-      title: track.title,
-      artist: {
-        username: track.user.username,
-        permalink_url: `https://soundcloud.com/${track.user.permalink}`,
-        avatar_url: track.user.avatar_url,
-      },
-      play_count,
-      likes_count,
-      reposts_count,
-      bio,
-      comments,
-      related_tracks,
+    const payload = await fetchTrackPayload(trackId, auth, refreshAuth);
+    writeCache(trackId, payload);
+    return res.json(payload);
+  } catch (error: any) {
+    console.error("[track-api] Error:", error.response?.data || error.message);
+    return res.status(error.response?.status || 500).json({
+      error: error.response?.data?.error || error.message || "Failed to load track",
     });
-  } catch (e: any) {
-    console.log("[track-api] Error:", e);
-    res.status(500).json({ error: e.message });
   }
 }

@@ -11,6 +11,7 @@ const {
 const fs = require("fs");
 const path = require("path");
 const http = require("http");
+const os = require("os");
 const { spawn } = require("child_process");
 const { autoUpdater } = require("electron-updater");
 
@@ -1125,4 +1126,21 @@ ipcMain.handle("window-is-maximized", () => {
 ipcMain.handle("open-external", (_event, url) => {
   if (typeof url !== "string") return;
   shell.openExternal(url);
+});
+
+ipcMain.handle("get-local-network-url", () => {
+  const interfaces = os.networkInterfaces();
+  for (const entries of Object.values(interfaces)) {
+    for (const entry of entries || []) {
+      if (
+        entry &&
+        entry.family === "IPv4" &&
+        !entry.internal &&
+        !entry.address.startsWith("169.254.")
+      ) {
+        return `http://${entry.address}:3000`;
+      }
+    }
+  }
+  return "http://localhost:3000";
 });

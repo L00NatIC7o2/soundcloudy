@@ -1,12 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { randomBytes } from "crypto";
-
-type ConnectEntry = {
-  createdAt: number;
-  expires_in: number;
-  status?: "pending" | "complete";
-  tokens?: any;
-};
+import { getConnectStore, type ConnectEntry } from "../../../src/server/auth/connectStore";
 
 export default function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") {
@@ -14,12 +8,7 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  // Ensure global store exists
-  const globalAny = globalThis as any;
-  if (!globalAny.__SC_CONNECT_CODES) {
-    globalAny.__SC_CONNECT_CODES = new Map<string, ConnectEntry>();
-  }
-  const store: Map<string, ConnectEntry> = globalAny.__SC_CONNECT_CODES;
+  const store = getConnectStore();
 
   const connectCode = randomBytes(6).toString("hex");
   const expires_in = 300; // 5 minutes

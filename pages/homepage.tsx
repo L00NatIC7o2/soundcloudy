@@ -1,4 +1,103 @@
-import { useEffect, useState, type MouseEvent } from "react";
+﻿import { useEffect, useState, type MouseEvent } from "react";
+
+type SectionItem = {
+  id?: number | string;
+  kind?: string;
+  title?: string;
+  username?: string;
+  artwork_url?: string;
+  avatar_url?: string;
+  permalink_url?: string;
+  tracks?: Array<{ artwork_url?: string }>;
+  user?: { username?: string; avatar_url?: string };
+  track_count?: number;
+  [key: string]: any;
+};
+
+type DiscoverSection = {
+  title: string;
+  items: SectionItem[];
+};
+
+const normalizeItem = (item: any): SectionItem | null => {
+  if (!item || typeof item !== "object") return null;
+
+  if (item.kind && (item.title || item.user?.username || item.username)) {
+    return item;
+  }
+
+  if (item.track) {
+    return normalizeItem({
+      ...item.track,
+      played_at: item.played_at ?? item.created_at,
+    });
+  }
+
+  if (item.playlist) {
+    return normalizeItem({
+      ...item.playlist,
+      kind: item.playlist.kind || "playlist",
+    });
+  }
+
+  if (item.system_playlist) {
+    return normalizeItem({
+      ...item.system_playlist,
+      kind: item.system_playlist.kind || "system-playlist",
+    });
+  }
+
+  if (item.album) {
+    return normalizeItem({
+      ...item.album,
+      kind: item.album.kind || "playlist",
+    });
+  }
+
+  if (item.station) {
+    return normalizeItem({
+      ...item.station,
+      kind: item.station.kind || "system-playlist",
+    });
+  }
+
+  if (item.origin) {
+    return normalizeItem(item.origin);
+  }
+
+  if (item.item) {
+    return normalizeItem(item.item);
+  }
+
+  if (Array.isArray(item.collection) && item.collection.length > 0) {
+    return normalizeItem(item.collection[0]);
+  }
+
+  return null;
+};
+
+const normalizeSection = (section: any): DiscoverSection | null => {
+  if (!section || typeof section !== "object") return null;
+
+  const sourceItems = Array.isArray(section.items)
+    ? section.items
+    : Array.isArray(section.items?.collection)
+      ? section.items.collection
+      : Array.isArray(section.collection)
+        ? section.collection
+        : [];
+
+  const items = sourceItems
+    .map((item: any) => normalizeItem(item))
+    .filter((item: SectionItem | null): item is SectionItem => Boolean(item));
+
+  if (!items.length) return null;
+
+  return {
+    title: section.title || section.name || "For You",
+    items,
+  };
+};
 
 export default function HomePage({
   onTrackClick,
@@ -39,37 +138,52 @@ export default function HomePage({
   onNext: () => void;
   onTrackEnd: () => void;
 }) {
-  const [discoverSections, setDiscoverSections] = useState<any[]>([]);
+  const [discoverSections, setDiscoverSections] = useState<DiscoverSection[]>([]);
   const [loading, setLoading] = useState(false);
 
-  const getCardCover = (item: any) => {
-    if (!item) return "/placeholder.png";
-    if (item.artwork_url) {
-      return item.artwork_url.replace("-large", "-t500x500");
+  const getTrackArtwork = (item: SectionItem) => {
+    const artworkUrl = item.artwork_url;
+    const firstTrackArtwork = Array.isArray(item.tracks)
+      ? item.tracks[0]?.artwork_url
+      : null;
+    const avatarUrl = item.user?.avatar_url || item.avatar_url;
+    if (artworkUrl) {
+      return artworkUrl.replace("-large", "-t500x500");
     }
-    if (Array.isArray(item.tracks) && item.tracks[0]?.artwork_url) {
-      return item.tracks[0].artwork_url.replace("-large", "-t500x500");
+    if (firstTrackArtwork) {
+      return firstTrackArtwork.replace("-large", "-t500x500");
+    }
+    if (avatarUrl) {
+      return avatarUrl.replace("-large", "-t500x500");
     }
     return "/placeholder.png";
   };
 
-  const getCardCoverStyle = (item: any) => ({
+  const getCardCover = (item: SectionItem) => {
+    if (!item) return "/placeholder.png";
+    return getTrackArtwork(item);
+  };
+
+  const getCardCoverStyle = (item: SectionItem) => ({
     backgroundImage: `url(${getCardCover(item)})`,
   });
 
   useEffect(() => {
     setLoading(true);
 
-    // Fetch discover page data (personalized playlists, stations, etc.)
     fetch("/api/discover")
       .then((res) => res.json())
       .then((data) => {
-        console.log("Discover API response:", data);
         if (data.sections && Array.isArray(data.sections)) {
-          console.log("Setting discover sections:", data.sections.length);
-          setDiscoverSections(data.sections);
+          const normalizedSections = data.sections
+            .map((section: any) => normalizeSection(section))
+            .filter(
+              (section: DiscoverSection | null): section is DiscoverSection =>
+                Boolean(section),
+            );
+          setDiscoverSections(normalizedSections);
         } else {
-          console.warn("No sections in discover response");
+          setDiscoverSections([]);
         }
       })
       .catch((error) => {
@@ -80,7 +194,7 @@ export default function HomePage({
       });
   }, []);
 
-  const handleItemClick = (item: any, trackList: any[]) => {
+  const handleItemClick = (item: SectionItem, trackList: SectionItem[]) => {
     if (item.kind === "track") {
       onTrackClick(item, "search", trackList);
     } else if (
@@ -88,12 +202,10 @@ export default function HomePage({
       item.kind === "playlist-like" ||
       item.kind === "system-playlist"
     ) {
-      // For system playlists (Daily Drops, stations, etc.), we need to resolve the URL first
       if (item.permalink_url) {
-        // Let the parent handle playlist resolution and loading
         onPlaylistClick?.({
           ...item,
-          needsResolution: true, // Flag to indicate we need to resolve this URL
+          needsResolution: true,
         });
       } else {
         onPlaylistClick?.(item);
@@ -101,16 +213,31 @@ export default function HomePage({
     }
   };
 
-  const renderSection = (section: any) => {
-    if (!section.items || section.items.length === 0) return null;
+  const getSubtitle = (item: SectionItem) => {
+    if (item.kind === "track") {
+      return item.user?.username || item.username || "Unknown";
+    }
+
+    if (
+      item.kind === "playlist" ||
+      item.kind === "playlist-like" ||
+      item.kind === "system-playlist"
+    ) {
+      return `Playlist - ${item.track_count || item.tracks?.length || 0} tracks`;
+    }
+
+    return item.user?.username || item.username || "";
+  };
+
+  const renderSection = (section: DiscoverSection) => {
+    if (!section.items.length) return null;
 
     return (
       <section key={section.title} className="homepage-section">
         <h2>{section.title}</h2>
         <div className="horizontal-scroll">
-          {section.items.map((item: any, index: number) => {
+          {section.items.map((item, index) => {
             const key = item.id || `${section.title}-${index}`;
-            const tracks = section.items.filter((i: any) => i.kind === "track");
 
             return (
               <div
@@ -155,7 +282,7 @@ export default function HomePage({
                 </button>
                 <img
                   src={getCardCover(item)}
-                  alt={item.title}
+                  alt={item.title || section.title}
                   className="track-cover home-track-cover"
                   draggable={false}
                 />
@@ -163,14 +290,8 @@ export default function HomePage({
                   className="track-info clickable"
                   onClick={(event) => onInfoClick?.(event, item)}
                 >
-                  <div className="track-title">{item.title}</div>
-                  <div className="track-artist">
-                    {item.kind === "track" && (item.username || "Unknown")}
-                    {(item.kind === "playlist" ||
-                      item.kind === "playlist-like" ||
-                      item.kind === "system-playlist") &&
-                      `Playlist • ${item.track_count || 0} tracks`}
-                  </div>
+                  <div className="track-title">{item.title || "Untitled"}</div>
+                  <div className="track-artist">{getSubtitle(item)}</div>
                 </div>
               </div>
             );

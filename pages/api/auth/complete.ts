@@ -1,8 +1,8 @@
 import type { NextApiRequest, NextApiResponse } from "next";
-
-const codes = (globalThis.__SC_CONNECT_CODES ||= new Map<string, any>());
+import { getConnectStore } from "../../../src/server/auth/connectStore";
 
 export default function handler(req: NextApiRequest, res: NextApiResponse) {
+  const codes = getConnectStore();
   const { connect_code } = req.query;
   if (!connect_code || typeof connect_code !== "string")
     return res.status(400).json({ error: "missing connect_code" });

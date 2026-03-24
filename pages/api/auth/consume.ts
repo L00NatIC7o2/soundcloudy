@@ -1,14 +1,20 @@
 import type { NextApiRequest, NextApiResponse } from "next";
+import { getConnectStore } from "../../../src/server/auth/connectStore";
 
 export default function handler(req: NextApiRequest, res: NextApiResponse) {
-  const nonce = typeof req.query.nonce === "string" ? req.query.nonce : null;
+  const connectCode =
+    typeof req.query.connect_code === "string"
+      ? req.query.connect_code
+      : typeof req.query.nonce === "string"
+        ? req.query.nonce
+        : null;
 
-  if (!nonce) {
-    return res.status(400).json({ error: "Missing nonce" });
+  if (!connectCode) {
+    return res.status(400).json({ error: "Missing connect_code" });
   }
 
-  const store = (globalThis as any).__SC_CONNECT_CODES;
-  const entry = store?.get(nonce);
+  const store = getConnectStore();
+  const entry = store.get(connectCode);
 
   if (!entry || !entry.tokens) {
     return res.status(401).json({ error: "Invalid or incomplete session" });
@@ -18,7 +24,7 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
   const { access_token, refresh_token, expires_in } = entry.tokens;
 
   // Cleanup store
-  store.delete(nonce);
+  store.delete(connectCode);
 
   const isProd = process.env.NODE_ENV === "production";
   const cookies = [

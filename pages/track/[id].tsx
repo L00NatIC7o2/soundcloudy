@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+﻿import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
 
@@ -38,37 +38,47 @@ interface TrackData {
 }
 
 export default function TrackPage() {
-  // const router = useRouter(); // Removed duplicate
-  // const { id } = router.query; // Removed duplicate
-  // const [track, setTrack] = useState<TrackData | null>(null); // Removed duplicate
-  // const [loading, setLoading] = useState(true); // Removed duplicate
-
-  // Helper to link @mentions in bio
-  // (Removed duplicate renderBio function)
   const router = useRouter();
   const { id } = router.query;
   const [track, setTrack] = useState<TrackData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) return;
+
+    const trackId = Array.isArray(id) ? id[0] : id;
     setLoading(true);
-    fetch(`/api/track/${id}`)
-      .then((res) => res.json())
+    setError(null);
+
+    fetch(`/api/track/${trackId}`)
+      .then(async (res) => {
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data?.error || "Failed to load track");
+        }
+        return data;
+      })
       .then((data) => {
         setTrack(data);
+      })
+      .catch((err) => {
+        setTrack(null);
+        setError(err instanceof Error ? err.message : "Failed to load track");
+      })
+      .finally(() => {
         setLoading(false);
       });
   }, [id]);
 
   if (loading) return <div>Loading...</div>;
-  if (!track || !track.id || !track.title) {
+  if (error || !track || !track.id || !track.title) {
     return (
       <div className="track-page-error">
         <h2>Track not found or incomplete</h2>
         <p>
-          Sorry, we couldn't load this track. It may be missing, deleted, or the
-          ID is invalid.
+          {error ||
+            "Sorry, we couldn't load this track. It may be missing, deleted, or the ID is invalid."}
           <br />
           Please check the link or try again later.
         </p>
@@ -81,10 +91,9 @@ export default function TrackPage() {
       </div>
     );
   }
-  // Fallback for related tracks
-  const relatedTracks = track?.related_tracks ?? [];
 
-  // Helper to link @mentions in bio
+  const relatedTracks = track.related_tracks ?? [];
+
   function renderBio(bio: string) {
     if (!bio) bio = "";
     return bio.split(/(@\w+)/g).map((part, i) => {
@@ -104,14 +113,13 @@ export default function TrackPage() {
     });
   }
 
-  // Fallback for comments
   const comments = track.comments ?? [];
 
   return (
     <div className="track-page">
       <h1>{track.title}</h1>
       <div>
-        {track.artist && track.artist.permalink_url ? (
+        {track.artist && track.artist.permalink_url && track.artist.permalink_url !== "#" ? (
           <Link href={track.artist.permalink_url} target="_blank">
             <img
               src={track.artist.avatar_url}
@@ -187,13 +195,17 @@ export default function TrackPage() {
                   <Link href={`/track/${rt.id}`}>{rt.title}</Link>
                 </div>
                 <div>
-                  <Link
-                    href={rt.artist.permalink_url}
-                    target="_blank"
-                    style={{ color: "#ff5500" }}
-                  >
-                    {rt.artist.username}
-                  </Link>
+                  {rt.artist.permalink_url && rt.artist.permalink_url !== "#" ? (
+                    <Link
+                      href={rt.artist.permalink_url}
+                      target="_blank"
+                      style={{ color: "#ff5500" }}
+                    >
+                      {rt.artist.username}
+                    </Link>
+                  ) : (
+                    <span style={{ color: "#ff5500" }}>{rt.artist.username}</span>
+                  )}
                 </div>
               </div>
             ))

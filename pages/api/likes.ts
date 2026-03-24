@@ -1,11 +1,11 @@
-import type { NextApiRequest, NextApiResponse } from "next";
+﻿import type { NextApiRequest, NextApiResponse } from "next";
 import axios from "axios";
 
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
-  const { offset = "0", limit = "50" } = req.query;
+  const { nextHref, limit = "50" } = req.query;
   const token = req.cookies.soundcloud_token;
 
   if (!token) {
@@ -13,22 +13,25 @@ export default async function handler(
   }
 
   try {
-    const offsetNum = parseInt(offset as string) || 0;
-    const limitNum = parseInt(limit as string) || 50;
+    const limitNum = Math.min(parseInt(limit as string) || 50, 50);
+    const endpoint =
+      typeof nextHref === "string" && nextHref.length > 0
+        ? nextHref
+        : "https://api.soundcloud.com/me/likes/tracks";
 
-    const response = await axios.get(
-      "https://api.soundcloud.com/me/favorites",
-      {
-        headers: {
-          Authorization: `OAuth ${token}`,
-        },
-        params: {
-          offset: offsetNum,
-          limit: limitNum,
-        },
-        timeout: 10000,
+    const response = await axios.get(endpoint, {
+      headers: {
+        Authorization: `OAuth ${token}`,
       },
-    );
+      params:
+        typeof nextHref === "string" && nextHref.length > 0
+          ? undefined
+          : {
+              limit: limitNum,
+              linked_partitioning: true,
+            },
+      timeout: 10000,
+    });
 
     const rawLikes = Array.isArray(response.data)
       ? response.data
@@ -40,11 +43,13 @@ export default async function handler(
         ...track,
         isLiked: true,
       }));
-    const hasMore = Array.isArray(response.data)
-      ? likes.length >= limitNum
-      : Boolean(response.data?.next_href);
 
-    res.json({ likes, hasMore });
+    const next =
+      typeof response.data?.next_href === "string" && response.data.next_href
+        ? response.data.next_href
+        : null;
+
+    res.json({ likes, hasMore: Boolean(next), nextHref: next });
   } catch (error: any) {
     console.error(
       "Likes error:",

@@ -185,6 +185,22 @@ export default async function handler(
       }
     };
 
+    const fetchReposts = async () => {
+      try {
+        const rawItems = await fetchPaginatedCollection(
+          `https://api.soundcloud.com/users/${encodeURIComponent(user.urn)}/reposts/tracks`,
+          {},
+          300,
+        );
+        return rawItems
+          .map((item: any) => item?.track || item?.origin || item)
+          .filter((item: any) => item?.kind === "track" || item?.title);
+      } catch (error) {
+        console.error("Failed to fetch artist reposts:", error);
+        return [];
+      }
+    };
+
     const splitPlaylists = (items: any[]) => {
       const albums: any[] = [];
       const playlists: any[] = [];
@@ -203,10 +219,11 @@ export default async function handler(
       return { albums, playlists };
     };
 
-    const [banner_url, tracks, playlistsRaw] = await Promise.all([
+    const [banner_url, tracks, playlistsRaw, reposts] = await Promise.all([
       fetchBanner(),
       fetchTracks(),
       fetchPlaylists(),
+      fetchReposts(),
     ]);
     const { albums, playlists } = splitPlaylists(playlistsRaw);
 
@@ -227,6 +244,7 @@ export default async function handler(
       tracks,
       albums,
       playlists,
+      reposts,
     };
 
     const cacheTtl = banner_url ? CACHE_TTL_MS : 10_000;

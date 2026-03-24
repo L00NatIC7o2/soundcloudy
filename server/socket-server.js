@@ -1,13 +1,32 @@
 import { Server } from "socket.io";
 
 const io = new Server(3001, { cors: { origin: "*" } });
+const playbackByRoom = new Map();
 
 io.on("connection", (socket) => {
-  socket.on("join", (userId) => {
-    socket.join(userId); // Use userId as room
+  socket.on("join", (userId, ack) => {
+    if (!userId || typeof userId !== "string") {
+      if (typeof ack === "function") {
+        ack({ ok: false, error: "Missing room id" });
+      }
+      return;
+    }
+
+    socket.join(userId);
+
+    if (typeof ack === "function") {
+      ack({
+        ok: true,
+        roomId: userId,
+        playbackState: playbackByRoom.get(userId) || null,
+      });
+    }
   });
 
   socket.on("playback-update", ({ userId, state }) => {
+    if (userId && state) {
+      playbackByRoom.set(userId, state);
+    }
     socket.to(userId).emit("playback-update", state);
   });
 

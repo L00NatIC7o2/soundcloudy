@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState, memo } from "react";
+import { useEffect, useRef, useState, memo, type CSSProperties } from "react";
 import { io, Socket } from "socket.io-client";
-import { useRouter } from "next/router";
 import PlaylistMenu from "./PlaylistMenu";
+import { prefetchTrackDetails } from "../lib/trackDetails";
+import { getClientSocketUrl } from "../lib/runtimeConfig";
 
 interface PlayerProps {
   currentTrack: any;
@@ -13,6 +14,7 @@ interface PlayerProps {
     playlistId: number | null,
     playlistTitle: string | null,
   ) => void;
+  onTrackOpen?: (track: any) => void;
   isShuffle?: boolean;
   onShuffleChange?: (shuffle: boolean) => void;
 }
@@ -24,13 +26,16 @@ const Player = memo(function Player({
   onNext,
   onArtistClick,
   onPlaylistClick,
+  onTrackOpen,
   isShuffle = false,
   onShuffleChange,
 }: PlayerProps) {
+  const getTrackArtwork = (track: any) =>
+    track?.artwork_url?.replace?.("-large", "-t500x500") ||
+    track?.user?.avatar_url?.replace?.("-large", "-t500x500") ||
+    "/placeholder.png";
+
   const audioRef = useRef<HTMLAudioElement>(null);
-  const router = useRouter();
-  // --- SOCKET.IO SYNC ---
-  // Replace with real user/session id in production
   const userId =
     typeof window !== "undefined"
       ? localStorage.getItem("soundcloudy_user_id") ||
@@ -41,19 +46,17 @@ const Player = memo(function Player({
         })()
       : "";
   const [socket, setSocket] = useState<Socket | null>(null);
-  // Setup socket.io connection
+
   useEffect(() => {
     if (!userId) return;
-    const s = io("http://localhost:3001");
+    const s = io(getClientSocketUrl(window.location.origin));
     setSocket(s);
-    s.emit("join", userId);
 
-    // Listen for remote playback updates (from other device)
+    s.on("connect", () => {
+      s.emit("join", userId);
+    });
+
     s.on("playback-update", (remoteState) => {
-      // Only update if not already in sync
-      if (remoteState.trackId !== currentTrack?.id) {
-        // Optionally: auto-load the track
-      }
       if (typeof remoteState.position === "number" && audioRef.current) {
         audioRef.current.currentTime = remoteState.position;
       }
@@ -65,18 +68,41 @@ const Player = memo(function Player({
         }
       }
     });
-    // Listen for remote control commands
+
     s.on("remote-command", (command) => {
-      if (command === "play") setIsPlaying(true);
-      if (command === "pause") setIsPlaying(false);
+      if (command && typeof command === "object") {
+        if (command.type === "load-track" && command.track) {
+          window.dispatchEvent(
+            new CustomEvent("remote-load-track", {
+              detail: {
+                track: command.track,
+                position: Number(command.position) || 0,
+                shouldPlay: command.shouldPlay !== false,
+              },
+            }),
+          );
+          return;
+        }
+      }
+      if (command === "play") {
+        if (audioRef.current) {
+          void audioRef.current.play().catch(() => {});
+        }
+        setIsPlaying(true);
+      }
+      if (command === "pause") {
+        audioRef.current?.pause();
+        setIsPlaying(false);
+      }
       if (command === "next") handleNext();
       if (command === "prev") handlePrevious();
     });
+
     return () => {
       s.disconnect();
     };
-    // eslint-disable-next-line
   }, [userId]);
+
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -88,6 +114,8 @@ const Player = memo(function Player({
   const [playlistsWithTrack, setPlaylistsWithTrack] = useState<number[]>([]);
   const [isInAnyPlaylist, setIsInAnyPlaylist] = useState(false);
   const lastBackClickRef = useRef<number>(0);
+  const lastRemoteSyncRef = useRef<number>(0);
+  const pendingRemoteSeekRef = useRef<number | null>(null);
   const playlistLabel =
     currentTrack?.playlistTitle ||
     currentTrack?.publisher_metadata?.album_title ||
@@ -95,8 +123,11 @@ const Player = memo(function Player({
   const playlistId = currentTrack?.playlistId || null;
   const canOpenPlaylist = Boolean(onPlaylistClick && playlistId);
   const canOpenArtist = Boolean(onArtistClick && currentTrack?.user);
+  const playerArtwork = getTrackArtwork(currentTrack);
+  const playerStyle = {
+    "--player-artwork": `url("${playerArtwork}")`,
+  } as CSSProperties;
 
-  // Update Media Session metadata
   useEffect(() => {
     if (currentTrack && "mediaSession" in navigator) {
       navigator.mediaSession.metadata = new MediaMetadata({
@@ -105,14 +136,13 @@ const Player = memo(function Player({
         album: playlistLabel,
         artwork: [
           {
-            src: currentTrack.artwork_url?.replace("-large", "-t500x500") || "",
+            src: getTrackArtwork(currentTrack),
             sizes: "500x500",
             type: "image/jpeg",
           },
         ],
       });
 
-      // Set action handlers for media keys
       navigator.mediaSession.setActionHandler("play", () => {
         if (audioRef.current) {
           audioRef.current.play();
@@ -169,7 +199,6 @@ const Player = memo(function Player({
     }
 
     return () => {
-      // Clean up handlers
       if ("mediaSession" in navigator) {
         navigator.mediaSession.setActionHandler("play", null);
         navigator.mediaSession.setActionHandler("pause", null);
@@ -181,40 +210,39 @@ const Player = memo(function Player({
         navigator.mediaSession.setActionHandler("stop", null);
       }
     };
-  }, [currentTrack, onPrevious, onNext]);
+  }, [currentTrack, onPrevious, onNext, playlistLabel]);
 
-  // Update playback state
   useEffect(() => {
     if ("mediaSession" in navigator) {
       navigator.mediaSession.playbackState = isPlaying ? "playing" : "paused";
     }
   }, [isPlaying]);
 
-  // Load track - Get stream URL from API
   useEffect(() => {
     const loadTrack = async () => {
       if (!currentTrack || !audioRef.current) return;
 
       setLoading(true);
+      pendingRemoteSeekRef.current =
+        typeof currentTrack.remoteStartPosition === "number"
+          ? currentTrack.remoteStartPosition
+          : null;
 
       try {
-        if (audioRef.current) {
-          // Stream directly via proxy to reduce startup latency
-          audioRef.current.src = `/api/stream?trackId=${currentTrack.id}&proxy=1`;
-          audioRef.current.load();
+        audioRef.current.src = `/api/stream?trackId=${currentTrack.id}&proxy=1`;
+        audioRef.current.load();
 
-          const playPromise = audioRef.current.play();
-          if (playPromise !== undefined) {
-            playPromise
-              .then(() => {
-                setIsPlaying(true);
-              })
-              .catch((error) => {
-                if (error.name !== "AbortError") {
-                  console.error("Play error:", error);
-                }
-              });
-          }
+        const playPromise = audioRef.current.play();
+        if (playPromise !== undefined) {
+          playPromise
+            .then(() => {
+              setIsPlaying(true);
+            })
+            .catch((error) => {
+              if (error.name !== "AbortError") {
+                console.error("Play error:", error);
+              }
+            });
         }
       } catch (error) {
         console.error("Load track error:", error);
@@ -238,9 +266,22 @@ const Player = memo(function Player({
 
     setIsLiked(false);
     checkIfLiked(currentTrack.id);
+  }, [currentTrack?.id, currentTrack?.isLiked]);
+
+  useEffect(() => {
+    if (!currentTrack?.id) return;
+
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<{ trackId?: number; isLiked?: boolean }>).detail;
+      if (!detail || detail.trackId !== currentTrack.id) return;
+      setIsLiked(Boolean(detail.isLiked));
+    };
+
+    window.addEventListener("likes-updated", handler as EventListener);
+    return () =>
+      window.removeEventListener("likes-updated", handler as EventListener);
   }, [currentTrack?.id]);
 
-  // Only check playlists when menu is opened, not on every track change
   useEffect(() => {
     if (!currentTrack?.id || !isPlaylistMenuOpen) return;
     checkPlaylistsForTrack(currentTrack.id);
@@ -258,11 +299,47 @@ const Player = memo(function Player({
     }
   };
 
+  const emitLikeUpdate = (
+    trackId: number | string,
+    nextLiked: boolean,
+    track?: any,
+  ) => {
+    try {
+      window.dispatchEvent(
+        new CustomEvent("likes-updated", {
+          detail: { trackId: Number(trackId), isLiked: nextLiked, track },
+        }),
+      );
+    } catch (error) {
+      console.error("Failed to dispatch likes-updated:", error);
+    }
+  };
+  const emitLikedSongsToast = (nextLiked: boolean, track?: any) => {
+    try {
+      window.dispatchEvent(
+        new CustomEvent("show-toast", {
+          detail: {
+            message: nextLiked
+              ? "Added to Liked Songs"
+              : "Removed from Liked Songs",
+            artwork: getTrackArtwork(track),
+          },
+        }),
+      );
+    } catch (error) {
+      console.error("Failed to dispatch liked songs toast:", error);
+    }
+  };
+
   const toggleLike = async () => {
     if (!currentTrack?.id) {
       alert("No track selected");
       return;
     }
+
+    const nextLiked = !isLiked;
+    setIsLiked(nextLiked);
+    emitLikeUpdate(currentTrack.id, nextLiked, currentTrack);
 
     try {
       const response = await fetch("/api/like", {
@@ -270,7 +347,7 @@ const Player = memo(function Player({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           trackId: currentTrack.id,
-          like: !isLiked,
+          like: nextLiked,
         }),
       });
 
@@ -278,12 +355,18 @@ const Player = memo(function Player({
         const errorData = await response.json();
         throw new Error(errorData.error || "Failed to update like");
       }
-      await checkIfLiked(currentTrack.id);
+
+      const confirmedResponse = await fetch(`/api/check-like?trackId=${currentTrack.id}`);
+      const confirmedData = await confirmedResponse.json();
+      const confirmedLiked = Boolean(confirmedData?.isLiked);
+      setIsLiked(confirmedLiked);
+      emitLikeUpdate(currentTrack.id, confirmedLiked, currentTrack);
+      emitLikedSongsToast(confirmedLiked, currentTrack);
     } catch (error) {
       console.error("Like failed:", error);
-      alert(
-        `Error: ${error instanceof Error ? error.message : "Unknown error"}`,
-      );
+      setIsLiked(!nextLiked);
+      emitLikeUpdate(currentTrack.id, !nextLiked, currentTrack);
+      alert(`Error: ${error instanceof Error ? error.message : "Unknown error"}`);
     }
   };
 
@@ -315,21 +398,68 @@ const Player = memo(function Player({
     setIsPlaying(!isPlaying);
   };
 
-  // Emit playback state to socket.io when it changes
-  useEffect(() => {
-    if (!socket || !currentTrack) return;
+  const emitPlaybackState = (force = false) => {
+    if (!socket || !currentTrack || !userId) return;
+    const now = Date.now();
+    if (!force && now - lastRemoteSyncRef.current < 700) return;
+    lastRemoteSyncRef.current = now;
+
     socket.emit("playback-update", {
       userId,
       state: {
         trackId: currentTrack.id,
+        track: currentTrack.title,
+        artist: currentTrack.user?.username || "Unknown",
+        artwork: getTrackArtwork(currentTrack),
+        trackData: currentTrack,
         position: audioRef.current?.currentTime || 0,
+        duration: audioRef.current?.duration || currentTrack.duration || 0,
         playing: isPlaying,
       },
     });
-    // eslint-disable-next-line
-  }, [isPlaying, currentTrack?.id]);
-  // Example: send remote command (call from UI or another component)
-  // socket?.emit("remote-command", { userId, command: "pause" });
+  };
+
+  useEffect(() => {
+    if (!socket || !currentTrack) return;
+    emitPlaybackState(true);
+  }, [isPlaying, currentTrack?.id, socket, userId, currentTrack]);
+
+  useEffect(() => {
+    try {
+      window.dispatchEvent(
+        new CustomEvent("player-state", {
+          detail: {
+            trackId: currentTrack?.id || null,
+            isPlaying,
+            track: currentTrack || null,
+          },
+        }),
+      );
+    } catch (error) {
+      console.error("Failed to dispatch player-state:", error);
+    }
+  }, [currentTrack, isPlaying]);
+
+  useEffect(() => {
+    if (!socket || !currentTrack || !userId) return;
+
+    const handleConnect = () => {
+      emitPlaybackState(true);
+    };
+
+    socket.on("connect", handleConnect);
+    return () => {
+      socket.off("connect", handleConnect);
+    };
+  }, [socket, currentTrack, userId, isPlaying]);
+
+  useEffect(() => {
+    if (!socket || !currentTrack || !isPlaying) return;
+    const interval = window.setInterval(() => {
+      emitPlaybackState();
+    }, 1000);
+    return () => window.clearInterval(interval);
+  }, [socket, currentTrack?.id, isPlaying, userId]);
 
   useEffect(() => {
     const handleExternalToggle = () => {
@@ -358,8 +488,8 @@ const Player = memo(function Player({
     if (audioRef.current) {
       setCurrentTime(audioRef.current.currentTime);
       setDuration(audioRef.current.duration || 0);
+      emitPlaybackState();
 
-      // Update Media Session position - only if duration is valid
       if (
         "mediaSession" in navigator &&
         !isNaN(audioRef.current.duration) &&
@@ -376,6 +506,14 @@ const Player = memo(function Player({
         }
       }
     }
+  };
+
+  const handleLoadedMetadata = () => {
+    if (audioRef.current && pendingRemoteSeekRef.current !== null) {
+      audioRef.current.currentTime = pendingRemoteSeekRef.current;
+      pendingRemoteSeekRef.current = null;
+    }
+    handleTimeUpdate();
   };
 
   const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -430,14 +568,12 @@ const Player = memo(function Player({
 
     const now = Date.now();
     const timeSinceLastClick = now - lastBackClickRef.current;
-    const currentTime = audioRef.current.currentTime;
+    const currentTimeValue = audioRef.current.currentTime;
 
-    // If song has played for less than 2 seconds OR back was clicked within 2 seconds, go to previous track
-    if (currentTime < 2 || timeSinceLastClick < 2000) {
+    if (currentTimeValue < 2 || timeSinceLastClick < 2000) {
       lastBackClickRef.current = 0;
       onPrevious?.();
     } else {
-      // Otherwise, restart the current song
       lastBackClickRef.current = now;
       audioRef.current.currentTime = 0;
     }
@@ -456,10 +592,10 @@ const Player = memo(function Player({
       <audio
         ref={audioRef}
         onTimeUpdate={handleTimeUpdate}
-        onLoadedMetadata={handleTimeUpdate}
+        onLoadedMetadata={handleLoadedMetadata}
         onEnded={handleTrackEnd}
       />
-      <div className="player-container">
+      <div className="player-container" style={playerStyle}>
         {loading && <div className="player-loading">Loading track...</div>}
         <div className="player-content">
           <div className="player-left">
@@ -468,26 +604,18 @@ const Player = memo(function Player({
               style={{ position: "relative", display: "inline-block" }}
             >
               <a
-                href={`/track/${currentTrack.id}`}
                 tabIndex={0}
                 onClick={(e) => {
                   e.preventDefault();
-                  window.location.href = `/track/${currentTrack.id}`;
+                  onTrackOpen?.(currentTrack);
                 }}
                 onContextMenu={(e) => {
                   e.preventDefault();
-                  // Show custom context menu
-                  // You can implement a context menu component here
-                  // For now, show browser menu
-                  // TODO: Replace with custom menu
                   alert("Share | Go to Track | Add to Playlist");
                 }}
               >
                 <img
-                  src={
-                    currentTrack.artwork_url?.replace("-large", "-t200x200") ||
-                    "/placeholder.png"
-                  }
+                  src={getTrackArtwork(currentTrack)}
                   alt={currentTrack.title}
                   className="player-artwork clickable"
                   style={{ cursor: "pointer" }}
@@ -539,7 +667,7 @@ const Player = memo(function Player({
                     }}
                     onClick={(e) => {
                       e.preventDefault();
-                      router.push(`/track/${currentTrack.id}`);
+                      onTrackOpen?.(currentTrack);
                     }}
                   >
                     {currentTrack.title}
@@ -635,7 +763,7 @@ const Player = memo(function Player({
                 disabled={loading}
               >
                 {loading ? (
-                  "⏳"
+                  "?"
                 ) : isPlaying ? (
                   <svg
                     width="24"
@@ -737,3 +865,11 @@ const Player = memo(function Player({
 });
 
 export default Player;
+
+
+
+
+
+
+
+

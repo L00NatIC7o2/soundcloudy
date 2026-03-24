@@ -3,6 +3,7 @@ const { contextBridge, ipcRenderer } = require("electron");
 contextBridge.exposeInMainWorld("electronAPI", {
   togglePlayPause: () => ipcRenderer.send("player-toggle"),
   openExternal: (url) => ipcRenderer.invoke("open-external", url),
+  getLocalNetworkUrl: () => ipcRenderer.invoke("get-local-network-url"),
   captureHistorySession: () => ipcRenderer.invoke("history-capture"),
   scrapeHistoryUrls: () => ipcRenderer.invoke("history-scrape"),
   playHistoryViaWeb: () => ipcRenderer.invoke("history-play-history"),
