@@ -60,7 +60,7 @@ export default async function handler(
     // 4. Puppeteer Sniffer (For personalized mixed-selections)
     console.log("Launching browser to sniff api-v2...");
     const browser = await puppeteer.launch({
-      headless: "new",
+      headless: true,
       args: ["--no-sandbox"],
     });
 
