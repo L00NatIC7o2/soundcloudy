@@ -1,7 +1,12 @@
 import type { NextApiRequest, NextApiResponse } from "next";
-import axios from "axios";
+import axios, { type AxiosResponse } from "axios";
 
 type MembershipMap = Record<number, number[]>;
+
+interface SoundCloudCollectionResponse<T = any> {
+  collection?: T[];
+  next_href?: string | null;
+}
 
 const CACHE_TTL_MS = 60_000;
 const membershipCache = new Map<
@@ -19,11 +24,12 @@ const fetchPaginatedCollection = async (
   let isFirstRequest = true;
 
   while (nextUrl) {
-    const response = await axios.get(nextUrl, {
+    const response: AxiosResponse<SoundCloudCollectionResponse> =
+      await axios.get(nextUrl, {
       headers: { Authorization: `OAuth ${token}` },
       params: isFirstRequest ? { limit, linked_partitioning: 1 } : undefined,
       timeout: 10000,
-    });
+      });
 
     collection.push(...(response.data?.collection || []));
     nextUrl = response.data?.next_href || null;
