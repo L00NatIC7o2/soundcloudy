@@ -2,7 +2,12 @@ import { useEffect, useRef, useState, memo, type CSSProperties } from "react";
 import { io, Socket } from "socket.io-client";
 import PlaylistMenu from "./PlaylistMenu";
 import MobilePlaylistSheet from "./MobilePlaylistSheet";
-import { prefetchTrackDetails } from "../lib/trackDetails";
+import {
+  fetchTrackDetails,
+  getCachedTrackDetails,
+  prefetchTrackDetails,
+  type TrackDetails,
+} from "../lib/trackDetails";
 import { getClientSocketUrl } from "../lib/runtimeConfig";
 
 interface PlayerProps {
@@ -115,10 +120,22 @@ const Player = memo(function Player({
   const [isMobilePlayerOpen, setIsMobilePlayerOpen] = useState(false);
   const [isMobilePlaylistSheetOpen, setIsMobilePlaylistSheetOpen] =
     useState(false);
+  const [mobileSheetPage, setMobileSheetPage] = useState<"player" | "details">(
+    "player",
+  );
   const [shouldMarqueeMobileTitle, setShouldMarqueeMobileTitle] = useState(false);
   const [isVolumePopoverOpen, setIsVolumePopoverOpen] = useState(false);
   const [playlistsWithTrack, setPlaylistsWithTrack] = useState<number[]>([]);
   const [isInAnyPlaylist, setIsInAnyPlaylist] = useState(false);
+  const [mobileTrackDetails, setMobileTrackDetails] = useState<TrackDetails | null>(
+    null,
+  );
+  const [mobileTrackDetailsLoading, setMobileTrackDetailsLoading] =
+    useState(false);
+  const [mobileTrackDetailsError, setMobileTrackDetailsError] = useState<
+    string | null
+  >(null);
+  const [mobileVisibleCommentsCount, setMobileVisibleCommentsCount] = useState(5);
   const lastBackClickRef = useRef<number>(0);
   const lastRemoteSyncRef = useRef<number>(0);
   const pendingRemoteSeekRef = useRef<number | null>(null);
@@ -126,6 +143,7 @@ const Player = memo(function Player({
   const mobileTitleSpanRef = useRef<HTMLSpanElement>(null);
   const mobileSheetTouchStartRef = useRef<number | null>(null);
   const mobileSheetTouchCurrentRef = useRef<number | null>(null);
+  const mobileTrackPageRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!isMobilePlayerOpen) {
@@ -151,6 +169,52 @@ const Player = memo(function Player({
       window.removeEventListener("resize", updateMobileTitleOverflow);
     };
   }, [currentTrack?.title, isMobilePlayerOpen]);
+
+  useEffect(() => {
+    if (!currentTrack?.id) {
+      setMobileTrackDetails(null);
+      setMobileTrackDetailsError(null);
+      setMobileTrackDetailsLoading(false);
+      return;
+    }
+
+    setMobileVisibleCommentsCount(5);
+    const cached = getCachedTrackDetails(currentTrack.id);
+    if (cached) {
+      setMobileTrackDetails(cached);
+      setMobileTrackDetailsError(null);
+      setMobileTrackDetailsLoading(false);
+    } else {
+      setMobileTrackDetails(null);
+      setMobileTrackDetailsLoading(true);
+    }
+
+    let cancelled = false;
+    setMobileTrackDetailsError(null);
+
+    fetchTrackDetails(currentTrack.id)
+      .then((data) => {
+        if (!cancelled) {
+          setMobileTrackDetails(data);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setMobileTrackDetailsError(
+            error instanceof Error ? error.message : "Failed to load track",
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setMobileTrackDetailsLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentTrack?.id]);
   const volumePopoverRef = useRef<HTMLDivElement | null>(null);
   const playlistLabel =
     currentTrack?.playlistTitle ||
@@ -163,6 +227,36 @@ const Player = memo(function Player({
   const playerStyle = {
     "--player-artwork": `url("${playerArtwork}")`,
   } as CSSProperties;
+  const mobileTrackArtist =
+    mobileTrackDetails?.artist || currentTrack?.user || currentTrack?.artist || null;
+  const mobileTrackStats = [
+    {
+      label: "Plays",
+      value:
+        mobileTrackDetails?.play_count ??
+        currentTrack?.play_count ??
+        currentTrack?.playback_count ??
+        0,
+    },
+    {
+      label: "Likes",
+      value:
+        mobileTrackDetails?.likes_count ??
+        currentTrack?.likes_count ??
+        currentTrack?.favoritings_count ??
+        0,
+    },
+    {
+      label: "Reposts",
+      value: mobileTrackDetails?.reposts_count ?? currentTrack?.reposts_count ?? 0,
+    },
+  ];
+  const mobileTrackBio = mobileTrackDetails?.bio || currentTrack?.description || "";
+  const mobileComments = mobileTrackDetails?.comments || [];
+  const mobileVisibleComments = mobileComments.slice(0, mobileVisibleCommentsCount);
+  const mobileCanShowMoreComments =
+    mobileVisibleCommentsCount < mobileComments.length;
+  const mobileRelatedTracks = mobileTrackDetails?.related_tracks || [];
 
   useEffect(() => {
     if (currentTrack && "mediaSession" in navigator) {
@@ -629,6 +723,22 @@ const Player = memo(function Player({
     return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
 
+  const renderTrackBio = (bio: string) => {
+    if (!bio) return null;
+
+    return bio.split(/(@\w+)/g).map((part, index) => {
+      if (!part.startsWith("@")) {
+        return <span key={`${part}-${index}`}>{part}</span>;
+      }
+
+      return (
+        <span key={`${part}-${index}`} style={{ color: "#ff5500" }}>
+          {part}
+        </span>
+      );
+    });
+  };
+
   const handleTrackEnd = () => {
     if (onTrackEnd) onTrackEnd();
   };
@@ -658,6 +768,7 @@ const Player = memo(function Player({
 
   const openMobilePlayer = () => {
     if (typeof window !== "undefined" && window.innerWidth <= 900) {
+      setMobileSheetPage("player");
       setIsMobilePlayerOpen(true);
     }
   };
@@ -665,6 +776,7 @@ const Player = memo(function Player({
   const closeMobilePlayer = () => {
     setIsMobilePlayerOpen(false);
     setIsMobilePlaylistSheetOpen(false);
+    setMobileSheetPage("player");
   };
 
   const handleMobileSheetTouchStart = (
@@ -683,10 +795,22 @@ const Player = memo(function Player({
   const handleMobileSheetTouchEnd = () => {
     if (
       mobileSheetTouchStartRef.current !== null &&
-      mobileSheetTouchCurrentRef.current !== null &&
-      mobileSheetTouchCurrentRef.current - mobileSheetTouchStartRef.current > 90
+      mobileSheetTouchCurrentRef.current !== null
     ) {
-      closeMobilePlayer();
+      const deltaY =
+        mobileSheetTouchCurrentRef.current - mobileSheetTouchStartRef.current;
+
+      if (deltaY < -90 && mobileSheetPage === "player") {
+        setMobileSheetPage("details");
+      } else if (deltaY > 90) {
+        if (mobileSheetPage === "details") {
+          if ((mobileTrackPageRef.current?.scrollTop || 0) <= 0) {
+            setMobileSheetPage("player");
+          }
+        } else {
+          closeMobilePlayer();
+        }
+      }
     }
 
     mobileSheetTouchStartRef.current = null;
@@ -1094,154 +1218,296 @@ const Player = memo(function Player({
             </button>
           </div>
           <div className="mobile-player-sheet-body">
-            <img
-              src={getTrackArtwork(currentTrack)}
-              alt={currentTrack.title}
-              className="mobile-player-sheet-cover"
-            />
-            <div className="mobile-player-sheet-actions-row">
-              <div className="mobile-player-sheet-actions-left">
-                <button
-                  type="button"
-                  className={`mobile-player-icon-btn mobile-like-btn ${isLiked ? "liked" : ""}`}
-                  onClick={() => void toggleLike()}
-                  aria-label={isLiked ? "Unlike" : "Like"}
-                >
-                  <img
-                    src="https://img.icons8.com/parakeet-line/48/like.png"
-                    alt={isLiked ? "Unlike" : "Like"}
-                    className="player-like-icon"
-                  />
-                </button>
-                <button
-                  type="button"
-                  className={`mobile-player-icon-btn mobile-shuffle-btn ${isShuffle ? "active" : ""}`}
-                  onClick={() => onShuffleChange?.(!isShuffle)}
-                  aria-label={isShuffle ? "Shuffle Off" : "Shuffle On"}
-                >
-                  <svg
-                    width="18"
-                    height="18"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
+            <div
+              className={`mobile-player-sheet-pages mobile-player-sheet-pages-${mobileSheetPage}`}
+            >
+              <section className="mobile-player-sheet-page mobile-player-sheet-page-player">
+                <img
+                  src={getTrackArtwork(currentTrack)}
+                  alt={currentTrack.title}
+                  className="mobile-player-sheet-cover"
+                />
+                <div className="mobile-player-sheet-actions-row">
+                  <div className="mobile-player-sheet-actions-left">
+                    <button
+                      type="button"
+                      className={`mobile-player-icon-btn mobile-like-btn ${isLiked ? "liked" : ""}`}
+                      onClick={() => void toggleLike()}
+                      aria-label={isLiked ? "Unlike" : "Like"}
+                    >
+                      <img
+                        src="https://img.icons8.com/parakeet-line/48/like.png"
+                        alt={isLiked ? "Unlike" : "Like"}
+                        className="player-like-icon"
+                      />
+                    </button>
+                    <button
+                      type="button"
+                      className={`mobile-player-icon-btn mobile-shuffle-btn ${isShuffle ? "active" : ""}`}
+                      onClick={() => onShuffleChange?.(!isShuffle)}
+                      aria-label={isShuffle ? "Shuffle Off" : "Shuffle On"}
+                    >
+                      <svg
+                        width="18"
+                        height="18"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                      >
+                        <polyline points="16 3 21 3 21 8"></polyline>
+                        <line x1="4" y1="20" x2="21" y2="3"></line>
+                        <polyline points="21 16 21 21 16 21"></polyline>
+                        <line x1="15" y1="15" x2="21" y2="21"></line>
+                        <line x1="4" y1="4" x2="9" y2="9"></line>
+                      </svg>
+                    </button>
+                  </div>
+                  <div className="mobile-player-sheet-actions-right">
+                    <div className="mobile-player-sheet-playlist-wrap">
+                      <button
+                        type="button"
+                        className={`mobile-player-icon-btn mobile-playlist-btn ${isInAnyPlaylist ? "in-playlist" : ""}`}
+                        onClick={() => setIsMobilePlaylistSheetOpen(true)}
+                        aria-label={
+                          isInAnyPlaylist ? "Added to playlist" : "Add to playlist"
+                        }
+                      >
+                        <img
+                          src={
+                            isInAnyPlaylist
+                              ? "https://img.icons8.com/parakeet-line/50/checked.png"
+                              : "https://img.icons8.com/parakeet-line/48/add.png"
+                          }
+                          alt="Add to playlist"
+                          className="player-add-playlist-icon"
+                        />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                <div className="mobile-player-sheet-meta">
+                  <div className="mobile-player-sheet-artist">
+                    {currentTrack.user?.username || "Unknown"}
+                  </div>
+                  <div
+                    ref={mobileTitleRef}
+                    className={`mobile-player-sheet-title ${shouldMarqueeMobileTitle ? "is-marquee" : ""}`}
                   >
-                    <polyline points="16 3 21 3 21 8"></polyline>
-                    <line x1="4" y1="20" x2="21" y2="3"></line>
-                    <polyline points="21 16 21 21 16 21"></polyline>
-                    <line x1="15" y1="15" x2="21" y2="21"></line>
-                    <line x1="4" y1="4" x2="9" y2="9"></line>
-                  </svg>
-                </button>
-              </div>
-              <div className="mobile-player-sheet-actions-right">
-                <div className="mobile-player-sheet-playlist-wrap">
+                    <span ref={mobileTitleSpanRef}>{currentTrack.title}</span>
+                  </div>
+                </div>
+                <div className="mobile-player-sheet-progress">
+                  <span className="player-time">{formatTime(currentTime)}</span>
+                  <input
+                    type="range"
+                    className="player-seek"
+                    min="0"
+                    max={duration || 0}
+                    value={currentTime}
+                    onChange={handleSeek}
+                  />
+                  <span className="player-time">{formatTime(duration)}</span>
+                </div>
+                <div className="mobile-player-sheet-controls">
                   <button
                     type="button"
-                    className={`mobile-player-icon-btn mobile-playlist-btn ${isInAnyPlaylist ? "in-playlist" : ""}`}
-                    onClick={() => setIsMobilePlaylistSheetOpen(true)}
-                    aria-label={
-                      isInAnyPlaylist ? "Added to playlist" : "Add to playlist"
-                    }
+                    className="player-btn"
+                    onClick={handlePrevious}
+                    title="Previous"
                   >
-                    <img
-                      src={
-                        isInAnyPlaylist
-                          ? "https://img.icons8.com/parakeet-line/50/checked.png"
-                          : "https://img.icons8.com/parakeet-line/48/add.png"
-                      }
-                      alt="Add to playlist"
-                      className="player-add-playlist-icon"
-                    />
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                      <line
+                        x1="5"
+                        y1="4"
+                        x2="5"
+                        y2="20"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                      />
+                      <polygon points="19 3 19 21 5 12 19 3" />
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    className="player-btn player-btn-play"
+                    onClick={togglePlayPause}
+                    disabled={loading}
+                  >
+                    {isPlaying ? (
+                      <svg
+                        width="24"
+                        height="24"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                      >
+                        <rect x="6" y="4" width="4" height="16" />
+                        <rect x="14" y="4" width="4" height="16" />
+                      </svg>
+                    ) : (
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                        <polygon points="5 3 19 12 5 21 5 3" />
+                      </svg>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    className="player-btn"
+                    onClick={handleNext}
+                    title="Next"
+                  >
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                      <polygon points="5 3 5 21 19 12 5 3" />
+                      <line
+                        x1="19"
+                        y1="4"
+                        x2="19"
+                        y2="20"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                      />
+                    </svg>
                   </button>
                 </div>
-              </div>
-            </div>
-            <div className="mobile-player-sheet-meta">
-              <div className="mobile-player-sheet-artist">
-                {currentTrack.user?.username || "Unknown"}
-              </div>
-              <div
-                ref={mobileTitleRef}
-                className={`mobile-player-sheet-title ${shouldMarqueeMobileTitle ? "is-marquee" : ""}`}
+                <div className="mobile-player-sheet-swipe-hint">
+                  Swipe up for track page
+                </div>
+              </section>
+              <section
+                ref={mobileTrackPageRef}
+                className="mobile-player-sheet-page mobile-player-sheet-page-details"
               >
-                <span ref={mobileTitleSpanRef}>{currentTrack.title}</span>
+                <section className="mobile-player-track-page">
+              <div className="mobile-player-track-page-header">Track Page</div>
+              {mobileTrackDetailsError ? (
+                <div className="track-page-placeholder">
+                  {mobileTrackDetailsError}. Showing available track info.
+                </div>
+              ) : null}
+
+              <div className="track-panel-stats mobile-track-panel-stats">
+                {mobileTrackStats.map((stat) => (
+                  <div key={stat.label} className="track-panel-stat">
+                    <div className="track-panel-stat-label">{stat.label}</div>
+                    <div className="track-panel-stat-value">
+                      {Number(stat.value || 0).toLocaleString()}
+                    </div>
+                  </div>
+                ))}
               </div>
-            </div>
-            <div className="mobile-player-sheet-progress">
-              <span className="player-time">{formatTime(currentTime)}</span>
-              <input
-                type="range"
-                className="player-seek"
-                min="0"
-                max={duration || 0}
-                value={currentTime}
-                onChange={handleSeek}
-              />
-              <span className="player-time">{formatTime(duration)}</span>
-            </div>
-            <div className="mobile-player-sheet-controls">
-              <button
-                type="button"
-                className="player-btn"
-                onClick={handlePrevious}
-                title="Previous"
-              >
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-                  <line
-                    x1="5"
-                    y1="4"
-                    x2="5"
-                    y2="20"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                  />
-                  <polygon points="19 3 19 21 5 12 19 3" />
-                </svg>
-              </button>
-              <button
-                type="button"
-                className="player-btn player-btn-play"
-                onClick={togglePlayPause}
-                disabled={loading}
-              >
-                {isPlaying ? (
-                  <svg
-                    width="24"
-                    height="24"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
+
+              {mobileTrackBio ? (
+                <section className="mobile-player-track-page-section">
+                  <h3 className="search-section-title">About This Track</h3>
+                  <div className="track-panel-copy">{renderTrackBio(mobileTrackBio)}</div>
+                </section>
+              ) : null}
+
+              {mobileTrackArtist?.username ? (
+                <section className="mobile-player-track-page-section">
+                  <h3 className="search-section-title">Artist</h3>
+                  <button
+                    type="button"
+                    className="player-link track-page-artist"
+                    onClick={() => onArtistClick?.(mobileTrackArtist)}
                   >
-                    <rect x="6" y="4" width="4" height="16" />
-                    <rect x="14" y="4" width="4" height="16" />
-                  </svg>
+                    {mobileTrackArtist.username}
+                  </button>
+                </section>
+              ) : null}
+
+              <section className="mobile-player-track-page-section">
+                <h3 className="search-section-title">Comments</h3>
+                {mobileTrackDetailsLoading && mobileComments.length === 0 ? (
+                  <div className="track-page-placeholder">Loading comments...</div>
+                ) : mobileComments.length === 0 ? (
+                  <div className="track-page-placeholder">No comments yet.</div>
                 ) : (
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-                    <polygon points="5 3 19 12 5 21 5 3" />
-                  </svg>
+                  <div className="track-panel-comments">
+                    {mobileVisibleComments.map((comment) => (
+                      <div key={comment.id} className="track-panel-comment">
+                        <div className="track-panel-comment-head">
+                          <img
+                            src={comment.user.avatar_url || "/placeholder.png"}
+                            alt={comment.user.username}
+                            width={36}
+                            height={36}
+                            style={{ borderRadius: "50%", objectFit: "cover" }}
+                          />
+                          <div>
+                            <div className="track-panel-comment-user">
+                              {comment.user.username}
+                            </div>
+                            <div className="track-panel-comment-time">
+                              {new Date(comment.timestamp * 1000).toLocaleString()}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="track-panel-comment-body">{comment.body}</div>
+                      </div>
+                    ))}
+                    {mobileCanShowMoreComments ? (
+                      <button
+                        type="button"
+                        className="track-panel-more"
+                        onClick={() =>
+                          setMobileVisibleCommentsCount((prev) => prev + 10)
+                        }
+                      >
+                        View more comments
+                      </button>
+                    ) : null}
+                  </div>
                 )}
-              </button>
-              <button
-                type="button"
-                className="player-btn"
-                onClick={handleNext}
-                title="Next"
-              >
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-                  <polygon points="5 3 5 21 19 12 5 3" />
-                  <line
-                    x1="19"
-                    y1="4"
-                    x2="19"
-                    y2="20"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                  />
-                </svg>
-              </button>
+              </section>
+
+              <section className="mobile-player-track-page-section">
+                <h3 className="search-section-title">Related Tracks</h3>
+                {mobileTrackDetailsLoading && mobileRelatedTracks.length === 0 ? (
+                  <div className="track-page-placeholder">
+                    Loading related tracks...
+                  </div>
+                ) : mobileRelatedTracks.length === 0 ? (
+                  <div className="track-page-placeholder">
+                    No related tracks found.
+                  </div>
+                ) : (
+                  <div className="library-grid mobile-player-related-grid">
+                    {mobileRelatedTracks.map((relatedTrack) => {
+                      const relatedArtist =
+                        relatedTrack.user?.username ||
+                        relatedTrack.artist?.username ||
+                        "Unknown";
+                      const relatedArtwork =
+                        getTrackArtwork(relatedTrack) || "/placeholder.png";
+
+                      return (
+                        <div
+                          key={relatedTrack.id}
+                          className="track-card"
+                          onClick={() => onTrackOpen?.(relatedTrack)}
+                        >
+                          <img
+                            src={relatedArtwork}
+                            alt={relatedTrack.title}
+                            className="track-cover"
+                            loading="lazy"
+                            decoding="async"
+                          />
+                          <div className="track-info clickable">
+                            <div className="track-title">{relatedTrack.title}</div>
+                            <div className="track-artist">{relatedArtist}</div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
+                </section>
+              </section>
             </div>
           </div>
         </div>

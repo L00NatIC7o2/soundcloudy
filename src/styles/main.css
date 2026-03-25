@@ -4361,6 +4361,54 @@ body.electron .main-area {
     padding-right: min(164px, 44vw);
   }
 
+  .profile-header {
+    align-items: stretch;
+    gap: 16px;
+  }
+
+  .profile-header-left {
+    flex-direction: row;
+    align-items: center;
+    gap: 14px;
+  }
+
+  .profile-header-text {
+    align-items: flex-start;
+    text-align: left;
+    gap: 8px;
+  }
+
+  .profile-header-right {
+    align-items: flex-end;
+    text-align: right;
+    margin-left: auto;
+  }
+
+  .profile-header-stats {
+    width: 100%;
+    justify-content: flex-end;
+    align-items: flex-end;
+  }
+
+  .profile-stat {
+    align-items: flex-end;
+    text-align: right;
+  }
+
+  .profile-header-bio {
+    align-self: flex-end;
+    text-align: right;
+    max-width: 100%;
+  }
+
+  .profile-bio {
+    text-align: right;
+  }
+
+  .profile-links {
+    justify-content: flex-end;
+  }
+
   .profile-header-bio,
   .profile-header-right {
     max-width: 100%;
@@ -4654,13 +4702,10 @@ body.electron .main-area {
 
   .mobile-player-sheet-body {
     flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: flex-start;
-    gap: 18px;
     min-height: 0;
-    padding-top: 34px;
+    overflow: hidden;
+    padding-top: 18px;
+    padding-bottom: 12px;
     transform: translateY(18px);
     opacity: 0;
     transition:
@@ -4673,6 +4718,39 @@ body.electron .main-area {
   .mobile-player-sheet.open .mobile-player-sheet-body {
     transform: translateY(0);
     opacity: 1;
+  }
+
+  .mobile-player-sheet-pages {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    transition: transform 0.34s cubic-bezier(0.22, 1, 0.36, 1);
+    will-change: transform;
+  }
+
+  .mobile-player-sheet-pages-player {
+    transform: translateY(0);
+  }
+
+  .mobile-player-sheet-pages-details {
+    transform: translateY(-100%);
+  }
+
+  .mobile-player-sheet-page {
+    min-height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 18px;
+    padding-top: 16px;
+    padding-bottom: 18px;
+  }
+
+  .mobile-player-sheet-page-details {
+    overflow-y: auto;
+    align-items: stretch;
+    padding-top: 8px;
   }
 
   .mobile-player-sheet-cover {
@@ -4770,6 +4848,46 @@ body.electron .main-area {
   .mobile-player-sheet-playlist-wrap {
     position: relative;
     display: inline-flex;
+  }
+
+  .mobile-player-sheet-swipe-hint {
+    margin-top: 8px;
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.52);
+    letter-spacing: 0.02em;
+  }
+
+  .mobile-player-track-page {
+    width: 100%;
+    margin-top: 18px;
+    padding-top: 24px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+  }
+
+  .mobile-player-track-page-header {
+    font-size: 12px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.56);
+  }
+
+  .mobile-player-track-page-section {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .mobile-track-panel-stats {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .mobile-player-related-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    padding: 0;
   }
 
   @keyframes mobile-player-title-marquee {
