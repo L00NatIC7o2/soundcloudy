@@ -1454,7 +1454,7 @@ body.electron .main-area {
   gap: 5px;
   position: absolute;
   left: 50%;
-  transform: translateX(-50%);
+  transform: translateX(calc(-50% - 4px));
   min-width: clamp(260px, 34vw, 500px);
   width: min(46vw, 500px);
   z-index: 1;
