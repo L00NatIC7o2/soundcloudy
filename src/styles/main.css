@@ -1360,33 +1360,11 @@ body.electron .main-area {
 .player-bar {
   position: fixed;
   bottom: 24px;
-  left: calc(
-    (var(--sidebar-collapsed) + var(--player-safe-gap)) +
-      ((100vw - var(--sidebar-collapsed) - (var(--player-safe-gap) * 2)) / 2)
-  );
+  left: 50%;
   transform: translateX(-50%);
   z-index: 100;
-  width: min(
-    1000px,
-    calc(100vw - var(--sidebar-collapsed) - (var(--player-safe-gap) * 2))
-  );
-  max-width: calc(
-    100vw - var(--sidebar-collapsed) - (var(--player-safe-gap) * 2)
-  );
-}
-
-.app-shell:has(.sidebar.expanded) .player-bar {
-  left: calc(
-    (var(--sidebar-expanded) + var(--player-safe-gap)) +
-      ((100vw - var(--sidebar-expanded) - (var(--player-safe-gap) * 2)) / 2)
-  );
-  width: min(
-    1000px,
-    calc(100vw - var(--sidebar-expanded) - (var(--player-safe-gap) * 2))
-  );
-  max-width: calc(
-    100vw - var(--sidebar-expanded) - (var(--player-safe-gap) * 2)
-  );
+  width: min(1000px, calc(100vw - (var(--player-safe-gap) * 2)));
+  max-width: calc(100vw - (var(--player-safe-gap) * 2));
 }
 
 .player-container {
@@ -1880,6 +1858,7 @@ body.electron .main-area {
 .player-controls {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 20px;
 }
 
@@ -2120,13 +2099,10 @@ body.electron .main-area {
 /* Responsive */
 @media (max-width: 1024px) {
   .player-bar {
-    width: min(
-      1000px,
-      calc(100vw - var(--sidebar-collapsed) - (var(--player-safe-gap) * 2))
-    );
-    max-width: calc(
-      100vw - var(--sidebar-collapsed) - (var(--player-safe-gap) * 2)
-    );
+    left: 50%;
+    width: min(1000px, calc(100vw - (var(--player-safe-gap) * 2)));
+    max-width: calc(100vw - (var(--player-safe-gap) * 2));
+    transform: translateX(-50%);
   }
 
   .player-content {
@@ -2160,6 +2136,7 @@ body.electron .main-area {
     max-width: none;
     justify-self: stretch;
     margin: 0;
+    align-items: center;
   }
 
   .player-volume-slider {
@@ -2193,18 +2170,10 @@ body.electron .main-area {
   }
 
   .player-bar {
-    left: calc(
-      (var(--sidebar-collapsed) + var(--player-safe-gap)) +
-        ((100vw - var(--sidebar-collapsed) - (var(--player-safe-gap) * 2)) / 2)
-    );
+    left: 50%;
     right: auto;
-    width: min(
-      1000px,
-      calc(100vw - var(--sidebar-collapsed) - (var(--player-safe-gap) * 2))
-    );
-    max-width: calc(
-      100vw - var(--sidebar-collapsed) - (var(--player-safe-gap) * 2)
-    );
+    width: min(1000px, calc(100vw - (var(--player-safe-gap) * 2)));
+    max-width: calc(100vw - (var(--player-safe-gap) * 2));
     transform: translateX(-50%);
   }
 
