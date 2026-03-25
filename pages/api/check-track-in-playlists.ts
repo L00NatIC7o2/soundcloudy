@@ -1,6 +1,32 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import axios from "axios";
 
+const fetchPaginatedCollection = async (
+  url: string,
+  token: string,
+  limit = 200,
+) => {
+  const collection: any[] = [];
+  let nextUrl: string | null = url;
+  let isFirstRequest = true;
+
+  while (nextUrl) {
+    const response = await axios.get(nextUrl, {
+      headers: {
+        Authorization: `OAuth ${token}`,
+      },
+      params: isFirstRequest ? { limit, linked_partitioning: 1 } : undefined,
+      timeout: 10000,
+    });
+
+    collection.push(...(response.data?.collection || []));
+    nextUrl = response.data?.next_href || null;
+    isFirstRequest = false;
+  }
+
+  return collection;
+};
+
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
@@ -22,21 +48,11 @@ export default async function handler(
     if (playlistId) {
       const targetPlaylistId = parseInt(playlistId as string);
       try {
-        const tracksResponse = await axios.get(
+        const tracks = await fetchPaginatedCollection(
           `https://api.soundcloud.com/playlists/${targetPlaylistId}/tracks`,
-          {
-            headers: {
-              Authorization: `OAuth ${token}`,
-            },
-            params: {
-              limit: 200,
-              linked_partitioning: 1,
-            },
-            timeout: 5000,
-          },
+          token,
+          200,
         );
-
-        const tracks = tracksResponse.data.collection || [];
         const isInPlaylist = tracks.some((item: any) => {
           const track = item?.track || item;
           return track?.id === trackIdNum;
@@ -53,41 +69,21 @@ export default async function handler(
     }
 
     // Fetch user's playlists
-    const playlistsResponse = await axios.get(
+    const playlists = await fetchPaginatedCollection(
       "https://api.soundcloud.com/me/playlists",
-      {
-        headers: {
-          Authorization: `OAuth ${token}`,
-        },
-        params: {
-          limit: 100,
-          linked_partitioning: 1,
-        },
-        timeout: 10000,
-      },
+      token,
+      100,
     );
-
-    const playlists = playlistsResponse.data.collection || [];
     const playlistsWithTrack: any[] = [];
 
     // Check each playlist for the track
     for (const playlist of playlists) {
       try {
-        const tracksResponse = await axios.get(
+        const tracks = await fetchPaginatedCollection(
           `https://api.soundcloud.com/playlists/${playlist.id}/tracks`,
-          {
-            headers: {
-              Authorization: `OAuth ${token}`,
-            },
-            params: {
-              limit: 200,
-              linked_partitioning: 1,
-            },
-            timeout: 5000,
-          },
+          token,
+          200,
         );
-
-        const tracks = tracksResponse.data.collection || [];
         const isInPlaylist = tracks.some((item: any) => {
           const track = item?.track || item;
           return track?.id === trackIdNum;

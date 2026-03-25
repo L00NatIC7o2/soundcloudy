@@ -1,6 +1,10 @@
 import { memo, useEffect, useRef, useState } from "react";
 import Toast from "./Toast";
 
+const PLAYLIST_CACHE_TTL_MS = 60_000;
+let cachedPlaylists: Playlist[] | null = null;
+let cachedPlaylistsAt = 0;
+
 interface Playlist {
   id: number;
   title: string;
@@ -45,12 +49,38 @@ const MobilePlaylistSheet = memo(function MobilePlaylistSheet({
     void fetchPlaylists();
   }, [isOpen]);
 
+  useEffect(() => {
+    if (typeof document === "undefined" || !isOpen) return;
+
+    const previousBodyOverflow = document.body.style.overflow;
+    const previousHtmlOverflow = document.documentElement.style.overflow;
+
+    document.body.style.overflow = "hidden";
+    document.documentElement.style.overflow = "hidden";
+
+    return () => {
+      document.body.style.overflow = previousBodyOverflow;
+      document.documentElement.style.overflow = previousHtmlOverflow;
+    };
+  }, [isOpen]);
+
   const fetchPlaylists = async () => {
+    if (
+      cachedPlaylists &&
+      Date.now() - cachedPlaylistsAt < PLAYLIST_CACHE_TTL_MS
+    ) {
+      setPlaylists(cachedPlaylists);
+      return;
+    }
+
     setLoading(true);
     try {
       const response = await fetch("/api/playlists");
       const data = await response.json();
-      setPlaylists(data.playlists || []);
+      const nextPlaylists = data.playlists || [];
+      setPlaylists(nextPlaylists);
+      cachedPlaylists = nextPlaylists;
+      cachedPlaylistsAt = Date.now();
     } catch (error) {
       console.error("Failed to fetch playlists:", error);
     } finally {

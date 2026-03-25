@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState, memo } from "react";
 import Toast from "./Toast";
 
+const PLAYLIST_CACHE_TTL_MS = 60_000;
+let cachedPlaylists: Playlist[] | null = null;
+let cachedPlaylistsAt = 0;
+
 interface Playlist {
   id: number;
   title: string;
@@ -64,11 +68,22 @@ const PlaylistMenu = memo(function PlaylistMenu({
   }, [isOpen, onClose]);
 
   const fetchPlaylists = async () => {
+    if (
+      cachedPlaylists &&
+      Date.now() - cachedPlaylistsAt < PLAYLIST_CACHE_TTL_MS
+    ) {
+      setPlaylists(cachedPlaylists);
+      return;
+    }
+
     setLoading(true);
     try {
       const response = await fetch("/api/playlists");
       const data = await response.json();
-      setPlaylists(data.playlists || []);
+      const nextPlaylists = data.playlists || [];
+      setPlaylists(nextPlaylists);
+      cachedPlaylists = nextPlaylists;
+      cachedPlaylistsAt = Date.now();
     } catch (error) {
       console.error("Failed to fetch playlists:", error);
     } finally {

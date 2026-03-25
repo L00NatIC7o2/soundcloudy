@@ -171,6 +171,9 @@ export default function Home() {
   const sidebarPlaylistMenuRef = useRef<HTMLDivElement | null>(null);
   const searchBoxRef = useRef<HTMLDivElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const mainAreaRef = useRef<HTMLElement | null>(null);
+  const pullRefreshStartYRef = useRef<number | null>(null);
+  const pullRefreshTriggeredRef = useRef(false);
   const suggestTimeoutRef = useRef<number | null>(null);
   const liveSearchTimeoutRef = useRef<number | null>(null);
   const isHistoryRestoreRef = useRef(false);
@@ -181,6 +184,9 @@ export default function Home() {
     null,
   );
   const playlistCoverFetchRef = useRef<Set<number>>(new Set());
+  const requestedTrackLikesRef = useRef<Set<number>>(new Set());
+  const requestedTrackPlaylistMembershipRef = useRef<Set<number>>(new Set());
+  const forceSearchSectionScrollRef = useRef(false);
   const trackPanelTimerRef = useRef<number | null>(null);
   const appBackgroundTimerRef = useRef<number | null>(null);
   const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
@@ -205,9 +211,31 @@ export default function Home() {
 
   const scrollToTop = () => {
     if (typeof window !== "undefined") {
-      if (pendingScrollRef.current !== null) return;
       window.scrollTo({ top: 0, behavior: "auto" });
     }
+  };
+
+  const forceScrollToTop = () => {
+    if (typeof window === "undefined") return;
+    pendingScrollRef.current = 0;
+    scrollToTop();
+    mainAreaRef.current?.scrollIntoView({ block: "start", behavior: "auto" });
+    const scrollingElement = document.scrollingElement as HTMLElement | null;
+    if (scrollingElement) {
+      scrollingElement.scrollTop = 0;
+    }
+    window.requestAnimationFrame(() => {
+      window.scrollTo({ top: 0, behavior: "auto" });
+      document.documentElement.scrollTop = 0;
+      document.body.scrollTop = 0;
+      mainAreaRef.current?.scrollIntoView({ block: "start", behavior: "auto" });
+      window.setTimeout(() => {
+        window.scrollTo({ top: 0, behavior: "auto" });
+        document.documentElement.scrollTop = 0;
+        document.body.scrollTop = 0;
+        mainAreaRef.current?.scrollIntoView({ block: "start", behavior: "auto" });
+      }, 0);
+    });
   };
 
   useEffect(() => {
@@ -1166,6 +1194,11 @@ export default function Home() {
         setArtistResults(data.artists || []);
         setAlbumResults(data.albums || []);
         setPlaylistResults(data.playlists || []);
+        preloadTrackPlaylistMembership(
+          (data.collection || [])
+            .map((track: any) => Number(track?.id))
+            .filter((id: number) => Number.isFinite(id) && id > 0),
+        );
         scrollToTop();
       } else {
         const newTracks = data.collection || [];
@@ -1201,8 +1234,19 @@ export default function Home() {
   ) => {
     const activeQuery = query.trim();
     if (!activeQuery) return;
+    isHistoryRestoreRef.current = false;
+    forceSearchSectionScrollRef.current = true;
+    forceScrollToTop();
     setSearchView(view);
     setViewingHomepage(false);
+    if (typeof window !== "undefined") {
+      const currentState = window.history.state || {};
+      window.history.replaceState(
+        { ...currentState, scrollY: 0 },
+        "",
+        "",
+      );
+    }
     pushTabState("search-section", { query: activeQuery, view });
   };
 
@@ -1766,10 +1810,9 @@ export default function Home() {
         const errorData = await response.json();
         throw new Error(errorData.error || "Failed to update track like");
       }
-      const isLiked = await checkTrackLikeStatus(trackId);
-      setLikedTracks((prev) => ({ ...prev, [trackId]: isLiked }));
-      emitLikeUpdate(trackId, isLiked, track);
-      emitLikedSongsToast(isLiked, track);
+      setLikedTracks((prev) => ({ ...prev, [trackId]: nextLiked }));
+      emitLikeUpdate(trackId, nextLiked, track);
+      emitLikedSongsToast(nextLiked, track);
 
       // If user was viewing Likes when the toggle happened, refetch the list
       // to ensure it's in sync with the server
@@ -1819,30 +1862,54 @@ export default function Home() {
   };
 
   useEffect(() => {
-    const trackIds = (tracks || [])
+    const trackIds = [
+      ...(tracks || []),
+      ...(playlistTracks || []),
+      ...(artistTracks || []),
+      ...(profileReposts || []),
+      ...(listeningHistory || []),
+    ]
       .map((track: any) => track?.id)
       .filter((id: any) => typeof id === "number");
     const missing = trackIds
-      .filter((id: number) => likedTracks[id] === undefined)
+      .filter(
+        (id: number) =>
+          likedTracks[id] === undefined && !requestedTrackLikesRef.current.has(id),
+      )
       .slice(0, 20);
 
     if (missing.length === 0) return;
 
     let cancelled = false;
+    missing.forEach((id) => requestedTrackLikesRef.current.add(id));
     (async () => {
-      for (const id of missing) {
-        const isLiked = await checkTrackLikeStatus(id);
-        if (cancelled) return;
-        setLikedTracks((prev) =>
-          prev[id] === undefined ? { ...prev, [id]: isLiked } : prev,
-        );
-      }
+      const results = await Promise.all(
+        missing.map(async (id) => ({
+          id,
+          isLiked: await checkTrackLikeStatus(id),
+        })),
+      );
+      if (cancelled) return;
+      setLikedTracks((prev) => {
+        const next = { ...prev };
+        for (const { id, isLiked } of results) {
+          if (next[id] === undefined) next[id] = isLiked;
+        }
+        return next;
+      });
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [tracks, likedTracks]);
+  }, [
+    tracks,
+    playlistTracks,
+    artistTracks,
+    profileReposts,
+    listeningHistory,
+    likedTracks,
+  ]);
 
   useEffect(() => {
     const playlistIds = [...(albumResults || []), ...(playlistResults || [])]
@@ -1921,6 +1988,54 @@ export default function Home() {
       console.error("Failed to fetch row track playlists:", error);
       return [];
     }
+  };
+
+  const fetchTracksPlaylistsMembership = async (trackIds: number[]) => {
+    if (!trackIds.length) return;
+    try {
+      const response = await fetch(
+        `/api/check-tracks-in-playlists?trackIds=${trackIds.join(",")}`,
+      );
+      const data = await response.json();
+      const memberships = data.memberships || {};
+      setRowTrackPlaylistsMap((prev) => {
+        const next = { ...prev };
+        for (const [trackId, playlistIds] of Object.entries(memberships)) {
+          next[Number(trackId)] = Array.isArray(playlistIds)
+            ? (playlistIds as number[])
+            : [];
+        }
+        return next;
+      });
+    } catch (error) {
+      console.error("Failed to batch fetch row track playlists:", error);
+    }
+  };
+
+  const preloadTrackPlaylistMembership = (trackIds: number[]) => {
+    const normalizedIds = Array.from(
+      new Set(
+        trackIds.filter(
+          (id) =>
+            Number.isFinite(id) &&
+            id > 0 &&
+            rowTrackPlaylistsMap[id] === undefined &&
+            !requestedTrackPlaylistMembershipRef.current.has(id),
+        ),
+      ),
+    );
+
+    if (!normalizedIds.length) return;
+
+    normalizedIds.forEach((id) =>
+      requestedTrackPlaylistMembershipRef.current.add(id),
+    );
+
+    void (async () => {
+      for (let i = 0; i < normalizedIds.length; i += 20) {
+        await fetchTracksPlaylistsMembership(normalizedIds.slice(i, i + 20));
+      }
+    })();
   };
 
   const removeFromSelectedPlaylist = async (track: any) => {
@@ -2501,6 +2616,108 @@ export default function Home() {
     searchView,
   ]);
 
+  useEffect(() => {
+    if (
+      typeof window === "undefined" ||
+      !forceSearchSectionScrollRef.current ||
+      loading ||
+      sectionLoading ||
+      libraryLoading ||
+      isLoadingMore
+    ) {
+      return;
+    }
+
+    const scrollNow = () => {
+      window.scrollTo({ top: 0, behavior: "auto" });
+      document.documentElement.scrollTop = 0;
+      document.body.scrollTop = 0;
+      const scrollingElement = document.scrollingElement as HTMLElement | null;
+      if (scrollingElement) {
+        scrollingElement.scrollTop = 0;
+      }
+      mainAreaRef.current?.scrollIntoView({ block: "start", behavior: "auto" });
+    };
+
+    scrollNow();
+    const rafId = window.requestAnimationFrame(() => {
+      scrollNow();
+      window.setTimeout(() => {
+        scrollNow();
+        forceSearchSectionScrollRef.current = false;
+      }, 0);
+    });
+
+    return () => window.cancelAnimationFrame(rafId);
+  }, [searchView, loading, sectionLoading, libraryLoading, isLoadingMore, tracks.length]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const element = mainAreaRef.current;
+    if (!element) return;
+
+    const isAtTop = () => {
+      const scrollingElement = document.scrollingElement as HTMLElement | null;
+      return (
+        window.scrollY <= 0 &&
+        (document.documentElement.scrollTop || 0) <= 0 &&
+        (document.body.scrollTop || 0) <= 0 &&
+        ((scrollingElement?.scrollTop ?? 0) <= 0)
+      );
+    };
+
+    const handleTouchStart = (event: TouchEvent) => {
+      if (window.innerWidth > 1000 || !isAtTop()) {
+        pullRefreshStartYRef.current = null;
+        pullRefreshTriggeredRef.current = false;
+        return;
+      }
+      pullRefreshStartYRef.current = event.touches[0]?.clientY ?? null;
+      pullRefreshTriggeredRef.current = false;
+    };
+
+    const handleTouchMove = (event: TouchEvent) => {
+      if (
+        window.innerWidth > 1000 ||
+        pullRefreshStartYRef.current === null ||
+        pullRefreshTriggeredRef.current
+      ) {
+        return;
+      }
+
+      const currentY = event.touches[0]?.clientY ?? null;
+      if (currentY === null) return;
+
+      if (!isAtTop()) {
+        pullRefreshStartYRef.current = null;
+        return;
+      }
+
+      const deltaY = currentY - pullRefreshStartYRef.current;
+      if (deltaY > 96) {
+        pullRefreshTriggeredRef.current = true;
+        window.location.reload();
+      }
+    };
+
+    const handleTouchEnd = () => {
+      pullRefreshStartYRef.current = null;
+      pullRefreshTriggeredRef.current = false;
+    };
+
+    element.addEventListener("touchstart", handleTouchStart, { passive: true });
+    element.addEventListener("touchmove", handleTouchMove, { passive: true });
+    element.addEventListener("touchend", handleTouchEnd, { passive: true });
+    element.addEventListener("touchcancel", handleTouchEnd, { passive: true });
+
+    return () => {
+      element.removeEventListener("touchstart", handleTouchStart);
+      element.removeEventListener("touchmove", handleTouchMove);
+      element.removeEventListener("touchend", handleTouchEnd);
+      element.removeEventListener("touchcancel", handleTouchEnd);
+    };
+  }, []);
+
   const pushTabState = (tab: string, data: Record<string, any> = {}) => {
     window.history.pushState({ tab, scrollY: 0, ...data }, "", "");
     if (tab === "homepage") setViewingHomepage(true);
@@ -2529,6 +2746,7 @@ export default function Home() {
   const visiblePlaylists = showAllPlaylists
     ? playlistResults
     : playlistResults.slice(0, 8);
+  const visibleTrackPreview = tracks.slice(0, 15);
   const activeProfileAlbums = viewingProfile ? profileAlbums : artistAlbums;
   const activeProfilePlaylists = viewingProfile
     ? profilePlaylists
@@ -2582,6 +2800,23 @@ export default function Home() {
       return changed ? next : prev;
     });
   }, [currentPlaylistId, visiblePlaylistTracks]);
+
+  const visibleRowTrackIds = Array.from(
+    new Set(
+      [
+        ...visiblePlaylistTracks,
+        ...visibleProfileTracks,
+        ...filteredProfileReposts,
+        ...(searchView === "tracks" ? tracks : tracks.slice(0, 15)),
+      ]
+        .map((track: any) => Number(track?.id))
+        .filter((id) => Number.isFinite(id) && id > 0),
+    ),
+  );
+
+  useEffect(() => {
+    preloadTrackPlaylistMembership(visibleRowTrackIds);
+  }, [visibleRowTrackIds.join(","), rowTrackPlaylistsMap]);
 
   const renderTrackRows = (
     trackItems: any[],
@@ -2648,8 +2883,8 @@ export default function Home() {
                     ? "in-playlist"
                     : ""
                 }`}
-                onClick={async () => {
-                  await fetchTrackPlaylistsMembership(track.id);
+                onClick={() => {
+                  void fetchTrackPlaylistsMembership(track.id);
                   if (
                     typeof window !== "undefined" &&
                     window.innerWidth <= 1000
@@ -2699,6 +2934,80 @@ export default function Home() {
               : track.created_at
                 ? formatTimeAgo(track.created_at)
                 : "-"}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+
+  const renderSearchTrackCards = (trackItems: any[]) => (
+    <div className="horizontal-scroll drag-scroll">
+      {trackItems.map((track: any) => (
+        <div
+          key={`track-card-${track.id}`}
+          className="track-card"
+          onClick={() => handleTrackClick(track, "search", tracks)}
+          onContextMenu={(event) =>
+            handleContextMenu(event, track, "search", tracks)
+          }
+        >
+          <button
+            type="button"
+            className={`card-play-btn ${
+              isTrackPlaying(track.id) ? "pause" : "play"
+            }`}
+            style={getCardCoverStyle(track)}
+            onClick={(event) =>
+              handleCardPlayClick(event, track, "search", tracks)
+            }
+            aria-label={isTrackPlaying(track.id) ? "Pause" : "Play"}
+          >
+            {isTrackPlaying(track.id) ? (
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="currentColor">
+                <rect x="6" y="4" width="4" height="16" />
+                <rect x="14" y="4" width="4" height="16" />
+              </svg>
+            ) : (
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="currentColor">
+                <polygon points="5 3 19 12 5 21 5 3" />
+              </svg>
+            )}
+          </button>
+          <img
+            src={
+              track.artwork_url?.replace("-large", "-t500x500") ||
+              "/placeholder.png"
+            }
+            alt={track.title}
+            className="track-cover"
+            loading="lazy"
+            decoding="async"
+          />
+          <div
+            className="track-info clickable"
+            onClick={(event) => handleInfoClick(event, track)}
+          >
+            <div className="track-title">{track.title}</div>
+            <div
+              className="track-artist clickable"
+              onClick={(event) => {
+                event.stopPropagation();
+                handleArtistClick(track.user);
+              }}
+            >
+              {track.user?.username || "Unknown"}
+            </div>
+            <button
+              type="button"
+              className={`track-like-btn ${likedTracks[track.id] ? "liked" : ""}`}
+              onClick={(event) => {
+                event.stopPropagation();
+                void toggleTrackLike(track.id, track);
+              }}
+              aria-label={likedTracks[track.id] ? "Remove like" : "Add like"}
+            >
+              {renderHeartIcon(Boolean(likedTracks[track.id]))}
+            </button>
           </div>
         </div>
       ))}
@@ -3229,7 +3538,7 @@ export default function Home() {
         </div>
       </div>
 
-      <main className="main-area">
+      <main className="main-area" ref={mainAreaRef}>
         {viewingHomepage ? (
           <HomePage
             onTrackClick={handleTrackClick}
@@ -4422,22 +4731,16 @@ export default function Home() {
                 <section className="search-section">
                   <div className="search-section-header">
                     <h3 className="search-section-title">Tracks</h3>
+                    {tracks.length > 15 && (
+                      <button
+                        className="search-view-more"
+                        onClick={() => openSearchSection("tracks")}
+                      >
+                        View more
+                      </button>
+                    )}
                   </div>
-                  {renderTrackRows(tracks, "search-track")}
-
-                  {searchHasMore && (
-                    <div
-                      ref={scrollTriggerRef}
-                      style={{
-                        textAlign: "center",
-                        padding: "24px 0 0",
-                        color: "rgba(255,255,255,0.5)",
-                        fontSize: "14px",
-                      }}
-                    >
-                      {isLoadingMore ? "Loading more..." : ""}
-                    </div>
-                  )}
+                  {renderSearchTrackCards(visibleTrackPreview)}
                 </section>
               </>
             )}

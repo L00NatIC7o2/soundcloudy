@@ -821,6 +821,7 @@ body.electron .main-area {
   --header-padding-y: calc(24px - (12px * var(--scroll-progress)));
   --header-padding-x: 24px;
   --header-gap: calc(24px - (8px * var(--scroll-progress)));
+  --playlist-search-space: min(380px, 38vw);
   padding: var(--header-padding-y) var(--header-padding-x);
   display: flex;
   align-items: center;
@@ -1095,6 +1096,11 @@ body.electron .main-area {
   text-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
   line-height: 1.2;
   flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: left;
 }
 
 .track-page-text {
@@ -1144,14 +1150,20 @@ body.electron .main-area {
   flex: 1;
   min-width: 0;
   flex-direction: column;
-  justify-content: flex-start;
-  padding-top: 6px;
+  justify-content: center;
+  align-self: center;
+  margin-right: var(--playlist-search-space);
+  padding-top: 0;
+  align-items: flex-start;
+  text-align: left;
 }
 
 .playlist-track-search-banner {
   position: absolute;
-  right: 24px;
-  bottom: 18px;
+  right: 4px;
+  bottom: 0;
+  width: var(--playlist-search-space);
+  max-width: calc(100% - var(--cover-size) - var(--header-gap) - 48px);
 }
 
 .playlist-track-search input {
@@ -1251,9 +1263,9 @@ body.electron .main-area {
   position: static;
   width: 28px;
   height: 28px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.24);
-  background: rgba(0, 0, 0, 0.28);
+  border-radius: 0;
+  border: none;
+  background: transparent;
   color: rgba(255, 255, 255, 0.86);
   display: inline-flex;
   align-items: center;
@@ -1263,17 +1275,25 @@ body.electron .main-area {
     transform 0.2s,
     background 0.2s,
     border-color 0.2s;
+  box-shadow: none;
 }
 
 .track-row-playlist-btn:hover,
 .track-row-like-btn:hover {
   transform: scale(1.08);
-  background: rgba(255, 255, 255, 0.12);
+  background: transparent;
+}
+
+.track-row-like-btn.liked {
+  background: transparent;
+  border: none;
+  box-shadow: none;
 }
 
 .track-row-playlist-btn.in-playlist {
-  border-color: rgba(255, 122, 48, 0.38);
-  background: rgba(255, 85, 0, 0.14);
+  border-color: transparent;
+  background: transparent;
+  color: #39d98a;
 }
 
 .track-row-playlist-wrap {
@@ -1284,6 +1304,11 @@ body.electron .main-area {
 .track-row-playlist-btn .player-add-playlist-icon {
   width: 18px;
   height: 18px;
+}
+
+.track-row-playlist-btn.in-playlist .player-add-playlist-icon {
+  filter: brightness(0) saturate(100%) invert(69%) sepia(23%) saturate(1038%)
+    hue-rotate(91deg) brightness(92%) contrast(92%);
 }
 
 /* Player */
@@ -2515,10 +2540,15 @@ body.electron .main-area {
   }
 
   .playlist-track-search-banner {
-    position: static;
-    align-self: stretch;
+    position: absolute;
+    right: 8px;
+    bottom: 8px;
+    align-self: auto;
     margin-top: 0;
+    margin-left: auto;
     padding-bottom: 0;
+    width: min(220px, 42vw);
+    max-width: min(220px, 42vw);
   }
 
   .track-row {
@@ -3956,9 +3986,10 @@ body.electron .main-area {
 
   .playlist-header-sticky:not(.track-panel-header) {
     display: grid;
-    grid-template-columns: clamp(88px, 16vw, 132px) minmax(0, 1fr) clamp(180px, 28vw, 280px);
+    grid-template-columns: clamp(88px, 16vw, 132px) minmax(0, 1fr);
     align-items: center;
     padding: clamp(16px, 3.5vw, 22px);
+    padding-right: clamp(220px, 30vw, 320px);
   }
 
   .playlist-header-cover {
@@ -3972,13 +4003,15 @@ body.electron .main-area {
     min-width: 0;
     align-self: center;
     gap: 8px;
+    align-items: flex-start;
+    text-align: left;
   }
 
   .playlist-track-search,
   .playlist-track-search-inline,
   .playlist-track-search-banner {
-    width: 100%;
-    max-width: 100%;
+    width: auto;
+    max-width: clamp(180px, 28vw, 280px);
     min-width: 0;
   }
 
@@ -4006,13 +4039,16 @@ body.electron .main-area {
   }
 
   .playlist-track-search-banner {
-    position: static;
-    width: 100%;
+    position: absolute;
+    right: 12px;
+    bottom: 8px;
+    width: clamp(180px, 28vw, 280px);
+    max-width: clamp(180px, 28vw, 280px);
     margin-top: 0;
     padding-bottom: 0;
-    align-self: end;
-    justify-self: end;
-    margin-bottom: 6px;
+    align-self: auto;
+    justify-self: auto;
+    margin-bottom: 0;
   }
 
   .search-results-container,
@@ -4145,8 +4181,9 @@ body.electron .main-area {
 @media (max-width: 640px) {
   .playlist-header-sticky:not(.track-panel-header) {
     display: grid;
-    grid-template-columns: 72px minmax(0, 1fr) minmax(132px, 42vw);
+    grid-template-columns: 72px minmax(0, 1fr);
     align-items: center;
+    padding-right: min(164px, 44vw);
   }
 
   .playlist-header-sticky:not(.track-panel-header),
@@ -4192,14 +4229,22 @@ body.electron .main-area {
   .playlist-track-search,
   .playlist-track-search-inline,
   .playlist-track-search-banner {
-    width: 100%;
-    max-width: 100%;
+    width: auto;
+    max-width: min(148px, 42vw);
   }
 
   .playlist-track-search input {
     height: 36px;
     padding: 0 12px;
     font-size: 13px;
+  }
+
+  .playlist-track-search-banner {
+    position: absolute;
+    right: 8px;
+    bottom: 8px;
+    margin: 0;
+    padding: 0;
   }
 
   .search-playlists-grid,
@@ -4259,6 +4304,10 @@ body.electron .main-area {
   .playlist-header-sticky:not(.track-panel-header),
   .profile-header {
     padding: 16px 14px;
+  }
+
+  .playlist-header-sticky:not(.track-panel-header) {
+    padding-right: min(164px, 44vw);
   }
 
   .profile-header-bio,
@@ -4793,6 +4842,21 @@ body.electron .main-area {
     width: 44px !important;
     height: 44px !important;
   }
+}
+
+.track-row-actions .track-like-btn,
+.track-row-actions .track-row-playlist-btn {
+  position: static !important;
+  right: auto !important;
+  bottom: auto !important;
+  width: 28px !important;
+  height: 28px !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border-radius: 999px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
 }
 
 .mobile-playlist-sheet {
