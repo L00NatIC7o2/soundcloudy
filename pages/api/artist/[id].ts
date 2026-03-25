@@ -75,7 +75,7 @@ export default async function handler(
         await page.setRequestInterception(true);
         page.on("request", (request) => {
           const resourceType = request.resourceType();
-          if (["image", "stylesheet", "font", "media"].includes(resourceType)) {
+          if (["image", "font", "media"].includes(resourceType)) {
             request.abort();
           } else {
             request.continue();
@@ -111,6 +111,28 @@ export default async function handler(
               const match = style.match(/background-image:\s*url\(([^)]+)\)/);
               if (match && match[1]) {
                 banner = match[1].replace(/^['"]|['"]$/g, "");
+              }
+            }
+          }
+
+          if (!banner) {
+            const scriptTexts = Array.from(document.scripts)
+              .map((script) => script.textContent || "")
+              .join("\n");
+
+            const patterns = [
+              /"visual_url":"([^"]+)"/,
+              /"banner_url":"([^"]+)"/,
+              /"header_image_url":"([^"]+)"/,
+            ];
+
+            for (const pattern of patterns) {
+              const match = scriptTexts.match(pattern);
+              if (match?.[1]) {
+                banner = match[1]
+                  .replace(/\\u002F/g, "/")
+                  .replace(/\\\//g, "/");
+                break;
               }
             }
           }
