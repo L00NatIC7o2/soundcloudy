@@ -73,12 +73,19 @@ const Player = memo(function Player({
         })()
       : "";
   const [socket, setSocket] = useState<Socket | null>(null);
+  const [playbackOwnerDeviceId, setPlaybackOwnerDeviceId] = useState<string | null>(null);
   const currentTrackRef = useRef<any>(null);
+  const playbackOwnerRef = useRef<string | null>(null);
   const syncRoomRetryRef = useRef<number | null>(null);
+  const suppressRemoteEchoUntilRef = useRef(0);
 
   useEffect(() => {
     currentTrackRef.current = currentTrack;
   }, [currentTrack]);
+
+  useEffect(() => {
+    playbackOwnerRef.current = playbackOwnerDeviceId;
+  }, [playbackOwnerDeviceId]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -148,6 +155,11 @@ const Player = memo(function Player({
     const syncRemotePlayback = (remoteState: any) => {
       if (!remoteState) return;
 
+      const remoteOwner =
+        typeof remoteState.deviceId === "string" ? remoteState.deviceId : null;
+      setPlaybackOwnerDeviceId(remoteOwner);
+      suppressRemoteEchoUntilRef.current = Date.now() + 1500;
+
       const remoteTrack = remoteState.trackData || null;
       if (
         remoteTrack &&
@@ -165,14 +177,19 @@ const Player = memo(function Player({
         );
       }
 
-      if (typeof remoteState.position === "number" && audioRef.current) {
-        audioRef.current.currentTime = remoteState.position;
+      if (typeof remoteState.position === "number") {
         setCurrentTime(remoteState.position);
+        if (audioRef.current && remoteOwner === deviceId) {
+          audioRef.current.currentTime = remoteState.position;
+        }
       }
       if (typeof remoteState.duration === "number") {
         setDuration(remoteState.duration);
       }
       if (typeof remoteState.playing === "boolean") {
+        if (audioRef.current && remoteOwner && remoteOwner !== deviceId) {
+          audioRef.current.pause();
+        }
         setIsPlaying(remoteState.playing);
       }
     };
@@ -788,8 +805,26 @@ const Player = memo(function Player({
     }
   };
 
+  const sendRemoteCommand = (command: any) => {
+    if (!socket || !syncRoomId) return false;
+    socket.emit("remote-command", {
+      userId: syncRoomId,
+      command,
+    });
+    return true;
+  };
+
   const togglePlayPause = () => {
+    const passiveOwner =
+      playbackOwnerRef.current && playbackOwnerRef.current !== deviceId;
+
+    if (passiveOwner) {
+      sendRemoteCommand(isPlaying ? "pause" : "play");
+      return;
+    }
+
     if (!audioRef.current) return;
+    setPlaybackOwnerDeviceId(deviceId);
     if (isPlaying) {
       audioRef.current.pause();
     } else {
@@ -801,8 +836,12 @@ const Player = memo(function Player({
   const emitPlaybackState = (force = false) => {
     if (!socket || !currentTrack || !syncRoomId) return;
     const now = Date.now();
+    const passiveOwner =
+      playbackOwnerRef.current && playbackOwnerRef.current !== deviceId;
+    if (passiveOwner || now < suppressRemoteEchoUntilRef.current) return;
     if (!force && now - lastRemoteSyncRef.current < 700) return;
     lastRemoteSyncRef.current = now;
+    setPlaybackOwnerDeviceId(deviceId);
 
     console.log("[player-sync] emit playback-update", {
       roomId: syncRoomId,
@@ -983,7 +1022,21 @@ const Player = memo(function Player({
   };
 
   const handleQueueItemSelect = (track: any, kind: "queue" | "history") => {
-    if (!track || !onQueueSelect) return;
+    if (!track) return;
+
+    const passiveOwner =
+      playbackOwnerRef.current && playbackOwnerRef.current !== deviceId;
+    if (passiveOwner) {
+      sendRemoteCommand({
+        type: "load-track",
+        track,
+        position: 0,
+        shouldPlay: true,
+      });
+      return;
+    }
+
+    if (!onQueueSelect) return;
     if (kind === "history") {
       onQueueSelect(track, "search-related", listeningHistory);
       return;
@@ -1004,6 +1057,13 @@ const Player = memo(function Player({
   };
 
   const handlePrevious = () => {
+    const passiveOwner =
+      playbackOwnerRef.current && playbackOwnerRef.current !== deviceId;
+    if (passiveOwner) {
+      sendRemoteCommand("prev");
+      return;
+    }
+
     if (!audioRef.current) {
       onPrevious?.();
       return;
@@ -1023,6 +1083,13 @@ const Player = memo(function Player({
   };
 
   const handleNext = () => {
+    const passiveOwner =
+      playbackOwnerRef.current && playbackOwnerRef.current !== deviceId;
+    if (passiveOwner) {
+      sendRemoteCommand("next");
+      return;
+    }
+
     onNext?.();
   };
 

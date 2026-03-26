@@ -56,14 +56,16 @@ io.on("connection", (socket) => {
       position: typeof state?.position === "number" ? Math.round(state.position) : null,
     });
 
+    let nextState = null;
     if (roomId && state) {
-      playbackByRoom.set(roomId, {
+      nextState = {
         ...state,
         deviceId: deviceId || socket.data.deviceId || null,
-      });
+      };
+      playbackByRoom.set(roomId, nextState);
     }
-    if (roomId) {
-      socket.to(roomId).emit("playback-update", state);
+    if (roomId && nextState) {
+      socket.to(roomId).emit("playback-update", nextState);
     }
   });
 
