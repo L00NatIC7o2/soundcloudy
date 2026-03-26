@@ -12,6 +12,7 @@ export default function MyApp({ Component, pageProps }: AppProps) {
   const [remoteBaseInput, setRemoteBaseInput] = useState(getClientAppBase());
   const [helperOpen, setHelperOpen] = useState(false);
   const [remotePanelOpen, setRemotePanelOpen] = useState(false);
+  const [hideSetupUi, setHideSetupUi] = useState(false);
   const connectWidgetTop =
     typeof window !== "undefined" &&
     (window as any).electronAPI?.windowControls
@@ -70,6 +71,46 @@ export default function MyApp({ Component, pageProps }: AppProps) {
         })
         .catch(() => {});
     }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const root = document.documentElement;
+    const body = document.body;
+
+    const updateViewportMode = () => {
+      const mobileWidth = window.innerWidth <= 900;
+      const standalone =
+        window.matchMedia?.("(display-mode: standalone)")?.matches ||
+        (window.navigator as Navigator & { standalone?: boolean }).standalone ===
+          true;
+
+      setHideSetupUi(mobileWidth);
+      root.classList.toggle("ios-standalone-app", Boolean(standalone));
+      body.classList.toggle("ios-standalone-app", Boolean(standalone));
+    };
+
+    const updateVisibilityClass = () => {
+      const hidden = document.visibilityState === "hidden";
+      root.classList.toggle("app-page-hidden", hidden);
+      body.classList.toggle("app-page-hidden", hidden);
+    };
+
+    updateViewportMode();
+    updateVisibilityClass();
+
+    window.addEventListener("resize", updateViewportMode);
+    window.addEventListener("orientationchange", updateViewportMode);
+    document.addEventListener("visibilitychange", updateVisibilityClass);
+
+    return () => {
+      window.removeEventListener("resize", updateViewportMode);
+      window.removeEventListener("orientationchange", updateViewportMode);
+      document.removeEventListener("visibilitychange", updateVisibilityClass);
+      root.classList.remove("ios-standalone-app", "app-page-hidden");
+      body.classList.remove("ios-standalone-app", "app-page-hidden");
+    };
   }, []);
 
   const connectSoundCloud = async () => {
@@ -161,7 +202,7 @@ export default function MyApp({ Component, pageProps }: AppProps) {
         <meta name="apple-mobile-web-app-title" content="Soundcloudy" />
       </Head>
       <Component {...pageProps} />
-      {userId && (
+      {userId && !hideSetupUi && (
         <>
           <button
             onClick={() => setHelperOpen((prev) => !prev)}

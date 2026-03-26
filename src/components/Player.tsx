@@ -589,6 +589,17 @@ const Player = memo(function Player({
 
   useEffect(() => {
     if (currentTrack && "mediaSession" in navigator) {
+      const setMediaActionHandler = (
+        action: MediaSessionAction,
+        handler: MediaSessionActionHandler | null,
+      ) => {
+        try {
+          navigator.mediaSession.setActionHandler(action, handler);
+        } catch {
+          // Some iOS builds support a narrower action set. Ignore unsupported handlers.
+        }
+      };
+
       navigator.mediaSession.metadata = new MediaMetadata({
         title: currentTrack.title,
         artist: currentTrack.user?.username || "Unknown Artist",
@@ -602,29 +613,29 @@ const Player = memo(function Player({
         ],
       });
 
-      navigator.mediaSession.setActionHandler("play", () => {
+      setMediaActionHandler("play", () => {
         if (audioRef.current) {
-          audioRef.current.play();
+          void audioRef.current.play().catch(() => {});
           setIsPlaying(true);
         }
       });
 
-      navigator.mediaSession.setActionHandler("pause", () => {
+      setMediaActionHandler("pause", () => {
         if (audioRef.current) {
           audioRef.current.pause();
           setIsPlaying(false);
         }
       });
 
-      navigator.mediaSession.setActionHandler("previoustrack", () => {
+      setMediaActionHandler("previoustrack", () => {
         if (onPrevious) onPrevious();
       });
 
-      navigator.mediaSession.setActionHandler("nexttrack", () => {
+      setMediaActionHandler("nexttrack", () => {
         if (onNext) onNext();
       });
 
-      navigator.mediaSession.setActionHandler("seekbackward", (details) => {
+      setMediaActionHandler("seekbackward", (details) => {
         if (audioRef.current) {
           audioRef.current.currentTime = Math.max(
             audioRef.current.currentTime - (details.seekOffset || 10),
@@ -633,7 +644,7 @@ const Player = memo(function Player({
         }
       });
 
-      navigator.mediaSession.setActionHandler("seekforward", (details) => {
+      setMediaActionHandler("seekforward", (details) => {
         if (audioRef.current) {
           audioRef.current.currentTime = Math.min(
             audioRef.current.currentTime + (details.seekOffset || 10),
@@ -642,13 +653,13 @@ const Player = memo(function Player({
         }
       });
 
-      navigator.mediaSession.setActionHandler("seekto", (details) => {
+      setMediaActionHandler("seekto", (details) => {
         if (audioRef.current && details.seekTime !== undefined) {
           audioRef.current.currentTime = details.seekTime;
         }
       });
 
-      navigator.mediaSession.setActionHandler("stop", () => {
+      setMediaActionHandler("stop", () => {
         if (audioRef.current) {
           audioRef.current.pause();
           audioRef.current.currentTime = 0;
@@ -659,14 +670,18 @@ const Player = memo(function Player({
 
     return () => {
       if ("mediaSession" in navigator) {
-        navigator.mediaSession.setActionHandler("play", null);
-        navigator.mediaSession.setActionHandler("pause", null);
-        navigator.mediaSession.setActionHandler("previoustrack", null);
-        navigator.mediaSession.setActionHandler("nexttrack", null);
-        navigator.mediaSession.setActionHandler("seekbackward", null);
-        navigator.mediaSession.setActionHandler("seekforward", null);
-        navigator.mediaSession.setActionHandler("seekto", null);
-        navigator.mediaSession.setActionHandler("stop", null);
+        try {
+          navigator.mediaSession.setActionHandler("play", null);
+          navigator.mediaSession.setActionHandler("pause", null);
+          navigator.mediaSession.setActionHandler("previoustrack", null);
+          navigator.mediaSession.setActionHandler("nexttrack", null);
+          navigator.mediaSession.setActionHandler("seekbackward", null);
+          navigator.mediaSession.setActionHandler("seekforward", null);
+          navigator.mediaSession.setActionHandler("seekto", null);
+          navigator.mediaSession.setActionHandler("stop", null);
+        } catch {
+          // Ignore unsupported Media Session cleanup handlers.
+        }
       }
     };
   }, [currentTrack, onPrevious, onNext, playlistLabel]);
@@ -1364,6 +1379,8 @@ const Player = memo(function Player({
       <div className="player-bar">
       <audio
         ref={audioRef}
+        preload="auto"
+        playsInline
         onTimeUpdate={handleTimeUpdate}
         onLoadedMetadata={handleLoadedMetadata}
         onEnded={handleTrackEnd}

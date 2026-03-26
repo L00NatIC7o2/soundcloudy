@@ -76,6 +76,21 @@ html,
   background: #000;
 }
 
+html.ios-standalone-app,
+body.ios-standalone-app,
+body.ios-standalone-app #__next {
+  height: 100dvh;
+  overflow: hidden;
+}
+
+body.ios-standalone-app {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  overscroll-behavior: none;
+  -webkit-overflow-scrolling: auto;
+}
+
 .titlebar {
   position: fixed;
   top: 8px;
@@ -281,6 +296,11 @@ body::-webkit-scrollbar-track-piece {
   overflow: hidden;
 }
 
+body.ios-standalone-app .app-shell {
+  min-height: 100dvh;
+  height: 100dvh;
+}
+
 .app-shell::before,
 .app-shell::after {
   content: "";
@@ -383,6 +403,25 @@ body::-webkit-scrollbar-track-piece {
     app-shell-pulse-secondary 3.1s ease-in-out infinite;
   filter: blur(46px) saturate(210%);
   opacity: 0.42;
+}
+
+.app-page-hidden .app-shell::before,
+.app-page-hidden .app-shell::after,
+.app-page-hidden .app-shell-playing::before,
+.app-page-hidden .app-shell-playing::after {
+  animation: none !important;
+  transition: none !important;
+  filter: blur(14px) saturate(105%) !important;
+  opacity: 0.12 !important;
+}
+
+.app-page-hidden .mobile-player-sheet-panel,
+.app-page-hidden .mobile-player-collapsed,
+.app-page-hidden .sidebar,
+.app-page-hidden .top-bar {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  transition: none !important;
 }
 
 .app-shell > * {
@@ -748,6 +787,14 @@ body.electron .top-bar {
   min-height: 100vh;
   transition: margin-left 0.3s;
   overscroll-behavior: contain;
+}
+
+body.ios-standalone-app .main-area {
+  min-height: 100dvh;
+  height: 100dvh;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 body.electron .main-area {
@@ -4079,10 +4126,30 @@ body.electron .main-area {
 }
 
 @media (max-width: 1000px) {
+  .app-shell::before {
+    filter: blur(18px) saturate(120%) !important;
+    opacity: 0.24 !important;
+    animation: none !important;
+    transform: scale(1.02) !important;
+    will-change: auto !important;
+  }
+
+  .app-shell::after,
+  .app-shell-transitioning::after {
+    display: none !important;
+  }
+
+  .app-shell-playing::before,
+  .app-shell-playing::after {
+    animation: none !important;
+    filter: blur(18px) saturate(120%) !important;
+    opacity: 0.28 !important;
+  }
+
   .top-bar {
     top: 0;
     padding: calc(10px + env(safe-area-inset-top)) 12px 10px;
-    background: transparent;
+    background: rgba(0, 0, 0, 0.12);
     box-shadow: none;
     box-sizing: border-box;
   }
@@ -4164,7 +4231,8 @@ body.electron .main-area {
     padding: 8px 0 calc(8px + env(safe-area-inset-bottom));
     border-top: 1px solid rgba(255, 255, 255, 0.08);
     box-shadow: 0 -10px 28px rgba(0, 0, 0, 0.32);
-    backdrop-filter: blur(22px);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
     overflow: hidden;
     z-index: 120;
   }
@@ -4742,8 +4810,8 @@ body.electron .main-area {
     padding: 10px 2px;
     box-sizing: border-box;
     background: rgba(12, 12, 16, 0.88);
-    backdrop-filter: blur(22px);
-    -webkit-backdrop-filter: blur(22px);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
     box-shadow: 0 12px 30px rgba(0, 0, 0, 0.28);
     cursor: pointer;
   }
@@ -4821,11 +4889,11 @@ body.electron .main-area {
     position: absolute;
     inset: 0;
     background:
-      radial-gradient(circle at top, rgba(255, 116, 66, 0.22), transparent 34%),
+      radial-gradient(circle at top, rgba(255, 116, 66, 0.1), transparent 26%),
       linear-gradient(
         180deg,
-        rgba(12, 12, 16, 0.98) 0%,
-        rgba(5, 5, 8, 0.98) 100%
+        rgba(12, 12, 16, 0.99) 0%,
+        rgba(5, 5, 8, 0.99) 100%
       );
     color: #fff;
     display: flex;
@@ -4837,7 +4905,7 @@ body.electron .main-area {
     transition:
       transform 0.34s cubic-bezier(0.22, 1, 0.36, 1),
       opacity 0.28s ease;
-    will-change: transform, opacity;
+    will-change: auto;
   }
 
   .mobile-player-sheet.open .mobile-player-sheet-panel {
@@ -4915,7 +4983,7 @@ body.electron .main-area {
     display: flex;
     flex-direction: column;
     transition: transform 0.34s cubic-bezier(0.22, 1, 0.36, 1);
-    will-change: transform;
+    will-change: auto;
   }
 
   .mobile-player-sheet-pages-player {
