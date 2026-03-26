@@ -120,8 +120,15 @@ export default async function handler(
     return res.status(401).json({ error: "Not authenticated" });
   }
 
+  const resolvedTrackId =
+    normalizedTrackId || (Array.isArray(trackId) ? trackId[0] : trackId);
+
+  if (!resolvedTrackId) {
+    return res.status(400).json({ error: "Missing trackId" });
+  }
+
   try {
-    const tracks = await fetchRelatedTracks(normalizedTrackId || trackId!, auth, 20);
+    const tracks = await fetchRelatedTracks(resolvedTrackId, auth, 20);
     res.json({ tracks });
   } catch (error: any) {
     if ([401, 403].includes(error.response?.status)) {
@@ -129,7 +136,7 @@ export default async function handler(
         const refreshedAuth = await refreshSoundCloudAuth(req, res);
         if (refreshedAuth) {
           const tracks = await fetchRelatedTracks(
-            normalizedTrackId || trackId!,
+            resolvedTrackId,
             refreshedAuth,
             20,
           );
