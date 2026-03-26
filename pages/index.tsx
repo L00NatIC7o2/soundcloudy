@@ -72,6 +72,9 @@ export default function Home() {
   const [listeningHistory, setListeningHistory] = useState<any[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
+  const [historyLimit, setHistoryLimit] = useState(100);
+  const [historyHasMore, setHistoryHasMore] = useState(false);
+  const [historyLoadingMore, setHistoryLoadingMore] = useState(false);
   const [viewingArtist, setViewingArtist] = useState(false);
   const [selectedArtist, setSelectedArtist] = useState<any>(null);
   const [artistTracks, setArtistTracks] = useState<any[]>([]);
@@ -178,6 +181,7 @@ export default function Home() {
   const liveSearchTimeoutRef = useRef<number | null>(null);
   const isHistoryRestoreRef = useRef(false);
   const scrollTriggerRef = useRef<HTMLDivElement>(null);
+  const historyScrollTriggerRef = useRef<HTMLDivElement>(null);
   const pendingScrollRef = useRef<number | null>(null);
   const scrollRafRef = useRef<number | null>(null);
   const playlistCacheRef = useRef<{ data: any[]; timestamp: number } | null>(
@@ -186,9 +190,12 @@ export default function Home() {
   const playlistCoverFetchRef = useRef<Set<number>>(new Set());
   const requestedTrackLikesRef = useRef<Set<number>>(new Set());
   const requestedTrackPlaylistMembershipRef = useRef<Set<number>>(new Set());
+  const requestedRelatedQueueSeedsRef = useRef<Set<number>>(new Set());
+  const inflightRelatedQueueSeedsRef = useRef<Set<number>>(new Set());
   const forceSearchSectionScrollRef = useRef(false);
   const trackPanelTimerRef = useRef<number | null>(null);
   const appBackgroundTimerRef = useRef<number | null>(null);
+  const previousCurrentTrackRef = useRef<any>(null);
   const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
   const TRACK_PANEL_ANIMATION_MS = 320;
 
@@ -301,6 +308,7 @@ export default function Home() {
         ...detail.track,
         remoteStartPosition:
           typeof detail.position === "number" ? detail.position : 0,
+        remoteShouldPlay: detail.shouldPlay !== false,
       };
 
       setCurrentTrack(incomingTrack);
@@ -322,6 +330,36 @@ export default function Home() {
       isPlaying: prev.trackId === currentTrack?.id ? prev.isPlaying : false,
     }));
   }, [currentTrack?.id]);
+
+  useEffect(() => {
+    const previousTrack = previousCurrentTrackRef.current;
+
+    if (
+      previousTrack?.id &&
+      previousTrack.id !== currentTrack?.id
+    ) {
+      const historyEntry = {
+        ...previousTrack,
+        played_at:
+          previousTrack.played_at ||
+          previousTrack.added_at ||
+          new Date().toISOString(),
+        added_at:
+          previousTrack.added_at ||
+          previousTrack.played_at ||
+          new Date().toISOString(),
+      };
+
+      setListeningHistory((prev) => {
+        if (prev[0]?.id === historyEntry.id) {
+          return prev;
+        }
+        return [historyEntry, ...prev].slice(0, Math.max(historyLimit, 100));
+      });
+    }
+
+    previousCurrentTrackRef.current = currentTrack || null;
+  }, [currentTrack?.id, historyLimit]);
 
   useEffect(() => {
     const nextBackground =
@@ -909,8 +947,9 @@ export default function Home() {
     setProfileAlbums([]);
     setProfileReposts([]);
     setPlaylistTracks([]);
-    setListeningHistory([]);
-    setHistoryLoading(true);
+    if (listeningHistory.length === 0) {
+      setHistoryLoading(true);
+    }
     setHistoryError(null);
 
     try {
@@ -930,8 +969,8 @@ export default function Home() {
       setSectionLoading(false);
     }
 
-    // Auto-fetch listening history in background
-    fetchListeningHistoryBackground();
+    // Always refresh history in the background so external SoundCloud listens show up.
+    fetchListeningHistoryBackground(historyLimit);
 
     if (!skipHistory) {
       pushTabState("profile");
@@ -944,84 +983,149 @@ export default function Home() {
       added_at: item.played_at || item.added_at || null,
     }));
 
-  const fetchListeningHistoryBackground = async () => {
-    try {
-      setHistoryLoading(true);
-      setHistoryError(null);
-      await fetch("/api/auth/check");
+  const mergeHistoryItems = useCallback((items: any[]) => {
+    const seen = new Set<string>();
+    return normalizeHistoryItems(items).filter((item: any) => {
+      const itemId = Number(item?.id);
+      if (!itemId) return false;
+      const marker = `${itemId}:${item?.played_at || item?.added_at || ""}`;
+      if (seen.has(marker)) return false;
+      seen.add(marker);
+      return true;
+    });
+  }, []);
 
+  const fetchListeningHistoryItems = useCallback(
+    async (limit: number) => {
       const api = (window as any).electronAPI;
-      if (api?.playHistoryViaWeb) {
+      const useElectronFastPath = Boolean(api?.playHistoryViaWeb) && limit <= 100;
+      if (useElectronFastPath) {
         const result = await api.playHistoryViaWeb();
         if (result?.error) {
-          // Fallback to server-side scrape on error
           const response = await fetch(
-            "/api/listening-history?limit=100&scrape=1&cache=1",
+            `/api/listening-history?limit=${limit}&scrape=1&cache=1`,
           );
           const data = await response.json();
           if (!response.ok || data?.error) {
-            setHistoryError(
-              data?.error || "Unable to fetch listening history.",
-            );
-            setListeningHistory([]);
-          } else {
-            const items = Array.isArray(data.items) ? data.items : [];
-            const normalized = normalizeHistoryItems(items);
-            setListeningHistory(normalized);
+            throw new Error(data?.error || "Unable to fetch listening history.");
           }
-        } else {
-          const items = Array.isArray(result?.items) ? result.items : [];
-          const normalized = normalizeHistoryItems(items);
-          const shouldScrapeFallback =
-            result?.source === "stream" || normalized.length === 0;
-          if (shouldScrapeFallback) {
-            const response = await fetch(
-              "/api/listening-history?limit=100&scrape=1&force=1",
-            );
-            const data = await response.json();
-            if (!response.ok || data?.error) {
-              setHistoryError(
-                data?.error || "Unable to fetch listening history.",
-              );
-              setListeningHistory([]);
-            } else {
-              const apiItems = Array.isArray(data.items) ? data.items : [];
-              const apiNormalized = normalizeHistoryItems(apiItems);
-              setListeningHistory(apiNormalized);
-            }
-          } else {
-            setListeningHistory(normalized);
-          }
+          return {
+            items: mergeHistoryItems(Array.isArray(data.items) ? data.items : []),
+            cached: Boolean(data?.cached),
+            canLoadMore:
+              useElectronFastPath &&
+              Array.isArray(data.items) &&
+              data.items.length > 0,
+          };
         }
-      } else {
-        // Web fallback: try cache first, then force refresh if needed
-        const response = await fetch(
-          "/api/listening-history?limit=100&cache=1",
-        );
-        const data = await response.json();
-        if (!response.ok || data?.error) {
-          setHistoryError(data?.error || "Unable to fetch listening history.");
-          setListeningHistory([]);
-        } else {
-          const items = Array.isArray(data.items) ? data.items : [];
-          const normalized = normalizeHistoryItems(items);
-          setListeningHistory(normalized);
 
-          // Warm cache in background if we got cached data
-          if (data?.cached) {
-            fetch("/api/listening-history?limit=100&force=1&cache=1").catch(
-              () => {},
-            );
+        const items = mergeHistoryItems(
+          Array.isArray(result?.items) ? result.items : [],
+        );
+        const shouldScrapeFallback = result?.source === "stream" || items.length === 0;
+        if (shouldScrapeFallback) {
+          const response = await fetch(
+            `/api/listening-history?limit=${limit}&scrape=1&force=1&cache=1`,
+          );
+          const data = await response.json();
+          if (!response.ok || data?.error) {
+            throw new Error(data?.error || "Unable to fetch listening history.");
           }
+          return {
+            items: mergeHistoryItems(Array.isArray(data.items) ? data.items : []),
+            cached: Boolean(data?.cached),
+            canLoadMore:
+              useElectronFastPath &&
+              Array.isArray(data.items) &&
+              data.items.length > 0,
+          };
         }
+
+        return {
+          items,
+          cached: false,
+          canLoadMore: useElectronFastPath && items.length > 0,
+        };
       }
+
+      const response = await fetch(`/api/listening-history?limit=${limit}&cache=1`);
+      const data = await response.json();
+      if (!response.ok || data?.error) {
+        const scrapeResponse = await fetch(
+          `/api/listening-history?limit=${limit}&scrape=1&force=1&cache=1`,
+        );
+        const scrapeData = await scrapeResponse.json();
+        if (!scrapeResponse.ok || scrapeData?.error) {
+          throw new Error(
+            scrapeData?.error || data?.error || "Unable to fetch listening history.",
+          );
+        }
+        return {
+          items: mergeHistoryItems(
+            Array.isArray(scrapeData.items) ? scrapeData.items : [],
+          ),
+          cached: Boolean(scrapeData?.cached),
+        };
+      }
+
+      return {
+        items: mergeHistoryItems(Array.isArray(data.items) ? data.items : []),
+        cached: Boolean(data?.cached),
+        canLoadMore: false,
+      };
+    },
+    [mergeHistoryItems],
+  );
+
+  const fetchListeningHistoryBackground = async (limit = historyLimit) => {
+    try {
+      const shouldShowInitialLoading = listeningHistory.length === 0;
+      if (shouldShowInitialLoading) {
+        setHistoryLoading(true);
+      }
+      setHistoryError(null);
+      await fetch("/api/auth/check");
+      const result = await fetchListeningHistoryItems(limit);
+      setListeningHistory((prev) => mergeHistoryItems([...result.items, ...prev]));
+      setHistoryHasMore(result.canLoadMore || result.items.length >= limit);
+
     } catch (error) {
       console.error("Failed to fetch listening history:", error);
       setHistoryError("Unable to fetch listening history.");
+      setHistoryHasMore(false);
     } finally {
-      setHistoryLoading(false);
+      if (listeningHistory.length === 0) {
+        setHistoryLoading(false);
+      } else {
+        setHistoryLoading(false);
+      }
     }
   };
+
+  const loadMoreHistory = useCallback(async () => {
+    if (historyLoading || historyLoadingMore || !historyHasMore) return;
+    const nextLimit = historyLimit + 100;
+    try {
+      setHistoryLoadingMore(true);
+      setHistoryError(null);
+      const result = await fetchListeningHistoryItems(nextLimit);
+      setListeningHistory((prev) => mergeHistoryItems([...result.items, ...prev]));
+      setHistoryLimit(nextLimit);
+      setHistoryHasMore(result.canLoadMore || result.items.length >= nextLimit);
+    } catch (error) {
+      console.error("Failed to load more listening history:", error);
+      setHistoryError("Unable to load more listening history.");
+    } finally {
+      setHistoryLoadingMore(false);
+    }
+  }, [
+    historyLoading,
+    historyLoadingMore,
+    historyHasMore,
+    historyLimit,
+    fetchListeningHistoryItems,
+    mergeHistoryItems,
+  ]);
   const handleArtistClick = async (
     artist: any,
     skipHistory = false,
@@ -1302,6 +1406,82 @@ export default function Home() {
     }
   };
 
+  const extendInfiniteRelatedQueue = useCallback(
+    async (seedTrack: any, queueSnapshot: any[] = []) => {
+      const seedId = Number(seedTrack?.id);
+      if (!seedId) return false;
+      if (
+        requestedRelatedQueueSeedsRef.current.has(seedId) ||
+        inflightRelatedQueueSeedsRef.current.has(seedId)
+      ) {
+        return false;
+      }
+
+      inflightRelatedQueueSeedsRef.current.add(seedId);
+
+      try {
+        const response = await fetch(`/api/related-tracks?trackId=${seedId}`);
+        if (!response.ok) return false;
+
+        const data = await response.json();
+        const related = Array.isArray(data.tracks) ? data.tracks : [];
+        const baseQueue = queueSnapshot.length ? queueSnapshot : queue;
+        const seenIds = new Set(
+          baseQueue
+            .map((item) => Number(item?.id))
+            .filter((id) => Number.isFinite(id) && id > 0),
+        );
+        seenIds.add(seedId);
+
+        const freshRelated = related.filter((item: any) => {
+          const itemId = Number(item?.id);
+          return Number.isFinite(itemId) && itemId > 0 && !seenIds.has(itemId);
+        });
+
+        requestedRelatedQueueSeedsRef.current.add(seedId);
+
+        if (!freshRelated.length) return false;
+
+        setQueue((prev) => {
+          const currentIds = new Set(
+            prev
+              .map((item) => Number(item?.id))
+              .filter((id) => Number.isFinite(id) && id > 0),
+          );
+          const appendable = freshRelated.filter((item: any) => {
+            const itemId = Number(item?.id);
+            return Number.isFinite(itemId) && itemId > 0 && !currentIds.has(itemId);
+          });
+          return appendable.length ? [...prev, ...appendable] : prev;
+        });
+
+        return true;
+      } catch (error) {
+        console.error("Failed to extend related queue:", error);
+        return false;
+      } finally {
+        inflightRelatedQueueSeedsRef.current.delete(seedId);
+      }
+    },
+    [queue],
+  );
+
+  const pickRelatedQueueSeed = useCallback((queueSnapshot: any[]) => {
+    for (let index = queueSnapshot.length - 1; index >= 0; index -= 1) {
+      const candidate = queueSnapshot[index];
+      const candidateId = Number(candidate?.id);
+      if (!candidateId) continue;
+      if (
+        requestedRelatedQueueSeedsRef.current.has(candidateId) ||
+        inflightRelatedQueueSeedsRef.current.has(candidateId)
+      ) {
+        continue;
+      }
+      return candidate;
+    }
+    return null;
+  }, []);
+
   // Handle track click
   const handleTrackClick = (
     track: any,
@@ -1365,14 +1545,38 @@ export default function Home() {
         setQueue(trackList);
         setCurrentQueueIndex(trackIndex);
         setCurrentTrack(trackList[trackIndex]);
+        if (trackList.length - trackIndex <= 1) {
+          void extendInfiniteRelatedQueue(trackList[trackList.length - 1], trackList);
+        }
       } else {
         setCurrentTrack(track);
         setQueue([track]);
         setCurrentQueueIndex(0);
+        void extendInfiniteRelatedQueue(track, [track]);
       }
       setQueueSource("search-related");
     }
   };
+
+  useEffect(() => {
+    if (queueSource !== "search-related" || queue.length === 0) return;
+
+    const remainingCount =
+      currentQueueIndex >= 0 ? queue.length - currentQueueIndex - 1 : queue.length - 1;
+
+    if (remainingCount > 3) return;
+
+    const seedTrack = pickRelatedQueueSeed(queue);
+    if (!seedTrack?.id) return;
+
+    void extendInfiniteRelatedQueue(seedTrack, queue);
+  }, [
+    queueSource,
+    queue,
+    currentQueueIndex,
+    extendInfiniteRelatedQueue,
+    pickRelatedQueueSeed,
+  ]);
 
   const handleContextMenu = (
     event: ReactMouseEvent,
@@ -2107,7 +2311,13 @@ export default function Home() {
         if (currentQueueIndex < queue.length - 1) {
           nextIndex = currentQueueIndex + 1;
         } else {
-          return; // End of queue
+          if (queueSource === "search-related") {
+            const seedTrack = pickRelatedQueueSeed(queue);
+            if (seedTrack?.id) {
+              void extendInfiniteRelatedQueue(seedTrack, queue);
+            }
+          }
+          return;
         }
       }
 
@@ -2268,6 +2478,40 @@ export default function Home() {
     const interval = window.setInterval(refresh, 45 * 60 * 1000);
     return () => window.clearInterval(interval);
   }, [isAuthenticated]);
+
+  useEffect(() => {
+    if (!isAuthenticated || listeningHistory.length > 0 || historyLoading) return;
+    void fetchListeningHistoryBackground(historyLimit);
+  }, [
+    isAuthenticated,
+    listeningHistory.length,
+    historyLoading,
+    historyLimit,
+  ]);
+
+  useEffect(() => {
+    if (!viewingProfile || !isAuthenticated) return;
+
+    const refreshHistory = () => {
+      void fetchListeningHistoryBackground(historyLimit);
+    };
+
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") {
+        refreshHistory();
+      }
+    };
+
+    window.addEventListener("focus", refreshHistory);
+    document.addEventListener("visibilitychange", handleVisibility);
+    const interval = window.setInterval(refreshHistory, 60_000);
+
+    return () => {
+      window.removeEventListener("focus", refreshHistory);
+      document.removeEventListener("visibilitychange", handleVisibility);
+      window.clearInterval(interval);
+    };
+  }, [viewingProfile, isAuthenticated, historyLimit]);
 
   // Global listener to react to like changes from anywhere in the app
   useEffect(() => {
@@ -2452,6 +2696,36 @@ export default function Home() {
     viewingArtist,
     viewingTrack,
     likesNextHref,
+  ]);
+
+  useEffect(() => {
+    if (
+      !historyScrollTriggerRef.current ||
+      !viewingProfile ||
+      historyLoading ||
+      historyLoadingMore ||
+      !historyHasMore
+    ) {
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (!entries[0].isIntersecting) return;
+        void loadMoreHistory();
+      },
+      { threshold: 0.1, rootMargin: "120px" },
+    );
+
+    observer.observe(historyScrollTriggerRef.current);
+
+    return () => observer.disconnect();
+  }, [
+    viewingProfile,
+    historyLoading,
+    historyLoadingMore,
+    historyHasMore,
+    loadMoreHistory,
   ]);
 
   useEffect(() => {
@@ -3379,6 +3653,13 @@ export default function Home() {
           >
             {loading ? "..." : "Search"}
           </button>
+          <button
+            type="button"
+            className="mobile-logout-btn"
+            onClick={handleLogout}
+          >
+            Log out
+          </button>
           {showSuggestions && query.trim().length > 0 && (
             <div className="search-suggestions">
               {suggestLoading && (
@@ -4120,7 +4401,7 @@ export default function Home() {
                         Listening History
                       </h3>
                     </div>
-                    {historyLoading ? (
+                    {historyLoading && listeningHistory.length === 0 ? (
                       <div className="playlist-loading">Loading...</div>
                     ) : historyError ? (
                       <div className="playlist-loading">{historyError}</div>
@@ -4129,75 +4410,92 @@ export default function Home() {
                         No listening history yet.
                       </div>
                     ) : (
-                      <div className="track-list">
-                        {listeningHistory.map((track: any, index: number) => (
-                          <div
-                            key={`history-${track.id || index}`}
-                            className="track-row"
-                            onClick={() =>
-                              handleTrackClick(
-                                track,
-                                "playlist",
-                                listeningHistory,
-                              )
-                            }
-                            onContextMenu={(event) =>
-                              handleContextMenu(
-                                event,
-                                track,
-                                "playlist",
-                                listeningHistory,
-                              )
-                            }
-                          >
-                            <img
-                              src={
-                                track.artwork_url?.replace(
-                                  "-large",
-                                  "-t200x200",
-                                ) || "/placeholder.png"
+                      <>
+                        <div className="track-list">
+                          {listeningHistory.map((track: any, index: number) => (
+                            <div
+                              key={`history-${track.id || index}`}
+                              className="track-row"
+                              onClick={() =>
+                                handleTrackClick(
+                                  track,
+                                  "playlist",
+                                  listeningHistory,
+                                )
                               }
-                              alt={track.title}
-                              className="track-row-cover"
-                              loading="lazy"
-                              decoding="async"
-                            />
-                            <div className="track-row-info">
-                              <div className="track-row-title">
-                                {track.title}
+                              onContextMenu={(event) =>
+                                handleContextMenu(
+                                  event,
+                                  track,
+                                  "playlist",
+                                  listeningHistory,
+                                )
+                              }
+                            >
+                              <img
+                                src={
+                                  track.artwork_url?.replace(
+                                    "-large",
+                                    "-t200x200",
+                                  ) || "/placeholder.png"
+                                }
+                                alt={track.title}
+                                className="track-row-cover"
+                                loading="lazy"
+                                decoding="async"
+                              />
+                              <div className="track-row-info">
+                                <div className="track-row-title">
+                                  {track.title}
+                                </div>
+                                <div
+                                  className="track-row-artist"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleArtistClick(track.user);
+                                  }}
+                                  style={{
+                                    cursor: "pointer",
+                                    textDecoration: "underline",
+                                  }}
+                                >
+                                  {track.user?.username || "Unknown"}
+                                </div>
                               </div>
-                              <div
-                                className="track-row-artist"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleArtistClick(track.user);
-                                }}
-                                style={{
-                                  cursor: "pointer",
-                                  textDecoration: "underline",
-                                }}
-                              >
-                                {track.user?.username || "Unknown"}
+                              <div className="track-row-duration">
+                                {formatDuration(track.duration)}
                               </div>
-                            </div>
-                            <div className="track-row-duration">
-                              {formatDuration(track.duration)}
-                            </div>
-                            <div className="track-row-year">
-                              {track.created_at
-                                ? getYear(track.created_at)
-                                : "-"}
-                            </div>
-                            <div className="track-row-added">
-                              {track.added_at
-                                ? formatTimeAgo(track.added_at)
-                                : track.created_at
-                                  ? formatTimeAgo(track.created_at)
+                              <div className="track-row-year">
+                                {track.created_at
+                                  ? getYear(track.created_at)
                                   : "-"}
+                              </div>
+                              <div className="track-row-added">
+                                {track.added_at
+                                  ? formatTimeAgo(track.added_at)
+                                  : track.created_at
+                                    ? formatTimeAgo(track.created_at)
+                                    : "-"}
+                              </div>
                             </div>
+                          ))}
+                        </div>
+                        {(historyHasMore || historyLoadingMore) && (
+                          <div
+                            ref={historyScrollTriggerRef}
+                            style={{
+                              textAlign: "center",
+                              padding: "24px 0 0",
+                              color: "rgba(255,255,255,0.5)",
+                              fontSize: "14px",
+                            }}
+                          >
+                            {historyLoadingMore
+                              ? "Loading older history..."
+                              : "Scroll for older history"}
                           </div>
-                        ))}
-                      </div>
+                        )}
+                      </>
                     )}
                   </section>
                 )}
@@ -4998,6 +5296,14 @@ export default function Home() {
         onArtistClick={handleArtistClick}
         onPlaylistClick={handlePlayerPlaylistClick}
         onTrackOpen={handleTrackPageOpen}
+        queue={queue}
+        currentQueueIndex={currentQueueIndex}
+        listeningHistory={listeningHistory}
+        historyHasMore={historyHasMore}
+        historyLoadingMore={historyLoadingMore}
+        onRequestMoreHistory={loadMoreHistory}
+        queueSource={queueSource}
+        onQueueSelect={handleTrackClick}
         isShuffle={isShuffle}
         onShuffleChange={setIsShuffle}
       />

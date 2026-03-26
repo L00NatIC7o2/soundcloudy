@@ -219,19 +219,27 @@ export default function TrackDetailView({
               ))}
             </div>
 
-            {trackBio ? (
-              <section>
+            <section className="track-panel-section track-panel-section-copy">
                 <h3 className="search-section-title">About This Track</h3>
-                <div className="track-panel-copy">{renderBio(trackBio)}</div>
+                {trackBio ? (
+                  <div className="track-panel-copy">{renderBio(trackBio)}</div>
+                ) : loading ? (
+                  <div className="track-page-placeholder track-page-placeholder-block">
+                    Loading track details...
+                  </div>
+                ) : null}
               </section>
-            ) : null}
 
-            <section>
+            <section className="track-panel-section track-panel-section-comments">
               <h3 className="search-section-title">Comments</h3>
               {loading && comments.length === 0 ? (
-                <div className="track-page-placeholder">Loading comments...</div>
+                <div className="track-page-placeholder track-page-placeholder-block">
+                  Loading comments...
+                </div>
               ) : comments.length === 0 ? (
-                <div className="track-page-placeholder">No comments yet.</div>
+                <div className="track-page-placeholder track-page-placeholder-block">
+                  No comments yet.
+                </div>
               ) : (
                 <div className="track-panel-comments">
                   {visibleComments.map((comment) => (
@@ -269,12 +277,16 @@ export default function TrackDetailView({
               )}
             </section>
 
-            <section>
+            <section className="track-panel-section track-panel-section-related">
               <h3 className="search-section-title">Related Tracks</h3>
               {loading && relatedTracks.length === 0 ? (
-                <div className="track-page-placeholder">Loading related tracks...</div>
+                <div className="track-page-placeholder track-page-placeholder-block">
+                  Loading related tracks...
+                </div>
               ) : relatedTracks.length === 0 ? (
-                <div className="track-page-placeholder">No related tracks found.</div>
+                <div className="track-page-placeholder track-page-placeholder-block">
+                  No related tracks found.
+                </div>
               ) : (
                 <div className="library-grid">
                   {relatedTracks.map((relatedTrack) => {

@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import axios, { type AxiosResponse } from "axios";
 import puppeteer, { type Browser, type Page } from "puppeteer";
+import { requireSoundCloudAccessToken } from "../../../src/server/auth/soundcloud";
 
 const profileCache = new Map<
   string,
@@ -59,7 +60,7 @@ export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
-  const token = req.cookies.soundcloud_token;
+  const token = await requireSoundCloudAccessToken(req, res);
 
   if (!token) {
     return res.status(401).json({ error: "Not authenticated" });
@@ -269,3 +270,4 @@ export default async function handler(
     return res.status(500).json({ error: "Failed to load profile" });
   }
 }
+

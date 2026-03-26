@@ -1,12 +1,13 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import axios from "axios";
+import { requireSoundCloudAccessToken } from "../../src/server/auth/soundcloud";
 
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
   const { playlistId, trackId } = req.query;
-  const token = req.cookies.soundcloud_token;
+  const token = await requireSoundCloudAccessToken(req, res);
 
   if (!token) {
     return res.status(401).json({ error: "Not authenticated" });
@@ -60,3 +61,4 @@ export default async function handler(
     });
   }
 }
+

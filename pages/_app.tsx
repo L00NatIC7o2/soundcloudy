@@ -25,12 +25,10 @@ export default function MyApp({ Component, pageProps }: AppProps) {
     }
 
     if (typeof window !== "undefined") {
-      const existing = localStorage.getItem("soundcloudy_user_id");
-      if (existing) setUserId(existing);
-      else {
+      const existingDeviceId = localStorage.getItem("soundcloudy_device_id");
+      if (!existingDeviceId) {
         const id = Math.random().toString(36).slice(2);
-        localStorage.setItem("soundcloudy_user_id", id);
-        setUserId(id);
+        localStorage.setItem("soundcloudy_device_id", id);
       }
 
       const tokens = localStorage.getItem("soundcloudy_tokens");
@@ -58,6 +56,18 @@ export default function MyApp({ Component, pageProps }: AppProps) {
         setRemoteBaseUrl(base);
         setRemoteBaseInput(base);
       }
+
+      fetch("/api/auth/session")
+        .then(async (response) => {
+          if (!response.ok) return null;
+          return response.json();
+        })
+        .then((session) => {
+          if (session?.roomId) {
+            setUserId(session.roomId);
+          }
+        })
+        .catch(() => {});
     }
   }, []);
 

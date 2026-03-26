@@ -1,14 +1,22 @@
-﻿import type { NextApiRequest, NextApiResponse } from "next";
+import type { NextApiRequest, NextApiResponse } from "next";
 import axios from "axios";
+import {
+  getRequestSoundCloudAuthContext,
+  refreshSoundCloudAuth,
+} from "../../src/server/auth/soundcloud";
 
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
   const { nextHref, limit = "50" } = req.query;
-  const token = req.cookies.soundcloud_token;
+  let auth = await getRequestSoundCloudAuthContext(req, res);
 
-  if (!token) {
+  if (!auth) {
+    auth = await refreshSoundCloudAuth(req, res);
+  }
+
+  if (!auth) {
     return res.status(401).json({ error: "Not authenticated", likes: [] });
   }
 
@@ -21,7 +29,7 @@ export default async function handler(
 
     const response = await axios.get(endpoint, {
       headers: {
-        Authorization: `OAuth ${token}`,
+        Authorization: auth.headerValue,
       },
       params:
         typeof nextHref === "string" && nextHref.length > 0

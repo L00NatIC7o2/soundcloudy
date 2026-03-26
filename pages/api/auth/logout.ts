@@ -1,4 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from "next";
+import { clearSoundCloudSession } from "../../../src/server/auth/soundcloud";
 
 export default function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") {
@@ -6,10 +7,6 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  res.setHeader("Set-Cookie", [
-    "soundcloud_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0",
-    "soundcloud_refresh_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0",
-  ]);
-
+  clearSoundCloudSession(req, res);
   return res.status(200).json({ ok: true });
 }

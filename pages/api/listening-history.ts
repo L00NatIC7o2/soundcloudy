@@ -3,6 +3,10 @@ import fs from "fs";
 import path from "path";
 import axios from "axios";
 import puppeteer, { type Browser, type Page } from "puppeteer";
+import {
+  refreshSoundCloudAuth,
+  refreshSoundCloudTokenValue,
+} from "../../src/server/auth/soundcloud";
 
 const HISTORY_URL = "https://soundcloud.com/you/history";
 const PLAY_HISTORY_URL = "https://api-v2.soundcloud.com/me/play-history/tracks";
@@ -83,7 +87,7 @@ const saveCachedCredentials = (clientId: string, appVersion: string) => {
 const getBrowser = async () => {
   if (!browserPromise) {
     browserPromise = puppeteer.launch({
-      headless: false,
+      headless: true,
       defaultViewport: { width: 1200, height: 800 },
       args: [
         "--no-sandbox",
@@ -143,34 +147,28 @@ const normalizePlayHistoryItem = (item: any) => {
 
 const refreshAccessToken = async (refreshToken: string) => {
   try {
-    const params = new URLSearchParams({
-      client_id: process.env.SOUNDCLOUD_CLIENT_ID!,
-      client_secret: process.env.SOUNDCLOUD_CLIENT_SECRET!,
-      grant_type: "refresh_token",
-      refresh_token: refreshToken,
-    });
+    const refreshed = await refreshSoundCloudTokenValue(refreshToken);
 
-    const response = await axios.post(
-      "https://secure.soundcloud.com/oauth/token",
-      params.toString(),
-      {
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-      },
-    );
+    if (!refreshed) {
+      return {
+        token: null,
+        refreshToken,
+        expiresIn: 0,
+        invalidGrant: true,
+      };
+    }
 
     return {
-      token: response.data.access_token,
-      refreshToken: response.data.refresh_token || refreshToken,
-      expiresIn: response.data.expires_in || 3600,
+      token: refreshed.accessToken,
+      refreshToken: refreshed.refreshToken,
+      expiresIn: refreshed.expiresIn,
+      invalidGrant: false,
     };
-  } catch (error) {
+  } catch (error: any) {
     console.error("Token refresh failed:", error);
     return null;
   }
 };
-
 const fetchPlayHistory = async (
   token: string,
   limit: number,
@@ -225,7 +223,10 @@ const fetchPlayHistory = async (
           refreshToken
         ) {
           const refreshed = await refreshAccessToken(refreshToken);
-          if (refreshed) {
+          if (refreshed?.invalidGrant) {
+            throw retryError;
+          }
+          if (refreshed?.token) {
             // Retry with new token
             const newHeaders = {
               ...headers,
@@ -542,7 +543,7 @@ const getListeningHistoryInternal = async (
   const parsedLimit = Number(rawLimit);
   const limit =
     Number.isFinite(parsedLimit) && parsedLimit > 0
-      ? Math.min(parsedLimit, 200)
+      ? Math.min(parsedLimit, 1000)
       : 100;
 
   if (!token) {
@@ -765,7 +766,6 @@ const getListeningHistoryInternal = async (
     if (/Cookies & Tracking|cookie/i.test(bodyText)) {
       const accepted = await acceptCookies();
       if (!accepted) {
-        await page.bringToFront();
         await delay(8000);
       }
       await delay(800);
@@ -872,47 +872,16 @@ export default async function handler(
 ) {
   try {
     let token = req.cookies.soundcloud_token;
-    const refreshToken = req.cookies.soundcloud_refresh_token;
     const allowCache = req.query.cache === "1";
     const forceRefresh = req.query.force === "1";
 
-    if (!token && refreshToken) {
-      try {
-        const params = new URLSearchParams({
-          client_id: process.env.SOUNDCLOUD_CLIENT_ID!,
-          client_secret: process.env.SOUNDCLOUD_CLIENT_SECRET!,
-          grant_type: "refresh_token",
-          refresh_token: refreshToken,
-        });
+    if (!token) {
+      const auth = await refreshSoundCloudAuth(req, res);
+      token = auth?.rawToken;
+    }
 
-        const refreshResponse = await axios.post(
-          "https://secure.soundcloud.com/oauth/token",
-          params.toString(),
-          {
-            headers: {
-              "Content-Type": "application/x-www-form-urlencoded",
-            },
-          },
-        );
-
-        token = refreshResponse.data.access_token;
-        const newRefreshToken =
-          refreshResponse.data.refresh_token || refreshToken;
-        const expiresIn = refreshResponse.data.expires_in || 3600;
-
-        const cookies = [
-          `soundcloud_token=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${expiresIn}`,
-          `soundcloud_refresh_token=${newRefreshToken}; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000`,
-        ];
-
-        res.setHeader("Set-Cookie", cookies);
-      } catch (refreshError: any) {
-        res.setHeader("Set-Cookie", [
-          "soundcloud_token=; Path=/; Max-Age=0",
-          "soundcloud_refresh_token=; Path=/; Max-Age=0",
-        ]);
-        return res.status(401).json({ error: "Not authenticated" });
-      }
+    if (!token) {
+      return res.status(401).json({ error: "Not authenticated" });
     }
 
     // Check cache
@@ -947,3 +916,8 @@ export default async function handler(
     });
   }
 }
+
+
+
+
+

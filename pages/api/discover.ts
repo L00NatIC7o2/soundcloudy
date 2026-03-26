@@ -4,6 +4,7 @@ import axios from "axios";
 import fs from "fs";
 import path from "path";
 import os from "os";
+import { requireSoundCloudAccessToken } from "../../src/server/auth/soundcloud";
 
 // 1. Setup local storage path (Works on Windows/Linux/Mac)
 const getStoragePath = () => {
@@ -21,7 +22,7 @@ export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
-  const token = req.cookies.soundcloud_token;
+  const token = await requireSoundCloudAccessToken(req, res);
   if (!token)
     return res.status(401).json({ error: "Not authenticated", sections: [] });
 
@@ -132,3 +133,4 @@ export default async function handler(
     return res.status(500).json({ error: error.message });
   }
 }
+

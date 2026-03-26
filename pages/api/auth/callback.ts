@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { getConnectStore } from "../../../src/server/auth/connectStore";
+import { establishSoundCloudSession } from "../../../src/server/auth/soundcloud";
 import { getAuthCallbackUrl } from "../../../src/server/http/origin";
 
 // Helper to ensure we access the same global store for Bridge/Connect flows
@@ -11,14 +12,15 @@ export default async function handler(
   const verifier = req.cookies.soundcloud_code_verifier;
 
   if (!code || typeof code !== "string") {
-    return res.status(400).json({ error: "Missing authorization code" });
+    res.status(400).json({ error: "Missing authorization code" });
+    return;
   }
 
-  // PKCE Check: We need the verifier created in login.ts
   if (!verifier) {
-    return res
+    res
       .status(400)
       .json({ error: "Missing code_verifier. Please restart login." });
+    return;
   }
 
   const clientId = process.env.SOUNDCLOUD_CLIENT_ID;
@@ -26,9 +28,10 @@ export default async function handler(
   const redirectUri = getAuthCallbackUrl(req);
 
   if (!clientId || !clientSecret) {
-    return res
+    res
       .status(500)
       .json({ error: "SOUNDCLOUD_CLIENT_ID/SECRET not set in .env" });
+    return;
   }
 
   try {
@@ -48,10 +51,11 @@ export default async function handler(
     const tokenJson = await tokenRes.json();
 
     if (!tokenRes.ok) {
-      return res.status(tokenRes.status).json({
+      res.status(tokenRes.status).json({
         error: "SoundCloud token exchange failed",
         details: tokenJson,
       });
+      return;
     }
 
     if (state && typeof state === "string") {
@@ -66,7 +70,7 @@ export default async function handler(
         });
 
         res.setHeader("Content-Type", "text/html");
-        return res.send(`
+        res.send(`
           <html>
             <body style="font-family: sans-serif; text-align: center; padding-top: 50px;">
               <h1>Successfully Connected!</h1>
@@ -75,28 +79,36 @@ export default async function handler(
             </body>
           </html>
         `);
+        return;
       }
     }
 
-    const isProd = process.env.NODE_ENV === "production";
-    const cookies = [
-      `soundcloud_token=${tokenJson.access_token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${tokenJson.expires_in || 3600}${isProd ? "; Secure" : ""}`,
-      `soundcloud_code_verifier=; Path=/; Max-Age=0`,
-    ];
+    await establishSoundCloudSession(
+      req,
+      res,
+      tokenJson.access_token,
+      tokenJson.refresh_token,
+      tokenJson.expires_in || 3600,
+    );
 
-    if (tokenJson.refresh_token) {
-      cookies.push(
-        `soundcloud_refresh_token=${tokenJson.refresh_token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000${isProd ? "; Secure" : ""}`,
-      );
-    }
-
-    res.setHeader("Set-Cookie", cookies);
-    return res.redirect(302, "/");
+    res.setHeader(
+      "Set-Cookie",
+      [
+        ...(Array.isArray(res.getHeader("Set-Cookie"))
+          ? (res.getHeader("Set-Cookie") as string[])
+          : res.getHeader("Set-Cookie")
+            ? [String(res.getHeader("Set-Cookie"))]
+            : []),
+        "soundcloud_code_verifier=; Path=/; Max-Age=0",
+      ],
+    );
+    res.redirect(302, "/");
+    return;
   } catch (error: any) {
     console.error("Callback Error:", error);
-    return res
+    res
       .status(500)
       .json({ error: "Internal server error during callback" });
+    return;
   }
 }
-

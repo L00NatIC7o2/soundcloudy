@@ -1,7 +1,7 @@
-﻿import type { NextApiRequest, NextApiResponse } from "next";
+import type { NextApiRequest, NextApiResponse } from "next";
 import axios from "axios";
 import {
-  getSoundCloudAuthContext,
+  getRequestSoundCloudAuthContext,
   refreshSoundCloudAuth,
   type SoundCloudAuthContext,
 } from "../../src/server/auth/soundcloud";
@@ -40,7 +40,7 @@ export default async function handler(
   res: NextApiResponse,
 ) {
   const { trackId } = req.query;
-  let auth = getSoundCloudAuthContext(req.cookies.soundcloud_token);
+  let auth = await getRequestSoundCloudAuthContext(req, res);
 
   if (!trackId || typeof trackId !== "string") {
     return res.status(400).json({ error: "Missing trackId" });

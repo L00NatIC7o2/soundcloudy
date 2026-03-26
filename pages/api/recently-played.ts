@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import axios from "axios";
+import { requireSoundCloudAccessToken } from "../../src/server/auth/soundcloud";
 
 // Cache for recently played to avoid hitting SC too hard
 const historyCache = new Map<string, { data: any; timestamp: number }>();
@@ -9,7 +10,7 @@ export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
-  const token = req.cookies.soundcloud_token;
+  const token = await requireSoundCloudAccessToken(req, res);
   if (!token) return res.status(401).json({ error: "Not authenticated" });
 
   // 1. Check Memory Cache
@@ -83,3 +84,4 @@ export default async function handler(
     }
   }
 }
+

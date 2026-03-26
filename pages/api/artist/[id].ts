@@ -1,7 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
-import axios from "axios";
 import puppeteer, { type Browser, type Page } from "puppeteer";
-
+import axios from "axios";
+import { requireSoundCloudAccessToken } from "../../../src/server/auth/soundcloud";
 const artistCache = new Map<
   string,
   { expiresAt: number; payload: Record<string, unknown> }
@@ -31,7 +31,7 @@ export default async function handler(
   res: NextApiResponse,
 ) {
   const { id } = req.query;
-  const token = req.cookies.soundcloud_token;
+  const token = await requireSoundCloudAccessToken(req, res);
 
   if (!id || typeof id !== "string") {
     return res.status(400).json({ error: "Missing artist ID" });

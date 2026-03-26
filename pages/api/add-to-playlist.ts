@@ -1,12 +1,13 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import axios from "axios";
+import { requireSoundCloudAccessToken } from "../../src/server/auth/soundcloud";
 
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
   const { playlistId, trackId } = req.body;
-  let token = req.cookies.soundcloud_token;
+  let token = await requireSoundCloudAccessToken(req, res);
 
   console.log("/api/add-to-playlist called", { playlistId, trackId });
 
@@ -85,3 +86,4 @@ export default async function handler(
     res.status(status).json({ error: message });
   }
 }
+

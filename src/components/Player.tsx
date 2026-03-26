@@ -21,6 +21,18 @@ interface PlayerProps {
     playlistTitle: string | null,
   ) => void;
   onTrackOpen?: (track: any) => void;
+  queue?: any[];
+  currentQueueIndex?: number;
+  listeningHistory?: any[];
+  historyHasMore?: boolean;
+  historyLoadingMore?: boolean;
+  onRequestMoreHistory?: () => void;
+  queueSource?: "playlist" | "search" | "search-related";
+  onQueueSelect?: (
+    track: any,
+    source: "playlist" | "search" | "search-related",
+    trackList: any[],
+  ) => void;
   isShuffle?: boolean;
   onShuffleChange?: (shuffle: boolean) => void;
 }
@@ -33,6 +45,14 @@ const Player = memo(function Player({
   onArtistClick,
   onPlaylistClick,
   onTrackOpen,
+  queue = [],
+  currentQueueIndex = -1,
+  listeningHistory = [],
+  historyHasMore = false,
+  historyLoadingMore = false,
+  onRequestMoreHistory,
+  queueSource = "playlist",
+  onQueueSelect,
   isShuffle = false,
   onShuffleChange,
 }: PlayerProps) {
@@ -42,40 +62,177 @@ const Player = memo(function Player({
     "/placeholder.png";
 
   const audioRef = useRef<HTMLAudioElement>(null);
-  const userId =
+  const [syncRoomId, setSyncRoomId] = useState("");
+  const deviceId =
     typeof window !== "undefined"
-      ? localStorage.getItem("soundcloudy_user_id") ||
+      ? localStorage.getItem("soundcloudy_device_id") ||
         (() => {
           const id = Math.random().toString(36).slice(2);
-          localStorage.setItem("soundcloudy_user_id", id);
+          localStorage.setItem("soundcloudy_device_id", id);
           return id;
         })()
       : "";
   const [socket, setSocket] = useState<Socket | null>(null);
+  const currentTrackRef = useRef<any>(null);
+  const syncRoomRetryRef = useRef<number | null>(null);
 
   useEffect(() => {
-    if (!userId) return;
-    const s = io(getClientSocketUrl(window.location.origin));
+    currentTrackRef.current = currentTrack;
+  }, [currentTrack]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    let cancelled = false;
+
+    const resolveSyncRoom = async () => {
+      try {
+        const response = await fetch("/api/auth/session");
+        if (!response.ok) return false;
+        const session = await response.json();
+        if (!cancelled && session?.roomId) {
+          console.log("[player-sync] resolved session room", {
+            roomId: session.roomId,
+            userId: session.userId,
+            deviceId,
+          });
+          setSyncRoomId((prev) => (prev === session.roomId ? prev : session.roomId));
+          return true;
+        }
+      } catch {
+        // Ignore session fetch failures and retry later.
+      }
+      return false;
+    };
+
+    const retryUntilResolved = async () => {
+      const resolved = await resolveSyncRoom();
+      if (!resolved && !cancelled) {
+        syncRoomRetryRef.current = window.setTimeout(retryUntilResolved, 2000);
+      } else if (resolved && syncRoomRetryRef.current !== null) {
+        window.clearTimeout(syncRoomRetryRef.current);
+        syncRoomRetryRef.current = null;
+      }
+    };
+
+    const handleVisibilityRefresh = () => {
+      void resolveSyncRoom();
+    };
+
+    void retryUntilResolved();
+    window.addEventListener("focus", handleVisibilityRefresh);
+    document.addEventListener("visibilitychange", handleVisibilityRefresh);
+
+    return () => {
+      cancelled = true;
+      if (syncRoomRetryRef.current !== null) {
+        window.clearTimeout(syncRoomRetryRef.current);
+      }
+      window.removeEventListener("focus", handleVisibilityRefresh);
+      document.removeEventListener("visibilitychange", handleVisibilityRefresh);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!syncRoomId) return;
+    console.log("[player-sync] opening socket", {
+      roomId: syncRoomId,
+      deviceId,
+      socketUrl: getClientSocketUrl(window.location.origin),
+    });
+    const s = io(getClientSocketUrl(window.location.origin), {
+      withCredentials: false,
+    });
     setSocket(s);
 
-    s.on("connect", () => {
-      s.emit("join", userId);
-    });
+    const syncRemotePlayback = (remoteState: any) => {
+      if (!remoteState) return;
 
-    s.on("playback-update", (remoteState) => {
+      const remoteTrack = remoteState.trackData || null;
+      if (
+        remoteTrack &&
+        remoteState.trackId &&
+        remoteState.trackId !== currentTrackRef.current?.id
+      ) {
+        window.dispatchEvent(
+          new CustomEvent("remote-load-track", {
+            detail: {
+              track: remoteTrack,
+              position: Number(remoteState.position) || 0,
+              shouldPlay: false,
+            },
+          }),
+        );
+      }
+
       if (typeof remoteState.position === "number" && audioRef.current) {
         audioRef.current.currentTime = remoteState.position;
+        setCurrentTime(remoteState.position);
+      }
+      if (typeof remoteState.duration === "number") {
+        setDuration(remoteState.duration);
       }
       if (typeof remoteState.playing === "boolean") {
         setIsPlaying(remoteState.playing);
-        if (audioRef.current) {
-          if (remoteState.playing) audioRef.current.play();
-          else audioRef.current.pause();
-        }
       }
+    };
+
+    s.on("connect", () => {
+      console.log("[player-sync] socket connected", {
+        roomId: syncRoomId,
+        deviceId,
+        socketId: s.id,
+      });
+      s.emit(
+        "join",
+        { roomId: syncRoomId, deviceId },
+        (ack?: { playbackState?: any }) => {
+          console.log("[player-sync] join ack", {
+            roomId: syncRoomId,
+            deviceId,
+            hasPlaybackState: Boolean(ack?.playbackState),
+            playbackTrackId: ack?.playbackState?.trackId || null,
+          });
+          if (ack?.playbackState) {
+            syncRemotePlayback(ack.playbackState);
+          }
+        },
+      );
+    });
+
+    s.on("connect_error", (error) => {
+      console.error("[player-sync] socket connect_error", {
+        roomId: syncRoomId,
+        deviceId,
+        socketUrl: getClientSocketUrl(window.location.origin),
+        message: error?.message || String(error),
+      });
+    });
+
+    s.on("disconnect", (reason) => {
+      console.warn("[player-sync] socket disconnected", {
+        roomId: syncRoomId,
+        deviceId,
+        reason,
+      });
+    });
+
+    s.on("playback-update", (remoteState) => {
+      console.log("[player-sync] received playback-update", {
+        roomId: syncRoomId,
+        deviceId,
+        trackId: remoteState?.trackId || null,
+        playing: remoteState?.playing ?? null,
+      });
+      syncRemotePlayback(remoteState);
     });
 
     s.on("remote-command", (command) => {
+      console.log("[player-sync] received remote-command", {
+        roomId: syncRoomId,
+        deviceId,
+        command,
+      });
       if (command && typeof command === "object") {
         if (command.type === "load-track" && command.track) {
           window.dispatchEvent(
@@ -107,7 +264,7 @@ const Player = memo(function Player({
     return () => {
       s.disconnect();
     };
-  }, [userId]);
+  }, [syncRoomId, deviceId]);
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -117,6 +274,7 @@ const Player = memo(function Player({
   const [isLiked, setIsLiked] = useState(false);
   const [loading, setLoading] = useState(false);
   const [isPlaylistMenuOpen, setIsPlaylistMenuOpen] = useState(false);
+  const [isQueuePanelOpen, setIsQueuePanelOpen] = useState(false);
   const [isMobilePlayerOpen, setIsMobilePlayerOpen] = useState(false);
   const [isMobilePlaylistSheetOpen, setIsMobilePlaylistSheetOpen] =
     useState(false);
@@ -144,6 +302,8 @@ const Player = memo(function Player({
   const mobileSheetTouchStartRef = useRef<number | null>(null);
   const mobileSheetTouchCurrentRef = useRef<number | null>(null);
   const mobileTrackPageRef = useRef<HTMLDivElement | null>(null);
+  const queueCurrentTrackRef = useRef<HTMLDivElement | null>(null);
+  const queueListRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!isMobilePlayerOpen) {
@@ -169,6 +329,53 @@ const Player = memo(function Player({
       window.removeEventListener("resize", updateMobileTitleOverflow);
     };
   }, [currentTrack?.title, isMobilePlayerOpen]);
+
+  useEffect(() => {
+    if (!isQueuePanelOpen) return;
+
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (!target) return;
+      if (
+        target.closest(".player-queue-panel") ||
+        target.closest(".player-queue-btn") ||
+        target.closest(".player-bar")
+      ) {
+        return;
+      }
+      setIsQueuePanelOpen(false);
+    };
+
+    document.addEventListener("mousedown", handlePointerDown);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+    };
+  }, [isQueuePanelOpen]);
+
+  useEffect(() => {
+    if (!isQueuePanelOpen) return;
+    const frame = window.requestAnimationFrame(() => {
+      queueCurrentTrackRef.current?.scrollIntoView({
+        block: "center",
+        behavior: "auto",
+      });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [
+    isQueuePanelOpen,
+    currentTrack?.id,
+    currentQueueIndex,
+    queue.length,
+    listeningHistory.length,
+  ]);
+
+  const handleQueueListScroll = () => {
+    const element = queueListRef.current;
+    if (!element || !isQueuePanelOpen) return;
+    if (!historyHasMore || historyLoadingMore || !onRequestMoreHistory) return;
+    if (element.scrollTop > 120) return;
+    onRequestMoreHistory();
+  };
 
   useEffect(() => {
     if (!currentTrack?.id) {
@@ -257,6 +464,27 @@ const Player = memo(function Player({
   const mobileCanShowMoreComments =
     mobileVisibleCommentsCount < mobileComments.length;
   const mobileRelatedTracks = mobileTrackDetails?.related_tracks || [];
+  const queueItems = queue.length
+    ? queue
+    : currentTrack
+      ? [currentTrack]
+      : [];
+  const resolvedCurrentQueueIndex =
+    currentQueueIndex >= 0
+      ? currentQueueIndex
+      : queueItems.findIndex((item) => item?.id === currentTrack?.id);
+  const currentQueueTrack =
+    resolvedCurrentQueueIndex >= 0
+      ? queueItems[resolvedCurrentQueueIndex]
+      : currentTrack;
+  const upcomingQueueTracks =
+    resolvedCurrentQueueIndex >= 0
+      ? queueItems.slice(resolvedCurrentQueueIndex + 1)
+      : queueItems.filter((item) => item?.id !== currentTrack?.id);
+  const historyItems = listeningHistory
+    .filter((item) => item?.id && item.id !== currentTrack?.id)
+    .slice()
+    .reverse();
 
   useEffect(() => {
     if (currentTrack && "mediaSession" in navigator) {
@@ -353,6 +581,7 @@ const Player = memo(function Player({
       if (!currentTrack || !audioRef.current) return;
 
       setLoading(true);
+      const shouldAutoPlay = currentTrack.remoteShouldPlay !== false;
       pendingRemoteSeekRef.current =
         typeof currentTrack.remoteStartPosition === "number"
           ? currentTrack.remoteStartPosition
@@ -362,17 +591,21 @@ const Player = memo(function Player({
         audioRef.current.src = `/api/stream?trackId=${currentTrack.id}&proxy=1`;
         audioRef.current.load();
 
-        const playPromise = audioRef.current.play();
-        if (playPromise !== undefined) {
-          playPromise
-            .then(() => {
-              setIsPlaying(true);
-            })
-            .catch((error) => {
-              if (error.name !== "AbortError") {
-                console.error("Play error:", error);
-              }
-            });
+        if (shouldAutoPlay) {
+          const playPromise = audioRef.current.play();
+          if (playPromise !== undefined) {
+            playPromise
+              .then(() => {
+                setIsPlaying(true);
+              })
+              .catch((error) => {
+                if (error.name !== "AbortError") {
+                  console.error("Play error:", error);
+                }
+              });
+          }
+        } else {
+          audioRef.current.pause();
         }
       } catch (error) {
         console.error("Load track error:", error);
@@ -566,13 +799,23 @@ const Player = memo(function Player({
   };
 
   const emitPlaybackState = (force = false) => {
-    if (!socket || !currentTrack || !userId) return;
+    if (!socket || !currentTrack || !syncRoomId) return;
     const now = Date.now();
     if (!force && now - lastRemoteSyncRef.current < 700) return;
     lastRemoteSyncRef.current = now;
 
+    console.log("[player-sync] emit playback-update", {
+      roomId: syncRoomId,
+      deviceId,
+      trackId: currentTrack.id,
+      playing: isPlaying,
+      force,
+      position: Math.round(audioRef.current?.currentTime || 0),
+    });
+
     socket.emit("playback-update", {
-      userId,
+      userId: syncRoomId,
+      deviceId,
       state: {
         trackId: currentTrack.id,
         track: currentTrack.title,
@@ -589,7 +832,7 @@ const Player = memo(function Player({
   useEffect(() => {
     if (!socket || !currentTrack) return;
     emitPlaybackState(true);
-  }, [isPlaying, currentTrack?.id, socket, userId, currentTrack]);
+  }, [isPlaying, currentTrack?.id, socket, syncRoomId, currentTrack]);
 
   useEffect(() => {
     try {
@@ -608,7 +851,7 @@ const Player = memo(function Player({
   }, [currentTrack, isPlaying]);
 
   useEffect(() => {
-    if (!socket || !currentTrack || !userId) return;
+    if (!socket || !currentTrack || !syncRoomId) return;
 
     const handleConnect = () => {
       emitPlaybackState(true);
@@ -618,7 +861,7 @@ const Player = memo(function Player({
     return () => {
       socket.off("connect", handleConnect);
     };
-  }, [socket, currentTrack, userId, isPlaying]);
+  }, [socket, currentTrack, syncRoomId, isPlaying]);
 
   useEffect(() => {
     if (!socket || !currentTrack || !isPlaying) return;
@@ -626,7 +869,7 @@ const Player = memo(function Player({
       emitPlaybackState();
     }, 1000);
     return () => window.clearInterval(interval);
-  }, [socket, currentTrack?.id, isPlaying, userId]);
+  }, [socket, currentTrack?.id, isPlaying, syncRoomId]);
 
   useEffect(() => {
     const handleExternalToggle = () => {
@@ -739,6 +982,23 @@ const Player = memo(function Player({
     });
   };
 
+  const handleQueueItemSelect = (track: any, kind: "queue" | "history") => {
+    if (!track || !onQueueSelect) return;
+    if (kind === "history") {
+      onQueueSelect(track, "search-related", listeningHistory);
+      return;
+    }
+
+    const source =
+      queueSource === "playlist" ? "playlist" : "search-related";
+    const selectedIndex = queueItems.findIndex((item) => item?.id === track.id);
+    const reorderedQueue =
+      selectedIndex > -1
+        ? queueItems.slice(selectedIndex)
+        : queueItems;
+    onQueueSelect(track, source, reorderedQueue);
+  };
+
   const handleTrackEnd = () => {
     if (onTrackEnd) onTrackEnd();
   };
@@ -822,7 +1082,8 @@ const Player = memo(function Player({
   }
 
   return (
-    <div className="player-bar">
+    <>
+      <div className="player-bar">
       <audio
         ref={audioRef}
         onTimeUpdate={handleTimeUpdate}
@@ -936,6 +1197,27 @@ const Player = memo(function Player({
                     alt="Add to playlist"
                     className="player-add-playlist-icon"
                   />
+                </button>
+                <button
+                  type="button"
+                  className={`player-queue-btn ${isQueuePanelOpen ? "open" : ""}`}
+                  onClick={() => setIsQueuePanelOpen((open) => !open)}
+                  title="Queue"
+                  aria-label="Open queue"
+                >
+                  <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                  >
+                    <line x1="4" y1="6" x2="20" y2="6" />
+                    <line x1="4" y1="12" x2="20" y2="12" />
+                    <line x1="4" y1="18" x2="14" y2="18" />
+                  </svg>
                 </button>
               </div>
             </div>
@@ -1122,6 +1404,121 @@ const Player = memo(function Player({
           </div>
         </div>
       </div>
+      </div>
+      <aside className={`player-queue-panel ${isQueuePanelOpen ? "open" : ""}`}>
+        <div className="player-queue-panel-header">
+          <div className="player-queue-panel-title">Queue</div>
+          <button
+            type="button"
+            className="player-queue-panel-close"
+            onClick={() => setIsQueuePanelOpen(false)}
+            aria-label="Close queue"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+              <path
+                d="M6 6l12 12M18 6L6 18"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+              />
+            </svg>
+          </button>
+        </div>
+        <div className="player-queue-panel-subtitle">
+          Scroll up for listening history
+        </div>
+        <div
+          ref={queueListRef}
+          className="player-queue-list"
+          onScroll={handleQueueListScroll}
+        >
+          {historyItems.length ? (
+            <section className="player-queue-section">
+              <div className="player-queue-section-label">Listening History</div>
+              {historyItems.map((track, index) => (
+                <button
+                  key={`history-${track.id || index}`}
+                  type="button"
+                  className="player-queue-item player-queue-item-history"
+                  onClick={() => handleQueueItemSelect(track, "history")}
+                >
+                  <img
+                    src={getTrackArtwork(track)}
+                    alt={track.title}
+                    className="player-queue-item-cover"
+                  />
+                  <div className="player-queue-item-copy">
+                    <div className="player-queue-item-title">{track.title}</div>
+                    <div className="player-queue-item-artist">
+                      {track.user?.username || "Unknown"}
+                    </div>
+                  </div>
+                </button>
+              ))}
+              {historyLoadingMore ? (
+                <div className="player-queue-empty">Loading older history...</div>
+              ) : null}
+            </section>
+          ) : null}
+
+          <section className="player-queue-section">
+            <div className="player-queue-section-label">Now Playing</div>
+            {currentQueueTrack ? (
+              <div
+                ref={queueCurrentTrackRef}
+                className="player-queue-item player-queue-item-current"
+              >
+                <img
+                  src={getTrackArtwork(currentQueueTrack)}
+                  alt={currentQueueTrack.title}
+                  className="player-queue-item-cover"
+                />
+                <div className="player-queue-item-copy">
+                  <div className="player-queue-item-title">
+                    {currentQueueTrack.title}
+                  </div>
+                  <div className="player-queue-item-artist">
+                    {currentQueueTrack.user?.username || "Unknown"}
+                  </div>
+                </div>
+                <div className="player-queue-item-badge">Playing</div>
+              </div>
+            ) : (
+              <div className="track-page-placeholder track-page-placeholder-block">
+                Nothing is playing yet.
+              </div>
+            )}
+
+            {upcomingQueueTracks.length ? (
+              <>
+                <div className="player-queue-section-label">Up Next</div>
+                {upcomingQueueTracks.map((track, index) => (
+                  <button
+                    key={`queue-${track.id || index}`}
+                    type="button"
+                    className="player-queue-item"
+                    onClick={() => handleQueueItemSelect(track, "queue")}
+                  >
+                    <img
+                      src={getTrackArtwork(track)}
+                      alt={track.title}
+                      className="player-queue-item-cover"
+                    />
+                    <div className="player-queue-item-copy">
+                      <div className="player-queue-item-title">{track.title}</div>
+                      <div className="player-queue-item-artist">
+                        {track.user?.username || "Unknown"}
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </>
+            ) : (
+              <div className="player-queue-empty">No upcoming tracks.</div>
+            )}
+          </section>
+        </div>
+      </aside>
       <div
         role="button"
         tabIndex={0}
@@ -1398,12 +1795,16 @@ const Player = memo(function Player({
                 ))}
               </div>
 
-              {mobileTrackBio ? (
-                <section className="mobile-player-track-page-section">
+              <section className="mobile-player-track-page-section track-panel-section-copy">
                   <h3 className="search-section-title">About This Track</h3>
-                  <div className="track-panel-copy">{renderTrackBio(mobileTrackBio)}</div>
+                  {mobileTrackBio ? (
+                    <div className="track-panel-copy">{renderTrackBio(mobileTrackBio)}</div>
+                  ) : mobileTrackDetailsLoading ? (
+                    <div className="track-page-placeholder track-page-placeholder-block">
+                      Loading track details...
+                    </div>
+                  ) : null}
                 </section>
-              ) : null}
 
               {mobileTrackArtist?.username ? (
                 <section className="mobile-player-track-page-section">
@@ -1418,12 +1819,16 @@ const Player = memo(function Player({
                 </section>
               ) : null}
 
-              <section className="mobile-player-track-page-section">
+              <section className="mobile-player-track-page-section track-panel-section-comments">
                 <h3 className="search-section-title">Comments</h3>
                 {mobileTrackDetailsLoading && mobileComments.length === 0 ? (
-                  <div className="track-page-placeholder">Loading comments...</div>
+                  <div className="track-page-placeholder track-page-placeholder-block">
+                    Loading comments...
+                  </div>
                 ) : mobileComments.length === 0 ? (
-                  <div className="track-page-placeholder">No comments yet.</div>
+                  <div className="track-page-placeholder track-page-placeholder-block">
+                    No comments yet.
+                  </div>
                 ) : (
                   <div className="track-panel-comments">
                     {mobileVisibleComments.map((comment) => (
@@ -1463,14 +1868,14 @@ const Player = memo(function Player({
                 )}
               </section>
 
-              <section className="mobile-player-track-page-section">
+              <section className="mobile-player-track-page-section track-panel-section-related">
                 <h3 className="search-section-title">Related Tracks</h3>
                 {mobileTrackDetailsLoading && mobileRelatedTracks.length === 0 ? (
-                  <div className="track-page-placeholder">
+                  <div className="track-page-placeholder track-page-placeholder-block">
                     Loading related tracks...
                   </div>
                 ) : mobileRelatedTracks.length === 0 ? (
-                  <div className="track-page-placeholder">
+                  <div className="track-page-placeholder track-page-placeholder-block">
                     No related tracks found.
                   </div>
                 ) : (
@@ -1518,7 +1923,7 @@ const Player = memo(function Player({
         onClose={() => setIsMobilePlaylistSheetOpen(false)}
         playlistsWithTrack={playlistsWithTrack}
       />
-    </div>
+    </>
   );
 });
 

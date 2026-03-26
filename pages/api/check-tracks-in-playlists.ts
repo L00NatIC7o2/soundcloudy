@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import axios, { type AxiosResponse } from "axios";
+import { requireSoundCloudAccessToken } from "../../src/server/auth/soundcloud";
 
 type MembershipMap = Record<number, number[]>;
 
@@ -43,7 +44,7 @@ export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
-  const token = req.cookies.soundcloud_token;
+  const token = await requireSoundCloudAccessToken(req, res);
   const rawTrackIds = typeof req.query.trackIds === "string" ? req.query.trackIds : "";
 
   if (!token) {
@@ -118,3 +119,4 @@ export default async function handler(
     });
   }
 }
+

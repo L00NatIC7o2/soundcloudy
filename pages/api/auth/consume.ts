@@ -1,7 +1,11 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { getConnectStore } from "../../../src/server/auth/connectStore";
+import { establishSoundCloudSession } from "../../../src/server/auth/soundcloud";
 
-export default function handler(req: NextApiRequest, res: NextApiResponse) {
+export default async function handler(
+  req: NextApiRequest,
+  res: NextApiResponse,
+) {
   const connectCode =
     typeof req.query.connect_code === "string"
       ? req.query.connect_code
@@ -20,23 +24,20 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
     return res.status(401).json({ error: "Invalid or incomplete session" });
   }
 
-  // Extract tokens
   const { access_token, refresh_token, expires_in } = entry.tokens;
-
-  // Cleanup store
   store.delete(connectCode);
 
-  const isProd = process.env.NODE_ENV === "production";
-  const cookies = [
-    `soundcloud_token=${access_token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${expires_in || 3600}${isProd ? "; Secure" : ""}`,
-  ];
-
-  if (refresh_token) {
-    cookies.push(
-      `soundcloud_refresh_token=${refresh_token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000${isProd ? "; Secure" : ""}`,
-    );
+  if (!access_token || typeof access_token !== "string") {
+    return res.status(401).json({ error: "Invalid SoundCloud session" });
   }
 
-  res.setHeader("Set-Cookie", cookies);
+  await establishSoundCloudSession(
+    req,
+    res,
+    access_token,
+    typeof refresh_token === "string" ? refresh_token : undefined,
+    typeof expires_in === "number" ? expires_in : 3600,
+  );
+
   res.redirect(302, "/");
 }

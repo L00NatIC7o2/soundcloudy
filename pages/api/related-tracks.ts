@@ -1,8 +1,8 @@
-﻿import type { NextApiRequest, NextApiResponse } from "next";
+import type { NextApiRequest, NextApiResponse } from "next";
 import axios from "axios";
 import { IncomingMessage } from "http";
 import {
-  getSoundCloudAuthContext,
+  getRequestSoundCloudAuthContext,
   refreshSoundCloudAuth,
   type SoundCloudAuthContext,
 } from "../../src/server/auth/soundcloud";
@@ -56,7 +56,7 @@ export default async function handler(
 ) {
   let { trackId, for: forHomepage } = req.query;
   const normalizedTrackId = Array.isArray(trackId) ? trackId[0] : trackId;
-  let auth = getSoundCloudAuthContext(req.cookies.soundcloud_token);
+  let auth = await getRequestSoundCloudAuthContext(req, res);
 
   if (!auth) {
     auth = await refreshSoundCloudAuth(req, res);
@@ -97,29 +97,31 @@ export default async function handler(
                     allRelated.push(track);
                   }
                 }
-                continue;
               }
-            } catch {
-              // Ignore refresh errors for homepage aggregation.
+            } catch (refreshError: any) {
+              console.error(
+                "Homepage related refresh error:",
+                refreshError.response?.data || refreshError.message,
+              );
             }
           }
         }
       }
-      return res.json({ tracks: allRelated });
+
+      return res.json({ tracks: allRelated.slice(0, 20) });
     }
   }
 
-  const resolvedTrackId = Array.isArray(trackId) ? trackId[0] : trackId;
-
-  if (!resolvedTrackId) {
+  if (!normalizedTrackId && !trackId) {
     return res.status(400).json({ error: "Missing trackId" });
   }
+
   if (!auth) {
     return res.status(401).json({ error: "Not authenticated" });
   }
 
   try {
-    const tracks = await fetchRelatedTracks(resolvedTrackId, auth, 20);
+    const tracks = await fetchRelatedTracks(normalizedTrackId || trackId!, auth, 20);
     res.json({ tracks });
   } catch (error: any) {
     if ([401, 403].includes(error.response?.status)) {
@@ -127,7 +129,7 @@ export default async function handler(
         const refreshedAuth = await refreshSoundCloudAuth(req, res);
         if (refreshedAuth) {
           const tracks = await fetchRelatedTracks(
-            resolvedTrackId,
+            normalizedTrackId || trackId!,
             refreshedAuth,
             20,
           );

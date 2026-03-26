@@ -7,6 +7,11 @@
   "main": "electron/main.cjs",
   "scripts": {
     "dev": "next dev",
+    "dev:host": "next dev --hostname 0.0.0.0 --port 3000",
+    "socket:start": "node server/socket-server.js",
+    "dev:all": "concurrently \"npm run dev:host\" \"npm run socket:start\"",
+    "tunnel:web": "ngrok http 3000",
+    "tunnel:socket": "ngrok http 3001",
     "build": "next build",
     "start": "next start",
     "cap:sync": "cap sync",
