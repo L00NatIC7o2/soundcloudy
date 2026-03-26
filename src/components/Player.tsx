@@ -676,26 +676,45 @@ const Player = memo(function Player({
         audioRef.current.load();
 
         if (shouldAutoPlay) {
-          const playPromise = audioRef.current.play();
-          if (playPromise !== undefined) {
-            playPromise
-              .then(() => {
-                setIsPlaying(true);
-              })
-              .catch((error) => {
-                if (error.name !== "AbortError") {
-                  console.error("Play error:", error);
-                }
-              });
+          try {
+            const playPromise = audioRef.current.play();
+            if (playPromise !== undefined) {
+              playPromise
+                .then(() => {
+                  setIsPlaying(true);
+                })
+                .catch((error) => {
+                  if (error?.name === "NotAllowedError") {
+                    console.warn("Autoplay blocked for this device handoff.");
+                    setIsPlaying(false);
+                    return;
+                  }
+                  if (error?.name !== "AbortError") {
+                    console.error("Play error:", error);
+                  }
+                });
+            }
+          } catch (error: any) {
+            if (error?.name === "NotAllowedError") {
+              console.warn("Autoplay blocked for this device handoff.");
+              setIsPlaying(false);
+            } else {
+              throw error;
+            }
           }
         } else {
           audioRef.current.pause();
         }
-      } catch (error) {
-        console.error("Load track error:", error);
-        alert(
-          `Failed to load track: ${error instanceof Error ? error.message : "Unknown error"}`,
-        );
+      } catch (error: any) {
+        if (error?.name === "NotAllowedError") {
+          console.warn("Autoplay blocked while loading track.");
+          setIsPlaying(false);
+        } else {
+          console.error("Load track error:", error);
+          alert(
+            `Failed to load track: ${error instanceof Error ? error.message : "Unknown error"}`,
+          );
+        }
       } finally {
         setLoading(false);
       }
@@ -1750,6 +1769,21 @@ const Player = memo(function Player({
           </div>
           <div className="mobile-player-title">{currentTrack.title}</div>
         </div>
+        <button
+          type="button"
+          className="mobile-player-icon-btn mobile-device-btn"
+          onClick={(event) => {
+            event.stopPropagation();
+            setIsMobileDeviceSheetOpen(true);
+          }}
+          aria-label="Choose listening device"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="5" width="13" height="10" rx="2" />
+            <path d="M8 19h12a1 1 0 0 0 1-1v-7" />
+            <path d="M8 19l-2 2" />
+          </svg>
+        </button>
         <button
           type="button"
           className="mobile-player-icon-btn"

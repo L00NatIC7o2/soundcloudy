@@ -4730,12 +4730,12 @@ body.electron .main-area {
     width: 100vw;
     max-width: 100vw;
     display: grid;
-    grid-template-columns: 56px minmax(0, 1fr) 40px 40px;
+    grid-template-columns: 56px minmax(0, 1fr) 36px 36px 36px;
     align-items: center;
-    gap: 12px;
+    gap: 8px;
     border: 0;
     border-radius: 0;
-    padding: 12px 14px;
+    padding: 10px 12px;
     box-sizing: border-box;
     background: rgba(12, 12, 16, 0.88);
     backdrop-filter: blur(22px);
@@ -4777,8 +4777,8 @@ body.electron .main-area {
   }
 
   .mobile-player-icon-btn {
-    width: 42px;
-    height: 42px;
+    width: 36px;
+    height: 36px;
     border: 0;
     border-radius: 999px;
     background: rgba(255, 255, 255, 0.08);
@@ -4790,8 +4790,8 @@ body.electron .main-area {
   }
 
   .mobile-player-icon-btn img {
-    width: 18px;
-    height: 18px;
+    width: 16px;
+    height: 16px;
   }
 
   .mobile-like-btn.liked {
@@ -5501,7 +5501,7 @@ body.electron .main-area {
 
 .player-device-menu {
   position: absolute;
-  top: calc(100% + 12px);
+  bottom: calc(100% + 12px);
   right: 46px;
   min-width: 240px;
   padding: 12px;
@@ -5617,4 +5617,8 @@ body.electron .main-area {
 .mobile-device-sheet-meta {
   font-size: 13px;
   color: rgba(255, 255, 255, 0.68);
+}
+
+.mobile-player-collapsed .mobile-device-btn {
+  margin-right: -2px;
 }
