@@ -1,4 +1,5 @@
 import type { AppProps } from "next/app";
+import Head from "next/head";
 import { useEffect, useMemo, useState } from "react";
 import "../src/styles/main.css";
 import { getClientAppBase } from "../src/lib/runtimeConfig";
@@ -15,7 +16,7 @@ export default function MyApp({ Component, pageProps }: AppProps) {
     typeof window !== "undefined" &&
     (window as any).electronAPI?.windowControls
       ? 42
-      : 8;
+      : "calc(env(safe-area-inset-top) + 8px)";
 
   useEffect(() => {
     if ("serviceWorker" in navigator) {
@@ -147,6 +148,18 @@ export default function MyApp({ Component, pageProps }: AppProps) {
 
   return (
     <>
+      <Head>
+        <meta
+          name="viewport"
+          content="width=device-width, initial-scale=1, viewport-fit=cover"
+        />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta
+          name="apple-mobile-web-app-status-bar-style"
+          content="black-translucent"
+        />
+        <meta name="apple-mobile-web-app-title" content="Soundcloudy" />
+      </Head>
       <Component {...pageProps} />
       {userId && (
         <>
@@ -184,7 +197,11 @@ export default function MyApp({ Component, pageProps }: AppProps) {
             <div
               style={{
                 position: "fixed",
-                top: connectWidgetTop + 42,
+                top:
+                  typeof window !== "undefined" &&
+                  (window as any).electronAPI?.windowControls
+                    ? 84
+                    : "calc(env(safe-area-inset-top) + 50px)",
                 right: 8,
                 padding: "10px 12px",
                 fontSize: 12,

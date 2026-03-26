@@ -12,6 +12,7 @@ import { useRouter } from "next/router";
 import Player from "../src/components/Player";
 import PlaylistMenu from "../src/components/PlaylistMenu";
 import MobilePlaylistSheet from "../src/components/MobilePlaylistSheet";
+import MobileSidebar from "../src/components/MobileSidebar";
 import TrackDetailView from "../src/components/TrackDetailView";
 import Toast from "../src/components/Toast";
 import dynamic from "next/dynamic";
@@ -85,6 +86,7 @@ export default function Home() {
   const [artistReposts, setArtistReposts] = useState<any[]>([]);
   const [viewingTrack, setViewingTrack] = useState(false);
   const [isMobileViewport, setIsMobileViewport] = useState(false);
+  const [mobileSidebarPage, setMobileSidebarPage] = useState(0);
   const [selectedTrack, setSelectedTrack] = useState<any>(null);
   const [trackPanelMinimized, setTrackPanelMinimized] = useState(false);
   const [trackPanelState, setTrackPanelState] = useState<
@@ -314,10 +316,20 @@ export default function Home() {
         remoteShouldPlay: detail.shouldPlay !== false,
       };
 
+      const incomingQueue = Array.isArray(detail.queueData)
+        ? detail.queueData.map((item: any) => ({
+            ...item,
+            remoteStartPosition: undefined,
+            remoteShouldPlay: undefined,
+          }))
+        : [incomingTrack];
+      const incomingQueueIndex =
+        typeof detail.currentQueueIndex === "number" ? detail.currentQueueIndex : 0;
+
       setCurrentTrack(incomingTrack);
-      setQueue([incomingTrack]);
-      setCurrentQueueIndex(0);
-      setQueueSource("search-related");
+      setQueue(incomingQueue.length ? incomingQueue : [incomingTrack]);
+      setCurrentQueueIndex(incomingQueueIndex);
+      setQueueSource(detail.queueSource || "search-related");
       setCurrentPlaylistId(null);
       setCurrentPlaylistTitle(null);
     };
@@ -689,6 +701,37 @@ export default function Home() {
     }
   };
 
+  const mobileSidebarTouchStartRef = useRef<number | null>(null);
+  const mobileSidebarTouchCurrentRef = useRef<number | null>(null);
+
+  const handleMobileSidebarTouchStart = (event: React.TouchEvent<HTMLElement>) => {
+    mobileSidebarTouchStartRef.current = event.touches[0]?.clientX ?? null;
+    mobileSidebarTouchCurrentRef.current = mobileSidebarTouchStartRef.current;
+  };
+
+  const handleMobileSidebarTouchMove = (event: React.TouchEvent<HTMLElement>) => {
+    mobileSidebarTouchCurrentRef.current = event.touches[0]?.clientX ?? null;
+  };
+
+  const handleMobileSidebarTouchEnd = () => {
+    if (
+      mobileSidebarTouchStartRef.current !== null &&
+      mobileSidebarTouchCurrentRef.current !== null
+    ) {
+      const deltaX =
+        mobileSidebarTouchCurrentRef.current - mobileSidebarTouchStartRef.current;
+
+      if (deltaX < -50) {
+        setMobileSidebarPage((prev) => Math.min(prev + 1, 2));
+      } else if (deltaX > 50) {
+        setMobileSidebarPage((prev) => Math.max(prev - 1, 0));
+      }
+    }
+
+    mobileSidebarTouchStartRef.current = null;
+    mobileSidebarTouchCurrentRef.current = null;
+  };
+
   const handlePlayerPlaylistClick = (
     playlistId: number | null,
     playlistTitle: string | null,
@@ -999,6 +1042,39 @@ export default function Home() {
       pushTabState("profile");
     }
   };
+
+  const openHomepage = useCallback(() => {
+    setViewingHomepage(true);
+    setSelectedPlaylist(null);
+    setViewingLikes(false);
+    setViewingProfile(false);
+    setViewingArtist(false);
+    setViewingLibrary(false);
+    setSelectedArtist(null);
+    setUserProfile(null);
+    pushTabState("homepage");
+  }, []);
+
+  const openProfileView = useCallback(() => {
+    setViewingHomepage(false);
+    void handleProfileClick();
+  }, []);
+
+  const openLikesView = useCallback(() => {
+    setViewingHomepage(false);
+    void handleLikesClick();
+  }, []);
+
+  const openLibraryView = useCallback(() => {
+    setViewingHomepage(false);
+    void handleLibraryClick();
+  }, []);
+
+  const openNewReleasesView = useCallback(() => {
+    setViewingHomepage(false);
+    setSelectedPlaylist(null);
+    setViewingLikes(false);
+  }, []);
 
   const normalizeHistoryItems = (items: any[]) =>
     items.map((item: any) => ({
@@ -2520,6 +2596,7 @@ export default function Home() {
     if (!viewingProfile || !isAuthenticated) return;
 
     const refreshHistory = () => {
+      if (document.visibilityState !== "visible") return;
       void fetchListeningHistoryBackground(historyLimit);
     };
 
@@ -2531,7 +2608,7 @@ export default function Home() {
 
     window.addEventListener("focus", refreshHistory);
     document.addEventListener("visibilitychange", handleVisibility);
-    const interval = window.setInterval(refreshHistory, 60_000);
+    const interval = window.setInterval(refreshHistory, 5 * 60_000);
 
     return () => {
       window.removeEventListener("focus", refreshHistory);
@@ -3335,211 +3412,202 @@ export default function Home() {
       style={appShellStyle}
     >
       <aside
-        className={`sidebar ${sidebarExpanded ? "expanded" : "collapsed"}`}
+        className={`sidebar ${sidebarExpanded ? "expanded" : "collapsed"} ${isMobileViewport ? "sidebar-mobile-paged" : ""}`}
+        onTouchStart={isMobileViewport ? handleMobileSidebarTouchStart : undefined}
+        onTouchMove={isMobileViewport ? handleMobileSidebarTouchMove : undefined}
+        onTouchEnd={isMobileViewport ? handleMobileSidebarTouchEnd : undefined}
       >
-        <button
-          className="sidebar-toggle"
-          onClick={() => setSidebarExpanded(!sidebarExpanded)}
-        >
-          {sidebarExpanded ? "◀" : "▶"}
-        </button>
+        {!isMobileViewport ? (
+          <>
+            <button
+              className="sidebar-toggle"
+              onClick={() => setSidebarExpanded(!sidebarExpanded)}
+            >
+              {sidebarExpanded ? "◀" : "▶"}
+            </button>
 
-        <nav className="sidebar-nav">
-          <button
-            className="nav-item"
-            onClick={() => {
-              setViewingHomepage(true);
-              setSelectedPlaylist(null);
-              setViewingLikes(false);
-              setViewingProfile(false);
-              setViewingArtist(false);
-              setSelectedArtist(null);
-              setUserProfile(null);
-              pushTabState("homepage");
-            }}
-          >
-            <img
-              src="https://img.icons8.com/parakeet-line/50/home.png"
-              alt="Home"
-              className="nav-icon-img"
-              loading="lazy"
-              decoding="async"
-            />
-            {sidebarExpanded && <span className="nav-label">Home</span>}
-          </button>
+            <nav className="sidebar-nav">
+              <button
+                className="nav-item"
+                onClick={openHomepage}
+              >
+                <img
+                  src="https://img.icons8.com/parakeet-line/50/home.png"
+                  alt="Home"
+                  className="nav-icon-img"
+                  loading="lazy"
+                  decoding="async"
+                />
+                {sidebarExpanded && <span className="nav-label">Home</span>}
+              </button>
 
-          <button
-            className="nav-item"
-            onClick={() => {
-              setViewingHomepage(false);
-              handleProfileClick();
-            }}
-          >
-            <img
-              src="https://img.icons8.com/parakeet-line/48/person-male.png"
-              alt="Profile"
-              className="nav-icon-img"
-              loading="lazy"
-              decoding="async"
-            />
-            {sidebarExpanded && <span className="nav-label">Profile</span>}
-          </button>
+              <button
+                className="nav-item"
+                onClick={openProfileView}
+              >
+                <img
+                  src="https://img.icons8.com/parakeet-line/48/person-male.png"
+                  alt="Profile"
+                  className="nav-icon-img"
+                  loading="lazy"
+                  decoding="async"
+                />
+                {sidebarExpanded && <span className="nav-label">Profile</span>}
+              </button>
 
-          <button
-            className="nav-item"
-            onClick={() => {
-              setViewingHomepage(false);
-              handleLikesClick();
-            }}
-          >
-            <img
-              src="https://img.icons8.com/parakeet-line/48/like.png"
-              alt="Liked Songs"
-              className="nav-icon-img nav-icon-like"
-            />
-            {sidebarExpanded && <span className="nav-label">Liked Songs</span>}
-          </button>
+              <button
+                className="nav-item"
+                onClick={openLikesView}
+              >
+                <img
+                  src="https://img.icons8.com/parakeet-line/48/like.png"
+                  alt="Liked Songs"
+                  className="nav-icon-img nav-icon-like"
+                />
+                {sidebarExpanded && <span className="nav-label">Liked Songs</span>}
+              </button>
 
-          <button
-            className="nav-item"
-            onClick={() => {
-              setViewingHomepage(false);
-              handleLibraryClick();
-            }}
-          >
-            <img
-              src="https://img.icons8.com/parakeet-line/48/book.png"
-              alt="My Library"
-              className="nav-icon-img"
-              loading="lazy"
-              decoding="async"
-            />
-            {sidebarExpanded && <span className="nav-label">My Library</span>}
-          </button>
+              <button
+                className="nav-item"
+                onClick={openLibraryView}
+              >
+                <img
+                  src="https://img.icons8.com/parakeet-line/48/book.png"
+                  alt="My Library"
+                  className="nav-icon-img"
+                  loading="lazy"
+                  decoding="async"
+                />
+                {sidebarExpanded && <span className="nav-label">My Library</span>}
+              </button>
 
-          <button
-            className="nav-item"
-            onClick={() => {
-              setViewingHomepage(false);
-              setSelectedPlaylist(null);
-              setViewingLikes(false);
-            }}
-          >
-            <img
-              src="https://img.icons8.com/parakeet-line/48/calendar-1.png"
-              alt="Newly Released"
-              className="nav-icon-img"
-              loading="lazy"
-              decoding="async"
-            />
-            {sidebarExpanded && (
-              <span className="nav-label">Newly Released</span>
-            )}
-          </button>
-        </nav>
+              <button
+                className="nav-item"
+                onClick={openNewReleasesView}
+              >
+                <img
+                  src="https://img.icons8.com/parakeet-line/48/calendar-1.png"
+                  alt="Newly Released"
+                  className="nav-icon-img"
+                  loading="lazy"
+                  decoding="async"
+                />
+                {sidebarExpanded && (
+                  <span className="nav-label">Newly Released</span>
+                )}
+              </button>
+            </nav>
 
-        <div className="sidebar-divider" />
+            <div className="sidebar-divider" />
 
-        <div className="sidebar-playlists">
-          {sidebarExpanded && (
-            <div className="section-title">Recent Playlists</div>
-          )}
-          <div className="playlist-thumbs">
-            {playlists.length > 0 ? (
-              playlists.map((playlist) => (
-                <div
-                  key={playlist.id}
-                  className="playlist-item"
-                  onContextMenu={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    setSidebarPlaylistMenu({
-                      x: event.clientX,
-                      y: event.clientY,
-                      playlist,
-                    });
-                  }}
-                >
-                  <div
-                    className={`playlist-thumb-wrap ${
-                      isPlaylistPlaying(playlist.id) ? "playing" : ""
-                    }`}
-                  >
-                    <img
-                      src={getPlaylistCover(playlist)}
-                      alt={playlist.title}
-                      className="playlist-thumb"
-                      loading="lazy"
-                      decoding="async"
-                    />
-                    <button
-                      type="button"
-                      className={`sidebar-play-btn ${
-                        isPlaylistPlaying(playlist.id) ? "pause" : "play"
-                      }`}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        handleCardPlayClick(event, playlist, "search");
-                      }}
-                      aria-label={
-                        isPlaylistPlaying(playlist.id)
-                          ? `Pause ${playlist.title}`
-                          : `Play ${playlist.title}`
-                      }
-                    >
-                      {isPlaylistPlaying(playlist.id) ? (
-                        <svg
-                          width="18"
-                          height="18"
-                          viewBox="0 0 24 24"
-                          fill="currentColor"
-                        >
-                          <rect x="6" y="4" width="4" height="16" />
-                          <rect x="14" y="4" width="4" height="16" />
-                        </svg>
-                      ) : (
-                        <svg
-                          width="18"
-                          height="18"
-                          viewBox="0 0 24 24"
-                          fill="currentColor"
-                        >
-                          <polygon points="5 3 19 12 5 21 5 3" />
-                        </svg>
-                      )}
-                    </button>
-                  </div>
-                  {sidebarExpanded && (
+            <div className="sidebar-playlists">
+              {sidebarExpanded && (
+                <div className="section-title">Recent Playlists</div>
+              )}
+              <div className="playlist-thumbs">
+                {playlists.length > 0 ? (
+                  playlists.map((playlist) => (
                     <div
-                      className="playlist-title-sidebar"
-                      onClick={() => {
-                        setViewingHomepage(false);
-                        handlePlaylistClick(playlist);
+                      key={playlist.id}
+                      className="playlist-item"
+                      onContextMenu={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        setSidebarPlaylistMenu({
+                          x: event.clientX,
+                          y: event.clientY,
+                          playlist,
+                        });
                       }}
                     >
-                      {playlist.title}
+                      <div
+                        className={`playlist-thumb-wrap ${
+                          isPlaylistPlaying(playlist.id) ? "playing" : ""
+                        }`}
+                      >
+                        <img
+                          src={getPlaylistCover(playlist)}
+                          alt={playlist.title}
+                          className="playlist-thumb"
+                          loading="lazy"
+                          decoding="async"
+                        />
+                        <button
+                          type="button"
+                          className={`sidebar-play-btn ${
+                            isPlaylistPlaying(playlist.id) ? "pause" : "play"
+                          }`}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            handleCardPlayClick(event, playlist, "search");
+                          }}
+                          aria-label={
+                            isPlaylistPlaying(playlist.id)
+                              ? `Pause ${playlist.title}`
+                              : `Play ${playlist.title}`
+                          }
+                        >
+                          {isPlaylistPlaying(playlist.id) ? (
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                              <rect x="6" y="4" width="4" height="16" />
+                              <rect x="14" y="4" width="4" height="16" />
+                            </svg>
+                          ) : (
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                              <polygon points="5 3 19 12 5 21 5 3" />
+                            </svg>
+                          )}
+                        </button>
+                      </div>
+                      {sidebarExpanded && (
+                        <div
+                          className="playlist-title-sidebar"
+                          onClick={() => {
+                            setViewingHomepage(false);
+                            handlePlaylistClick(playlist);
+                          }}
+                        >
+                          {playlist.title}
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-              ))
-            ) : (
-              <div className="empty-state">
-                {sidebarExpanded ? "No playlists yet" : "-"}
+                  ))
+                ) : (
+                  <div className="empty-state">
+                    {sidebarExpanded ? "No playlists yet" : "-"}
+                  </div>
+                )}
               </div>
-            )}
-          </div>
-        </div>
+            </div>
 
-        <div className="sidebar-footer">
-          <button
-            type="button"
-            className="sidebar-logout-btn"
-            onClick={handleLogout}
-          >
-            {sidebarExpanded && <span className="nav-label">Log out</span>}
-            {!sidebarExpanded && <span aria-hidden="true">≋</span>}
-          </button>
-        </div>
+            <div className="sidebar-footer">
+              <button
+                type="button"
+                className="sidebar-logout-btn"
+                onClick={handleLogout}
+              >
+                {sidebarExpanded && <span className="nav-label">Log out</span>}
+                {!sidebarExpanded && <span aria-hidden="true">⎋</span>}
+              </button>
+            </div>
+          </>
+        ) : (
+          <MobileSidebar
+            mobileSidebarPage={mobileSidebarPage}
+            playlists={playlists}
+            onOpenHomepage={openHomepage}
+            onOpenProfile={openProfileView}
+            onOpenLikes={openLikesView}
+            onOpenLibrary={openLibraryView}
+            onOpenNewReleases={openNewReleasesView}
+            onOpenPlaylist={(playlist) => {
+              setViewingHomepage(false);
+              handlePlaylistClick(playlist);
+            }}
+            onLogout={handleLogout}
+            getPlaylistCover={getPlaylistCover}
+          />
+        )}
       </aside>
 
       <div className="titlebar">
@@ -3679,13 +3747,6 @@ export default function Home() {
             disabled={loading}
           >
             {loading ? "..." : "Search"}
-          </button>
-          <button
-            type="button"
-            className="mobile-logout-btn"
-            onClick={handleLogout}
-          >
-            Log out
           </button>
           {showSuggestions && query.trim().length > 0 && (
             <div className="search-suggestions">

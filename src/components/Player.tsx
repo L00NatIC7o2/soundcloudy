@@ -185,6 +185,12 @@ const Player = memo(function Player({
               track: remoteTrack,
               position: Number(remoteState.position) || 0,
               shouldPlay: false,
+              queueData: Array.isArray(remoteState.queueData) ? remoteState.queueData : null,
+              currentQueueIndex:
+                typeof remoteState.currentQueueIndex === "number"
+                  ? remoteState.currentQueueIndex
+                  : 0,
+              queueSource: remoteState.queueSource || "search-related",
             },
           }),
         );
@@ -299,6 +305,12 @@ const Player = memo(function Player({
                     track: command.track,
                     position: Number(command.position) || 0,
                     shouldPlay: command.shouldPlay !== false,
+                    queueData: Array.isArray(command.queueData) ? command.queueData : null,
+                    currentQueueIndex:
+                      typeof command.currentQueueIndex === "number"
+                        ? command.currentQueueIndex
+                        : 0,
+                    queueSource: command.queueSource || "search-related",
                   },
                 }),
               );
@@ -380,6 +392,11 @@ const Player = memo(function Player({
   const [mobileVisibleCommentsCount, setMobileVisibleCommentsCount] = useState(5);
   const lastBackClickRef = useRef<number>(0);
   const lastRemoteSyncRef = useRef<number>(0);
+  const lastEmittedPlaybackRef = useRef<{
+    trackId: number | null;
+    playing: boolean;
+    roundedPosition: number;
+  } | null>(null);
   const pendingRemoteSeekRef = useRef<number | null>(null);
   const mobileTitleRef = useRef<HTMLDivElement>(null);
   const mobileTitleSpanRef = useRef<HTMLSpanElement>(null);
@@ -920,6 +937,9 @@ const Player = memo(function Player({
       position,
       shouldPlay,
       sourceDeviceId: deviceId,
+      queueData: queue,
+      currentQueueIndex,
+      queueSource,
     });
 
     setPlaybackOwnerDeviceId(targetDeviceId);
@@ -991,8 +1011,28 @@ const Player = memo(function Player({
     const passiveOwner =
       playbackOwnerRef.current && playbackOwnerRef.current !== deviceId;
     if (passiveOwner || now < suppressRemoteEchoUntilRef.current) return;
-    if (!force && now - lastRemoteSyncRef.current < 700) return;
+    const currentPosition = audioRef.current?.currentTime || 0;
+    const roundedPosition = Math.floor(currentPosition);
+    const nextSnapshot = {
+      trackId: currentTrack.id ?? null,
+      playing: Boolean(isPlaying),
+      roundedPosition,
+    };
+
+    if (
+      !force &&
+      lastEmittedPlaybackRef.current &&
+      lastEmittedPlaybackRef.current.trackId === nextSnapshot.trackId &&
+      lastEmittedPlaybackRef.current.playing === nextSnapshot.playing &&
+      lastEmittedPlaybackRef.current.roundedPosition ===
+        nextSnapshot.roundedPosition
+    ) {
+      return;
+    }
+
+    if (!force && now - lastRemoteSyncRef.current < 900) return;
     lastRemoteSyncRef.current = now;
+    lastEmittedPlaybackRef.current = nextSnapshot;
     setPlaybackOwnerDeviceId(deviceId);
 
     console.log("[player-sync] emit playback-update", {
@@ -1001,7 +1041,7 @@ const Player = memo(function Player({
       trackId: currentTrack.id,
       playing: isPlaying,
       force,
-      position: Math.round(audioRef.current?.currentTime || 0),
+      position: Math.round(currentPosition),
     });
 
     socket.emit("playback-update", {
@@ -1013,9 +1053,12 @@ const Player = memo(function Player({
         artist: currentTrack.user?.username || "Unknown",
         artwork: getTrackArtwork(currentTrack),
         trackData: currentTrack,
-        position: audioRef.current?.currentTime || 0,
+        position: currentPosition,
         duration: audioRef.current?.duration || currentTrack.duration || 0,
         playing: isPlaying,
+        queueData: queue,
+        currentQueueIndex,
+        queueSource,
       },
     });
   };
@@ -1058,7 +1101,7 @@ const Player = memo(function Player({
     if (!socket || !currentTrack || !isPlaying) return;
     const interval = window.setInterval(() => {
       emitPlaybackState();
-    }, 1000);
+    }, 2500);
     return () => window.clearInterval(interval);
   }, [socket, currentTrack?.id, isPlaying, syncRoomId]);
 
@@ -1179,11 +1222,27 @@ const Player = memo(function Player({
     const passiveOwner =
       playbackOwnerRef.current && playbackOwnerRef.current !== deviceId;
     if (passiveOwner) {
+      const commandSource =
+        kind === "history" ? "search-related" : queueSource === "playlist" ? "playlist" : "search-related";
+      const commandIndex =
+        kind === "history"
+          ? listeningHistory.findIndex((item) => item?.id === track.id)
+          : queueItems.findIndex((item) => item?.id === track.id);
+      const commandQueue =
+        kind === "history"
+          ? listeningHistory
+          : commandIndex > -1
+            ? queueItems.slice(commandIndex)
+            : queueItems;
+
       sendRemoteCommand({
         type: "load-track",
         track,
         position: 0,
         shouldPlay: true,
+        queueData: commandQueue,
+        currentQueueIndex: 0,
+        queueSource: commandSource,
       });
       return;
     }
