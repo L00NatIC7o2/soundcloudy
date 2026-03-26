@@ -75,6 +75,8 @@ export default function Home() {
   const [historyLimit, setHistoryLimit] = useState(100);
   const [historyHasMore, setHistoryHasMore] = useState(false);
   const [historyLoadingMore, setHistoryLoadingMore] = useState(false);
+  const historyRefreshInFlightRef = useRef(false);
+  const lastHistoryRefreshAtRef = useRef(0);
   const [viewingArtist, setViewingArtist] = useState(false);
   const [selectedArtist, setSelectedArtist] = useState<any>(null);
   const [artistTracks, setArtistTracks] = useState<any[]>([]);
@@ -1099,13 +1101,20 @@ export default function Home() {
   );
 
   const fetchListeningHistoryBackground = async (limit = historyLimit) => {
+    const now = Date.now();
+    const hasExistingHistory = listeningHistory.length > 0;
+    if (historyRefreshInFlightRef.current) return;
+    if (hasExistingHistory && now - lastHistoryRefreshAtRef.current < 15000) return;
+
+    historyRefreshInFlightRef.current = true;
+    lastHistoryRefreshAtRef.current = now;
+
     try {
-      const shouldShowInitialLoading = listeningHistory.length === 0;
+      const shouldShowInitialLoading = !hasExistingHistory;
       if (shouldShowInitialLoading) {
         setHistoryLoading(true);
       }
       setHistoryError(null);
-      await fetch("/api/auth/check");
       const result = await fetchListeningHistoryItems(limit);
       setListeningHistory((prev) => mergeHistoryItems([...result.items, ...prev]));
       setHistoryHasMore(result.canLoadMore || result.items.length >= limit);
@@ -1115,11 +1124,8 @@ export default function Home() {
       setHistoryError("Unable to fetch listening history.");
       setHistoryHasMore(false);
     } finally {
-      if (listeningHistory.length === 0) {
-        setHistoryLoading(false);
-      } else {
-        setHistoryLoading(false);
-      }
+      historyRefreshInFlightRef.current = false;
+      setHistoryLoading(false);
     }
   };
 

@@ -911,18 +911,48 @@ const Player = memo(function Player({
     if (!socket || !syncRoomId || !targetDeviceId) return;
     const position = audioRef.current?.currentTime || currentTime || 0;
     const shouldPlay = Boolean(isPlaying || playbackOwnerRef.current === deviceId);
+    const targetTrack = currentTrackRef.current || currentTrack;
+
     sendRemoteCommand({
       type: "claim-output",
       deviceId: targetDeviceId,
-      track: currentTrackRef.current || currentTrack,
+      track: targetTrack,
       position,
       shouldPlay,
       sourceDeviceId: deviceId,
     });
+
     setPlaybackOwnerDeviceId(targetDeviceId);
-    if (targetDeviceId !== deviceId && audioRef.current) {
+
+    if (targetDeviceId === deviceId) {
+      suppressRemoteEchoUntilRef.current = Date.now() + 1500;
+      if (targetTrack) {
+        window.dispatchEvent(
+          new CustomEvent("remote-load-track", {
+            detail: {
+              track: targetTrack,
+              position,
+              shouldPlay,
+            },
+          }),
+        );
+      } else if (audioRef.current) {
+        audioRef.current.currentTime = position;
+        if (shouldPlay) {
+          void audioRef.current.play().catch((error) => {
+            if (error?.name === "NotAllowedError") {
+              console.warn("Tap play on this device to finish switching output.");
+              setIsPlaying(false);
+              return;
+            }
+            console.error("Claim playback error:", error);
+          });
+        }
+      }
+    } else if (audioRef.current) {
       audioRef.current.pause();
     }
+
     setIsDeviceMenuOpen(false);
     setIsMobileDeviceSheetOpen(false);
   };
