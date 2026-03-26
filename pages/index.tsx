@@ -82,6 +82,7 @@ export default function Home() {
   const [artistAlbums, setArtistAlbums] = useState<any[]>([]);
   const [artistReposts, setArtistReposts] = useState<any[]>([]);
   const [viewingTrack, setViewingTrack] = useState(false);
+  const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [selectedTrack, setSelectedTrack] = useState<any>(null);
   const [trackPanelMinimized, setTrackPanelMinimized] = useState(false);
   const [trackPanelState, setTrackPanelState] = useState<
@@ -633,8 +634,28 @@ export default function Home() {
     return item;
   };
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const updateViewport = () => {
+      setIsMobileViewport(window.innerWidth <= 900);
+    };
+
+    updateViewport();
+    window.addEventListener("resize", updateViewport);
+    return () => window.removeEventListener("resize", updateViewport);
+  }, []);
+
   const handleTrackPageOpen = (track: any, _skipHistory = false) => {
     if (!track) return;
+    if (typeof window !== "undefined" && window.innerWidth <= 900) {
+      clearTrackPanelTimer();
+      setTrackPanelMinimized(false);
+      setViewingTrack(false);
+      setSelectedTrack(null);
+      setTrackPanelState("open");
+      return;
+    }
     const wasMinimized = trackPanelMinimized || trackPanelState === "minimized";
     const wasClosed = !viewingTrack;
     clearTrackPanelTimer();
@@ -5236,7 +5257,7 @@ export default function Home() {
         }
       />
 
-      {viewingTrack && trackPanelMinimized && selectedTrack ? (
+      {!isMobileViewport && viewingTrack && trackPanelMinimized && selectedTrack ? (
         <button
           className="track-panel-restore"
           onClick={() => {
@@ -5260,7 +5281,7 @@ export default function Home() {
         </button>
       ) : null}
 
-      {viewingTrack && !trackPanelMinimized && selectedTrack ? (
+      {!isMobileViewport && viewingTrack && !trackPanelMinimized && selectedTrack ? (
         <TrackDetailView
           track={selectedTrack}
           panelState={trackPanelState}

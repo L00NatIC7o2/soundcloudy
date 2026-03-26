@@ -72,8 +72,21 @@ const Player = memo(function Player({
           return id;
         })()
       : "";
+  const userAgent = typeof navigator !== "undefined" ? navigator.userAgent : "";
+  const isMobileDevice = /iphone|ipad|android|mobile/i.test(userAgent);
+  const deviceKind = isMobileDevice ? "mobile" : "desktop";
+  const devicePlatform = /iphone|ipad/i.test(userAgent)
+    ? "ios"
+    : /android/i.test(userAgent)
+      ? "android"
+      : isMobileDevice
+        ? "mobile-web"
+        : "desktop-web";
   const [socket, setSocket] = useState<Socket | null>(null);
   const [playbackOwnerDeviceId, setPlaybackOwnerDeviceId] = useState<string | null>(null);
+  const [availableDevices, setAvailableDevices] = useState<any[]>([]);
+  const [isDeviceMenuOpen, setIsDeviceMenuOpen] = useState(false);
+  const [isMobileDeviceSheetOpen, setIsMobileDeviceSheetOpen] = useState(false);
   const currentTrackRef = useRef<any>(null);
   const playbackOwnerRef = useRef<string | null>(null);
   const syncRoomRetryRef = useRef<number | null>(null);
@@ -202,14 +215,25 @@ const Player = memo(function Player({
       });
       s.emit(
         "join",
-        { roomId: syncRoomId, deviceId },
-        (ack?: { playbackState?: any }) => {
+        {
+          roomId: syncRoomId,
+          deviceId,
+          deviceMeta: {
+            kind: deviceKind,
+            platform: devicePlatform,
+            label: isMobileDevice ? "This Device" : "This Computer",
+          },
+        },
+        (ack?: { playbackState?: any; devices?: any[] }) => {
           console.log("[player-sync] join ack", {
             roomId: syncRoomId,
             deviceId,
             hasPlaybackState: Boolean(ack?.playbackState),
             playbackTrackId: ack?.playbackState?.trackId || null,
           });
+          if (Array.isArray(ack?.devices)) {
+            setAvailableDevices(ack.devices);
+          }
           if (ack?.playbackState) {
             syncRemotePlayback(ack.playbackState);
           }
@@ -234,6 +258,19 @@ const Player = memo(function Player({
       });
     });
 
+    s.on("devices-update", (payload) => {
+      setAvailableDevices(Array.isArray(payload?.devices) ? payload.devices : []);
+      if (typeof payload?.activeDeviceId === "string") {
+        setPlaybackOwnerDeviceId(payload.activeDeviceId);
+      }
+      console.log("[player-sync] received devices-update", {
+        roomId: syncRoomId,
+        deviceId,
+        activeDeviceId: payload?.activeDeviceId || null,
+        count: Array.isArray(payload?.devices) ? payload.devices.length : 0,
+      });
+    });
+
     s.on("playback-update", (remoteState) => {
       console.log("[player-sync] received playback-update", {
         roomId: syncRoomId,
@@ -251,6 +288,36 @@ const Player = memo(function Player({
         command,
       });
       if (command && typeof command === "object") {
+        if (command.type === "claim-output" && command.deviceId) {
+          setPlaybackOwnerDeviceId(command.deviceId);
+
+          if (command.deviceId === deviceId) {
+            if (command.track) {
+              window.dispatchEvent(
+                new CustomEvent("remote-load-track", {
+                  detail: {
+                    track: command.track,
+                    position: Number(command.position) || 0,
+                    shouldPlay: command.shouldPlay !== false,
+                  },
+                }),
+              );
+            } else if (audioRef.current) {
+              audioRef.current.currentTime = Number(command.position) || 0;
+              if (command.shouldPlay !== false) {
+                void audioRef.current.play().catch(() => {});
+                setIsPlaying(true);
+              } else {
+                audioRef.current.pause();
+                setIsPlaying(false);
+              }
+            }
+          } else if (audioRef.current) {
+            audioRef.current.pause();
+          }
+          return;
+        }
+
         if (command.type === "load-track" && command.track) {
           window.dispatchEvent(
             new CustomEvent("remote-load-track", {
@@ -805,6 +872,42 @@ const Player = memo(function Player({
     }
   };
 
+  const describeDevice = (device: any) => {
+    if (!device) return "Unknown device";
+    if (device.deviceId === deviceId) {
+      return isMobileDevice ? "This Device" : "This Computer";
+    }
+    if (device.kind === "mobile") {
+      if (device.platform === "ios") return "Mobile (iOS)";
+      if (device.platform === "android") return "Mobile (Android)";
+      return "Mobile";
+    }
+    if (device.kind === "desktop") {
+      return "Desktop";
+    }
+    return "Web Player";
+  };
+
+  const claimPlaybackOutput = (targetDeviceId: string) => {
+    if (!socket || !syncRoomId || !targetDeviceId) return;
+    const position = audioRef.current?.currentTime || currentTime || 0;
+    const shouldPlay = Boolean(isPlaying || playbackOwnerRef.current === deviceId);
+    sendRemoteCommand({
+      type: "claim-output",
+      deviceId: targetDeviceId,
+      track: currentTrackRef.current || currentTrack,
+      position,
+      shouldPlay,
+      sourceDeviceId: deviceId,
+    });
+    setPlaybackOwnerDeviceId(targetDeviceId);
+    if (targetDeviceId !== deviceId && audioRef.current) {
+      audioRef.current.pause();
+    }
+    setIsDeviceMenuOpen(false);
+    setIsMobileDeviceSheetOpen(false);
+  };
+
   const sendRemoteCommand = (command: any) => {
     if (!socket || !syncRoomId) return false;
     socket.emit("remote-command", {
@@ -1267,6 +1370,19 @@ const Player = memo(function Player({
                 </button>
                 <button
                   type="button"
+                  className={`player-device-btn ${isDeviceMenuOpen ? "open" : ""}`}
+                  onClick={() => setIsDeviceMenuOpen((open) => !open)}
+                  title="Choose listening device"
+                  aria-label="Choose listening device"
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="5" width="13" height="10" rx="2" />
+                    <path d="M8 19h12a1 1 0 0 0 1-1v-7" />
+                    <path d="M8 19l-2 2" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
                   className={`player-queue-btn ${isQueuePanelOpen ? "open" : ""}`}
                   onClick={() => setIsQueuePanelOpen((open) => !open)}
                   title="Queue"
@@ -1314,6 +1430,30 @@ const Player = memo(function Player({
               onClose={() => setIsPlaylistMenuOpen(false)}
               playlistsWithTrack={playlistsWithTrack}
             />
+            {isDeviceMenuOpen ? (
+              <div className="player-device-menu">
+                <div className="player-device-menu-title">Listen On</div>
+                <div className="player-device-menu-list">
+                  {availableDevices.map((device) => {
+                    const isActive = device?.deviceId === playbackOwnerDeviceId;
+                    const isCurrentDevice = device?.deviceId === deviceId;
+                    return (
+                      <button
+                        key={device?.socketId || device?.deviceId}
+                        type="button"
+                        className={`player-device-menu-item ${isActive ? "active" : ""}`}
+                        onClick={() => claimPlaybackOutput(device.deviceId)}
+                      >
+                        <span>{describeDevice(device)}</span>
+                        <span className="player-device-menu-meta">
+                          {isActive ? (isCurrentDevice ? "Listening here" : "Listening there") : isCurrentDevice ? "This device" : "Available"}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
           </div>
 
           <div className="player-center">
@@ -1728,6 +1868,18 @@ const Player = memo(function Player({
                     </button>
                   </div>
                   <div className="mobile-player-sheet-actions-right">
+                    <button
+                      type="button"
+                      className="mobile-player-icon-btn mobile-device-btn"
+                      onClick={() => setIsMobileDeviceSheetOpen(true)}
+                      aria-label="Choose listening device"
+                    >
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="3" y="5" width="13" height="10" rx="2" />
+                        <path d="M8 19h12a1 1 0 0 0 1-1v-7" />
+                        <path d="M8 19l-2 2" />
+                      </svg>
+                    </button>
                     <div className="mobile-player-sheet-playlist-wrap">
                       <button
                         type="button"
@@ -1990,6 +2142,46 @@ const Player = memo(function Player({
         onClose={() => setIsMobilePlaylistSheetOpen(false)}
         playlistsWithTrack={playlistsWithTrack}
       />
+      <div
+        className={`mobile-device-sheet ${isMobileDeviceSheetOpen ? "open" : ""}`}
+        onClick={() => setIsMobileDeviceSheetOpen(false)}
+      >
+        <div className="mobile-device-sheet-panel" onClick={(event) => event.stopPropagation()}>
+          <div className="mobile-player-sheet-handle" />
+          <div className="mobile-device-sheet-header">
+            <div className="mobile-device-sheet-title">Listen On</div>
+            <button
+              type="button"
+              className="mobile-player-minimize"
+              onClick={() => setIsMobileDeviceSheetOpen(false)}
+              aria-label="Close device menu"
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+              </svg>
+            </button>
+          </div>
+          <div className="mobile-device-sheet-list">
+            {availableDevices.map((device) => {
+              const isActive = device?.deviceId === playbackOwnerDeviceId;
+              const isCurrentDevice = device?.deviceId === deviceId;
+              return (
+                <button
+                  key={device?.socketId || device?.deviceId}
+                  type="button"
+                  className={`mobile-device-sheet-item ${isActive ? "active" : ""}`}
+                  onClick={() => claimPlaybackOutput(device.deviceId)}
+                >
+                  <span className="mobile-device-sheet-name">{describeDevice(device)}</span>
+                  <span className="mobile-device-sheet-meta">
+                    {isActive ? (isCurrentDevice ? "Listening on this device" : "Listening on that device") : isCurrentDevice ? "This device" : "Available"}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
     </>
   );
 });

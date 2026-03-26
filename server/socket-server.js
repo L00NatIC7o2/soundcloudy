@@ -3,6 +3,18 @@ import { Server } from "socket.io";
 const port = Number(process.env.PORT || 3001);
 const io = new Server(port, { cors: { origin: "*" } });
 const playbackByRoom = new Map();
+const roomDevices = new Map();
+
+function getRoomDeviceList(roomId) {
+  return Array.from(roomDevices.get(roomId)?.values() || []);
+}
+
+function broadcastDevices(roomId) {
+  io.to(roomId).emit("devices-update", {
+    devices: getRoomDeviceList(roomId),
+    activeDeviceId: playbackByRoom.get(roomId)?.deviceId || null,
+  });
+}
 
 io.on("connection", (socket) => {
   console.log("[socket] client connected", socket.id);
@@ -18,6 +30,10 @@ io.on("connection", (socket) => {
       typeof payload === "object" && typeof payload?.deviceId === "string"
         ? payload.deviceId
         : null;
+    const deviceMeta =
+      typeof payload === "object" && payload?.deviceMeta && typeof payload.deviceMeta === "object"
+        ? payload.deviceMeta
+        : {};
 
     if (!roomId) {
       if (typeof ack === "function") {
@@ -28,7 +44,19 @@ io.on("connection", (socket) => {
 
     socket.data.roomId = roomId;
     socket.data.deviceId = deviceId;
+    socket.data.deviceMeta = deviceMeta;
     socket.join(roomId);
+
+    const devices = roomDevices.get(roomId) || new Map();
+    devices.set(socket.id, {
+      socketId: socket.id,
+      deviceId: deviceId || socket.id,
+      kind: typeof deviceMeta?.kind === "string" ? deviceMeta.kind : "web",
+      platform: typeof deviceMeta?.platform === "string" ? deviceMeta.platform : "unknown",
+      label: typeof deviceMeta?.label === "string" ? deviceMeta.label : null,
+      isCurrent: false,
+    });
+    roomDevices.set(roomId, devices);
     console.log("[socket] join", {
       socketId: socket.id,
       roomId,
@@ -41,8 +69,11 @@ io.on("connection", (socket) => {
         ok: true,
         roomId,
         playbackState: playbackByRoom.get(roomId) || null,
+        devices: getRoomDeviceList(roomId),
       });
     }
+
+    broadcastDevices(roomId);
   });
 
   socket.on("playback-update", ({ userId, deviceId, state }) => {
@@ -66,6 +97,7 @@ io.on("connection", (socket) => {
     }
     if (roomId && nextState) {
       socket.to(roomId).emit("playback-update", nextState);
+      broadcastDevices(roomId);
     }
   });
 
@@ -82,9 +114,21 @@ io.on("connection", (socket) => {
   });
 
   socket.on("disconnect", (reason) => {
+    const roomId = socket.data.roomId || null;
+    if (roomId && roomDevices.has(roomId)) {
+      const devices = roomDevices.get(roomId);
+      devices.delete(socket.id);
+      if (devices.size === 0) {
+        roomDevices.delete(roomId);
+      } else {
+        roomDevices.set(roomId, devices);
+      }
+      broadcastDevices(roomId);
+    }
+
     console.log("[socket] disconnect", {
       socketId: socket.id,
-      roomId: socket.data.roomId || null,
+      roomId,
       deviceId: socket.data.deviceId || null,
       reason,
     });
