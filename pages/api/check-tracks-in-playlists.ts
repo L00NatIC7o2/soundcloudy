@@ -68,10 +68,19 @@ export default async function handler(
   }
 
   try {
+    const meResponse = await axios.get("https://api.soundcloud.com/me", {
+      headers: { Authorization: `OAuth ${token}` },
+      timeout: 10000,
+    });
+    const currentUserId = Number(meResponse.data?.id);
+
     const playlists = await fetchPaginatedCollection(
       "https://api.soundcloud.com/me/playlists",
       token,
       100,
+    );
+    const ownedPlaylists = playlists.filter(
+      (playlist: any) => Number(playlist?.user?.id) === currentUserId,
     );
     const targetIds = new Set(trackIds);
     const memberships: MembershipMap = {};
@@ -80,7 +89,7 @@ export default async function handler(
       memberships[trackId] = [];
     }
 
-    for (const playlist of playlists) {
+    for (const playlist of ownedPlaylists) {
       try {
         const tracks = await fetchPaginatedCollection(
           `https://api.soundcloud.com/playlists/${playlist.id}/tracks`,

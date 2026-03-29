@@ -44,6 +44,10 @@ const PlaylistMenu = memo(function PlaylistMenu({
   useEffect(() => {
     setLocalPlaylistsWithTrack(playlistsWithTrack);
   }, [playlistsWithTrack]);
+
+  useEffect(() => {
+    setLocalPlaylistsWithTrack([]);
+  }, [trackId]);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {

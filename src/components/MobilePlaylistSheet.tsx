@@ -45,6 +45,10 @@ const MobilePlaylistSheet = memo(function MobilePlaylistSheet({
   }, [playlistsWithTrack]);
 
   useEffect(() => {
+    setLocalPlaylistsWithTrack([]);
+  }, [trackId]);
+
+  useEffect(() => {
     if (!isOpen) return;
     void fetchPlaylists();
   }, [isOpen]);

@@ -37,6 +37,47 @@ interface PlayerProps {
   onShuffleChange?: (shuffle: boolean) => void;
 }
 
+type PlayerSidebarTab = "queue" | "friends" | "now-playing";
+
+type FriendActivity = {
+  id: string;
+  userId?: number;
+  name: string;
+  avatarUrl?: string | null;
+  permalink?: string | null;
+  visibility: "online";
+  online: boolean;
+  updatedAt?: number | null;
+  lastTrack?: {
+    title: string;
+    artist?: string | null;
+    artwork?: string | null;
+  } | null;
+  currentTrack?: {
+    title: string;
+    artist?: string | null;
+    artwork?: string | null;
+  } | null;
+};
+
+type FriendRequestSummary = {
+  userId: number;
+  name: string;
+  avatarUrl?: string | null;
+  permalink?: string | null;
+  createdAt?: number | null;
+  status?: "incoming" | "outgoing" | null;
+};
+
+type FriendSearchResult = {
+  userId: number;
+  name: string;
+  avatarUrl?: string | null;
+  permalink?: string | null;
+  friendCode?: string | null;
+  status: "self" | "none" | "incoming" | "outgoing" | "friends";
+};
+
 const Player = memo(function Player({
   currentTrack,
   onTrackEnd,
@@ -371,6 +412,14 @@ const Player = memo(function Player({
   const [loading, setLoading] = useState(false);
   const [isPlaylistMenuOpen, setIsPlaylistMenuOpen] = useState(false);
   const [isQueuePanelOpen, setIsQueuePanelOpen] = useState(false);
+  const [activeSidebarTab, setActiveSidebarTab] =
+    useState<PlayerSidebarTab>("queue");
+  const [queuePanelWidth, setQueuePanelWidth] = useState(() => {
+    if (typeof window === "undefined") return 320;
+    const stored = Number(window.localStorage.getItem("soundcloudy_queue_panel_width"));
+    return Number.isFinite(stored) && stored >= 280 && stored <= 640 ? stored : 320;
+  });
+  const [isQueueResizing, setIsQueueResizing] = useState(false);
   const [isMobilePlayerOpen, setIsMobilePlayerOpen] = useState(false);
   const [isMobilePlaylistSheetOpen, setIsMobilePlaylistSheetOpen] =
     useState(false);
@@ -381,6 +430,9 @@ const Player = memo(function Player({
   const [isVolumePopoverOpen, setIsVolumePopoverOpen] = useState(false);
   const [playlistsWithTrack, setPlaylistsWithTrack] = useState<number[]>([]);
   const [isInAnyPlaylist, setIsInAnyPlaylist] = useState(false);
+  const [isFollowingCurrentArtist, setIsFollowingCurrentArtist] = useState(false);
+  const [checkingCurrentArtistFollow, setCheckingCurrentArtistFollow] =
+    useState(false);
   const [mobileTrackDetails, setMobileTrackDetails] = useState<TrackDetails | null>(
     null,
   );
@@ -404,7 +456,33 @@ const Player = memo(function Player({
   const mobileSheetTouchCurrentRef = useRef<number | null>(null);
   const mobileTrackPageRef = useRef<HTMLDivElement | null>(null);
   const queueCurrentTrackRef = useRef<HTMLDivElement | null>(null);
+  const queueNowPlayingSectionRef = useRef<HTMLElement | null>(null);
   const queueListRef = useRef<HTMLDivElement | null>(null);
+  const queueResizeStartXRef = useRef<number | null>(null);
+  const queueResizeStartWidthRef = useRef<number>(320);
+  const queuePullTabStartXRef = useRef<number | null>(null);
+  const queuePullTabDraggedRef = useRef(false);
+  const playlistMembershipRequestRef = useRef(0);
+  const [friendActivity, setFriendActivity] = useState<FriendActivity[]>([]);
+  const [incomingFriendRequests, setIncomingFriendRequests] = useState<
+    FriendRequestSummary[]
+  >([]);
+  const [outgoingFriendRequests, setOutgoingFriendRequests] = useState<
+    FriendRequestSummary[]
+  >([]);
+  const [friendPrivacy, setFriendPrivacy] = useState({
+    appearOffline: false,
+    shareListeningActivity: true,
+  });
+  const [friendsLoading, setFriendsLoading] = useState(false);
+  const [friendCode, setFriendCode] = useState("");
+  const [friendSearchQuery, setFriendSearchQuery] = useState("");
+  const [friendSearchResults, setFriendSearchResults] = useState<
+    FriendSearchResult[]
+  >([]);
+  const [friendSearchLoading, setFriendSearchLoading] = useState(false);
+  const [friendSearchError, setFriendSearchError] = useState("");
+  const [friendCodeCopied, setFriendCodeCopied] = useState(false);
 
   useEffect(() => {
     if (!isMobilePlayerOpen) {
@@ -433,42 +511,228 @@ const Player = memo(function Player({
 
   useEffect(() => {
     if (!isQueuePanelOpen) return;
+    if (activeSidebarTab !== "queue") return;
+    const frame = window.requestAnimationFrame(() => {
+      const list = queueListRef.current;
+      const nowPlayingSection = queueNowPlayingSectionRef.current;
+      if (!list || !nowPlayingSection) return;
 
-    const handlePointerDown = (event: MouseEvent) => {
-      const target = event.target as HTMLElement | null;
-      if (!target) return;
-      if (
-        target.closest(".player-queue-panel") ||
-        target.closest(".player-queue-btn") ||
-        target.closest(".player-bar")
-      ) {
-        return;
-      }
-      setIsQueuePanelOpen(false);
-    };
-
-    document.addEventListener("mousedown", handlePointerDown);
-    return () => {
-      document.removeEventListener("mousedown", handlePointerDown);
-    };
-  }, [isQueuePanelOpen]);
+      const listTop = list.getBoundingClientRect().top;
+      const sectionTop = nowPlayingSection.getBoundingClientRect().top;
+      const nextScrollTop = Math.max(
+        list.scrollTop + (sectionTop - listTop),
+        0,
+      );
+      list.scrollTop = nextScrollTop;
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [isQueuePanelOpen, activeSidebarTab, currentTrack?.id, currentQueueIndex, queue.length]);
 
   useEffect(() => {
     if (!isQueuePanelOpen) return;
+    if (activeSidebarTab !== "now-playing") return;
     const frame = window.requestAnimationFrame(() => {
-      queueCurrentTrackRef.current?.scrollIntoView({
-        block: "center",
-        behavior: "auto",
-      });
+      if (queueListRef.current) {
+        queueListRef.current.scrollTop = 0;
+      }
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [
-    isQueuePanelOpen,
-    currentTrack?.id,
-    currentQueueIndex,
-    queue.length,
-    listeningHistory.length,
-  ]);
+  }, [isQueuePanelOpen, activeSidebarTab, currentTrack?.id]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    let cancelled = false;
+
+    const loadFriends = async () => {
+      if (!cancelled) {
+        setFriendsLoading(true);
+      }
+      try {
+        if (cancelled) return;
+        await reloadFriendState();
+      } catch (error) {
+        if (cancelled) return;
+        console.error("Failed to load friends:", error);
+        setFriendActivity([]);
+        setIncomingFriendRequests([]);
+        setOutgoingFriendRequests([]);
+        setFriendCode("");
+      } finally {
+        if (!cancelled) {
+          setFriendsLoading(false);
+        }
+      }
+    };
+
+    void loadFriends();
+
+    if (activeSidebarTab !== "friends") {
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    const intervalId = window.setInterval(() => {
+      void loadFriends();
+    }, 15000);
+
+    const handleFocus = () => {
+      void loadFriends();
+    };
+
+    window.addEventListener("focus", handleFocus);
+    document.addEventListener("visibilitychange", handleFocus);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", handleFocus);
+      document.removeEventListener("visibilitychange", handleFocus);
+    };
+  }, [activeSidebarTab]);
+
+  useEffect(() => {
+    if (activeSidebarTab !== "friends") return;
+
+    const trimmed = friendSearchQuery.trim();
+    if (!trimmed) {
+      setFriendSearchResults([]);
+      setFriendSearchError("");
+      setFriendSearchLoading(false);
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      void refreshFriendSearch(trimmed);
+    }, 220);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [activeSidebarTab, friendSearchQuery]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const sendPresence = (online = document.visibilityState !== "hidden") => {
+      void fetch("/api/friends/presence", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          online,
+          isPlaying,
+          track:
+            online && isPlaying && currentTrack?.id
+              ? {
+                  id: currentTrack.id,
+                  title: currentTrack.title,
+                  artist: currentTrack.user?.username || "Unknown",
+                  artwork: getTrackArtwork(currentTrack),
+                }
+              : null,
+        }),
+      }).catch(() => {});
+    };
+
+    sendPresence();
+    const intervalId = window.setInterval(sendPresence, 30000);
+    const handleVisibilityChange = () => {
+      sendPresence(document.visibilityState !== "hidden");
+    };
+    const handleBeforeUnload = () => {
+      sendPresence(false);
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("beforeunload", handleBeforeUnload);
+
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+    };
+  }, [currentTrack?.id, isPlaying]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(
+      "soundcloudy_queue_panel_width",
+      String(Math.round(queuePanelWidth)),
+    );
+  }, [queuePanelWidth]);
+
+  useEffect(() => {
+    if (!isQueuePanelOpen || typeof window === "undefined") return;
+
+    const syncQueueWidthWithTrackPanel = () => {
+      const panel = document.querySelector(".track-panel-shell") as HTMLElement | null;
+      if (!panel) return;
+
+      const rect = panel.getBoundingClientRect();
+      const availableWidth = Math.floor(window.innerWidth - rect.right - 20);
+      if (availableWidth <= 0) return;
+
+      const snappedWidth = Math.min(640, Math.max(280, availableWidth));
+      if (queuePanelWidth > snappedWidth) {
+        setQueuePanelWidth(snappedWidth);
+      }
+    };
+
+    const observer = new MutationObserver(() => {
+      syncQueueWidthWithTrackPanel();
+    });
+
+    syncQueueWidthWithTrackPanel();
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["class"],
+    });
+    window.addEventListener("resize", syncQueueWidthWithTrackPanel);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", syncQueueWidthWithTrackPanel);
+    };
+  }, [isQueuePanelOpen, queuePanelWidth]);
+
+  useEffect(() => {
+    if (!isQueueResizing) return;
+
+    const handlePointerMove = (event: PointerEvent) => {
+      if (queueResizeStartXRef.current === null) return;
+      if (
+        queuePullTabStartXRef.current !== null &&
+        Math.abs(event.clientX - queuePullTabStartXRef.current) > 4
+      ) {
+        queuePullTabDraggedRef.current = true;
+      }
+      const delta = queueResizeStartXRef.current - event.clientX;
+      const viewportWidth = window.innerWidth;
+      const maxWidth = Math.min(640, Math.max(320, viewportWidth - 24));
+      const nextWidth = Math.min(
+        maxWidth,
+        Math.max(280, queueResizeStartWidthRef.current + delta),
+      );
+      setQueuePanelWidth(nextWidth);
+    };
+
+    const handlePointerUp = () => {
+      setIsQueueResizing(false);
+      queueResizeStartXRef.current = null;
+      queuePullTabStartXRef.current = null;
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+    };
+  }, [isQueueResizing]);
 
   const handleQueueListScroll = () => {
     const element = queueListRef.current;
@@ -476,6 +740,33 @@ const Player = memo(function Player({
     if (!historyHasMore || historyLoadingMore || !onRequestMoreHistory) return;
     if (element.scrollTop > 120) return;
     onRequestMoreHistory();
+  };
+
+  const handleQueueResizeStart = (
+    event: React.PointerEvent<HTMLElement>,
+  ) => {
+    if (typeof window !== "undefined" && window.innerWidth <= 1000) return;
+    queueResizeStartXRef.current = event.clientX;
+    queueResizeStartWidthRef.current = queuePanelWidth;
+    setIsQueueResizing(true);
+  };
+
+  const handleQueuePullTabPointerDown = (
+    event: React.PointerEvent<HTMLButtonElement>,
+  ) => {
+    queuePullTabStartXRef.current = event.clientX;
+    queuePullTabDraggedRef.current = false;
+    if (isQueuePanelOpen) {
+      handleQueueResizeStart(event);
+    }
+  };
+
+  const handleQueuePullTabClick = () => {
+    if (queuePullTabDraggedRef.current) {
+      queuePullTabDraggedRef.current = false;
+      return;
+    }
+    setIsQueuePanelOpen((prev) => !prev);
   };
 
   useEffect(() => {
@@ -523,6 +814,43 @@ const Player = memo(function Player({
       cancelled = true;
     };
   }, [currentTrack?.id]);
+
+  useEffect(() => {
+    const artistId = currentTrack?.user?.id;
+    if (!artistId) {
+      setIsFollowingCurrentArtist(false);
+      setCheckingCurrentArtistFollow(false);
+      return;
+    }
+
+    let cancelled = false;
+    setCheckingCurrentArtistFollow(true);
+
+    fetch(`/api/check-follow?userId=${artistId}`)
+      .then(async (response) => {
+        if (!response.ok) return { isFollowing: false };
+        return response.json();
+      })
+      .then((data) => {
+        if (!cancelled) {
+          setIsFollowingCurrentArtist(Boolean(data?.isFollowing));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setIsFollowingCurrentArtist(false);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setCheckingCurrentArtistFollow(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentTrack?.user?.id]);
   const volumePopoverRef = useRef<HTMLDivElement | null>(null);
   const playlistLabel =
     currentTrack?.playlistTitle ||
@@ -586,6 +914,127 @@ const Player = memo(function Player({
     .filter((item) => item?.id && item.id !== currentTrack?.id)
     .slice()
     .reverse();
+  const reloadFriendState = async () => {
+    const response = await fetch("/api/friends");
+    if (!response.ok) {
+      throw new Error(`Failed to load friends: ${response.status}`);
+    }
+
+    const data = await response.json();
+    setFriendActivity(Array.isArray(data?.friends) ? data.friends : []);
+    setIncomingFriendRequests(
+      Array.isArray(data?.incomingRequests) ? data.incomingRequests : [],
+    );
+    setOutgoingFriendRequests(
+      Array.isArray(data?.outgoingRequests) ? data.outgoingRequests : [],
+    );
+    setFriendPrivacy({
+      appearOffline: Boolean(data?.privacy?.appearOffline),
+      shareListeningActivity: data?.privacy?.shareListeningActivity !== false,
+    });
+    setFriendCode(typeof data?.friendCode === "string" ? data.friendCode : "");
+    return data;
+  };
+
+  const refreshFriendSearch = async (query = friendSearchQuery) => {
+    const trimmed = query.trim();
+    if (!trimmed) {
+      setFriendSearchResults([]);
+      setFriendSearchError("");
+      return;
+    }
+
+    setFriendSearchLoading(true);
+    setFriendSearchError("");
+    try {
+      const response = await fetch(
+        `/api/friends/search?q=${encodeURIComponent(trimmed)}`,
+      );
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.error || "Failed to search for friends");
+      }
+      setFriendSearchResults(
+        Array.isArray(data?.results) ? data.results : [],
+      );
+    } catch (error) {
+      console.error("Failed to search for friends:", error);
+      setFriendSearchResults([]);
+      setFriendSearchError(
+        error instanceof Error ? error.message : "Failed to search for friends",
+      );
+    } finally {
+      setFriendSearchLoading(false);
+    }
+  };
+
+  const handleSendFriendRequest = async (userId: number) => {
+    const response = await fetch("/api/friends/request", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ targetUserId: userId }),
+    });
+
+    if (!response.ok) {
+      const data = await response.json().catch(() => null);
+      throw new Error(data?.error || "Failed to send friend request");
+    }
+
+    await reloadFriendState();
+    await refreshFriendSearch();
+  };
+
+  const handleCopyFriendCode = async () => {
+    if (!friendCode || typeof navigator === "undefined" || !navigator.clipboard) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(friendCode);
+      setFriendCodeCopied(true);
+      window.setTimeout(() => {
+        setFriendCodeCopied(false);
+      }, 1600);
+    } catch (error) {
+      console.error("Failed to copy friend code:", error);
+    }
+  };
+
+  const handleAcceptFriendRequest = async (userId: number) => {
+    try {
+      const response = await fetch("/api/friends/accept", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ requesterUserId: userId }),
+      });
+      if (!response.ok) return;
+      setIncomingFriendRequests((prev) => prev.filter((request) => request.userId !== userId));
+      await reloadFriendState();
+      await refreshFriendSearch();
+    } catch (error) {
+      console.error("Failed to accept friend request:", error);
+    }
+  };
+
+  const toggleAppearOffline = async () => {
+    const nextAppearOffline = !friendPrivacy.appearOffline;
+    setFriendPrivacy((prev) => ({ ...prev, appearOffline: nextAppearOffline }));
+    try {
+      await fetch("/api/friends/privacy", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          appearOffline: nextAppearOffline,
+          shareListeningActivity: friendPrivacy.shareListeningActivity,
+        }),
+      });
+    } catch (error) {
+      console.error("Failed to update friend privacy:", error);
+      setFriendPrivacy((prev) => ({ ...prev, appearOffline: !nextAppearOffline }));
+    }
+  };
+
+  const visibleFriendActivity = friendActivity;
 
   useEffect(() => {
     if (currentTrack && "mediaSession" in navigator) {
@@ -781,11 +1230,15 @@ const Player = memo(function Player({
   }, [currentTrack?.id]);
 
   useEffect(() => {
-    if (
-      !currentTrack?.id ||
-      (!isPlaylistMenuOpen && !isMobilePlaylistSheetOpen)
-    )
+    if (!currentTrack?.id) {
+      setPlaylistsWithTrack([]);
+      setIsInAnyPlaylist(false);
       return;
+    }
+    if (!isPlaylistMenuOpen && !isMobilePlaylistSheetOpen) return;
+
+    setPlaylistsWithTrack([]);
+    setIsInAnyPlaylist(false);
     checkPlaylistsForTrack(currentTrack.id);
   }, [currentTrack?.id, isPlaylistMenuOpen, isMobilePlaylistSheetOpen]);
 
@@ -907,16 +1360,19 @@ const Player = memo(function Player({
 
   const checkPlaylistsForTrack = async (trackId: number | string) => {
     if (!trackId) return;
+    const requestId = ++playlistMembershipRequestRef.current;
     try {
       const response = await fetch(
         `/api/check-track-in-playlists?trackId=${trackId}`,
       );
       const data = await response.json();
+      if (playlistMembershipRequestRef.current !== requestId) return;
       setPlaylistsWithTrack(
         data.playlistsWithTrack?.map((p: any) => p.id) || [],
       );
       setIsInAnyPlaylist(data.isInAnyPlaylist);
     } catch (error) {
+      if (playlistMembershipRequestRef.current !== requestId) return;
       console.error("Failed to check playlists:", error);
       setIsInAnyPlaylist(false);
       setPlaylistsWithTrack([]);
@@ -1215,6 +1671,31 @@ const Player = memo(function Player({
     return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
 
+  const toggleCurrentArtistFollow = async () => {
+    const artistId = currentTrack?.user?.id;
+    if (!artistId || checkingCurrentArtistFollow) return;
+
+    setCheckingCurrentArtistFollow(true);
+    try {
+      const response = await fetch(
+        isFollowingCurrentArtist ? "/api/unfollow" : "/api/follow",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId: artistId }),
+        },
+      );
+
+      if (response.ok) {
+        setIsFollowingCurrentArtist((prev) => !prev);
+      }
+    } catch {
+      // Ignore follow toggle failures here; the button state will stay as-is.
+    } finally {
+      setCheckingCurrentArtistFollow(false);
+    }
+  };
+
   const renderTrackBio = (bio: string) => {
     if (!bio) return null;
 
@@ -1509,7 +1990,10 @@ const Player = memo(function Player({
                 <button
                   type="button"
                   className={`player-queue-btn ${isQueuePanelOpen ? "open" : ""}`}
-                  onClick={() => setIsQueuePanelOpen((open) => !open)}
+                  onClick={() => {
+                    setActiveSidebarTab("queue");
+                    setIsQueuePanelOpen((open) => !open);
+                  }}
                   title="Queue"
                   aria-label="Open queue"
                 >
@@ -1737,99 +2221,63 @@ const Player = memo(function Player({
         </div>
       </div>
       </div>
-      <aside className={`player-queue-panel ${isQueuePanelOpen ? "open" : ""}`}>
-        <div className="player-queue-panel-header">
-          <div className="player-queue-panel-title">Queue</div>
-          <button
-            type="button"
-            className="player-queue-panel-close"
-            onClick={() => setIsQueuePanelOpen(false)}
-            aria-label="Close queue"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-              <path
-                d="M6 6l12 12M18 6L6 18"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-              />
-            </svg>
-          </button>
-        </div>
-        <div className="player-queue-panel-subtitle">
-          Scroll up for listening history
-        </div>
+      <aside
+        className={`player-queue-panel ${isQueuePanelOpen ? "open" : ""} ${isQueueResizing ? "resizing" : ""}`}
+        style={{ width: `${queuePanelWidth}px` }}
+      >
         <div
-          ref={queueListRef}
-          className="player-queue-list"
-          onScroll={handleQueueListScroll}
-        >
-          {historyItems.length ? (
-            <section className="player-queue-section">
-              <div className="player-queue-section-label">Listening History</div>
-              {historyItems.map((track, index) => (
-                <button
-                  key={`history-${track.id || index}`}
-                  type="button"
-                  className="player-queue-item player-queue-item-history"
-                  onClick={() => handleQueueItemSelect(track, "history")}
-                >
-                  <img
-                    src={getTrackArtwork(track)}
-                    alt={track.title}
-                    className="player-queue-item-cover"
-                  />
-                  <div className="player-queue-item-copy">
-                    <div className="player-queue-item-title">{track.title}</div>
-                    <div className="player-queue-item-artist">
-                      {track.user?.username || "Unknown"}
-                    </div>
-                  </div>
-                </button>
-              ))}
-              {historyLoadingMore ? (
-                <div className="player-queue-empty">Loading older history...</div>
-              ) : null}
-            </section>
-          ) : null}
-
-          <section className="player-queue-section">
-            <div className="player-queue-section-label">Now Playing</div>
-            {currentQueueTrack ? (
-              <div
-                ref={queueCurrentTrackRef}
-                className="player-queue-item player-queue-item-current"
-              >
-                <img
-                  src={getTrackArtwork(currentQueueTrack)}
-                  alt={currentQueueTrack.title}
-                  className="player-queue-item-cover"
-                />
-                <div className="player-queue-item-copy">
-                  <div className="player-queue-item-title">
-                    {currentQueueTrack.title}
-                  </div>
-                  <div className="player-queue-item-artist">
-                    {currentQueueTrack.user?.username || "Unknown"}
-                  </div>
-                </div>
-                <div className="player-queue-item-badge">Playing</div>
-              </div>
-            ) : (
-              <div className="track-page-placeholder track-page-placeholder-block">
-                Nothing is playing yet.
-              </div>
-            )}
-
-            {upcomingQueueTracks.length ? (
-              <>
-                <div className="player-queue-section-label">Up Next</div>
-                {upcomingQueueTracks.map((track, index) => (
+          className="player-queue-panel-resizer"
+          onPointerDown={handleQueueResizeStart}
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize queue panel"
+        />
+        <div className="player-queue-panel-header">
+          <div className="player-sidebar-tabs" role="tablist" aria-label="Player sidebar tabs">
+            <button
+              type="button"
+              className={`player-sidebar-tab ${activeSidebarTab === "queue" ? "active" : ""}`}
+              onClick={() => setActiveSidebarTab("queue")}
+              role="tab"
+              aria-selected={activeSidebarTab === "queue"}
+            >
+              Queue
+            </button>
+            <button
+              type="button"
+              className={`player-sidebar-tab ${activeSidebarTab === "friends" ? "active" : ""}`}
+              onClick={() => setActiveSidebarTab("friends")}
+              role="tab"
+              aria-selected={activeSidebarTab === "friends"}
+            >
+              Friends
+            </button>
+            <button
+              type="button"
+              className={`player-sidebar-tab ${activeSidebarTab === "now-playing" ? "active" : ""}`}
+              onClick={() => setActiveSidebarTab("now-playing")}
+              role="tab"
+              aria-selected={activeSidebarTab === "now-playing"}
+            >
+              Now Playing
+            </button>
+          </div>
+        </div>
+        {activeSidebarTab === "queue" ? (
+          <div
+            ref={queueListRef}
+            className="player-queue-list"
+            onScroll={handleQueueListScroll}
+          >
+            {historyItems.length ? (
+              <section className="player-queue-section">
+                <div className="player-queue-section-label">Listening History</div>
+                {historyItems.map((track, index) => (
                   <button
-                    key={`queue-${track.id || index}`}
+                    key={`history-${track.id || index}`}
                     type="button"
-                    className="player-queue-item"
-                    onClick={() => handleQueueItemSelect(track, "queue")}
+                    className="player-queue-item player-queue-item-history"
+                    onClick={() => handleQueueItemSelect(track, "history")}
                   >
                     <img
                       src={getTrackArtwork(track)}
@@ -1844,13 +2292,398 @@ const Player = memo(function Player({
                     </div>
                   </button>
                 ))}
-              </>
-            ) : (
-              <div className="player-queue-empty">No upcoming tracks.</div>
+                {historyLoadingMore ? (
+                  <div className="player-queue-empty">Loading older history...</div>
+                ) : null}
+              </section>
+            ) : null}
+
+            <section ref={queueNowPlayingSectionRef} className="player-queue-section">
+              <div className="player-queue-section-label">Now Playing</div>
+              {currentQueueTrack ? (
+                <div
+                  ref={queueCurrentTrackRef}
+                  className="player-queue-item player-queue-item-current"
+                >
+                  <img
+                    src={getTrackArtwork(currentQueueTrack)}
+                    alt={currentQueueTrack.title}
+                    className="player-queue-item-cover"
+                  />
+                  <div className="player-queue-item-copy">
+                    <div className="player-queue-item-title">
+                      {currentQueueTrack.title}
+                    </div>
+                    <div className="player-queue-item-artist">
+                      {currentQueueTrack.user?.username || "Unknown"}
+                    </div>
+                  </div>
+                  <div className="player-queue-item-badge">Playing</div>
+                </div>
+              ) : (
+                <div className="track-page-placeholder track-page-placeholder-block">
+                  Nothing is playing yet.
+                </div>
+              )}
+
+              {upcomingQueueTracks.length ? (
+                <>
+                  <div className="player-queue-section-label">Up Next</div>
+                  {upcomingQueueTracks.map((track, index) => (
+                    <button
+                      key={`queue-${track.id || index}`}
+                      type="button"
+                      className="player-queue-item"
+                      onClick={() => handleQueueItemSelect(track, "queue")}
+                    >
+                      <img
+                        src={getTrackArtwork(track)}
+                        alt={track.title}
+                        className="player-queue-item-cover"
+                      />
+                      <div className="player-queue-item-copy">
+                        <div className="player-queue-item-title">{track.title}</div>
+                        <div className="player-queue-item-artist">
+                          {track.user?.username || "Unknown"}
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </>
+              ) : (
+                <div className="player-queue-empty">No upcoming tracks.</div>
+              )}
+            </section>
+          </div>
+        ) : activeSidebarTab === "friends" ? (
+          <div className="player-queue-list player-sidebar-friends">
+            <section className="player-friends-controls">
+              <button
+                type="button"
+                className={`player-friends-privacy-btn ${friendPrivacy.appearOffline ? "active" : ""}`}
+                onClick={() => void toggleAppearOffline()}
+              >
+                {friendPrivacy.appearOffline ? "Appearing Offline" : "Appear Offline"}
+              </button>
+              {friendsLoading ? (
+                <div className="player-friends-meta">Refreshing friends...</div>
+              ) : outgoingFriendRequests.length ? (
+                <div className="player-friends-meta">
+                  {outgoingFriendRequests.length} pending request{outgoingFriendRequests.length === 1 ? "" : "s"}
+                </div>
+              ) : null}
+            </section>
+            <section className="player-friend-discovery-card">
+              <div className="player-queue-section-label">Find Friends</div>
+              <div className="player-friend-code-row">
+                <div className="player-friend-code-copy">
+                  <div className="player-friend-code-label">Your friend code</div>
+                  <div className="player-friend-code-value">
+                    {friendCode || "Loading..."}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="player-friend-code-btn"
+                  onClick={() => void handleCopyFriendCode()}
+                  disabled={!friendCode}
+                >
+                  {friendCodeCopied ? "Copied" : "Copy"}
+                </button>
+              </div>
+              <div className="player-friend-search-row">
+                <input
+                  type="text"
+                  className="player-friend-search-input"
+                  value={friendSearchQuery}
+                  onChange={(event) => setFriendSearchQuery(event.target.value)}
+                  placeholder="Search SoundCloud name or friend code"
+                />
+              </div>
+              {friendSearchLoading ? (
+                <div className="player-friends-meta">Searching...</div>
+              ) : friendSearchError ? (
+                <div className="player-friends-meta">{friendSearchError}</div>
+              ) : null}
+              {friendSearchResults.length ? (
+                <div className="player-friend-search-results">
+                  {friendSearchResults.map((result) => (
+                    <div
+                      key={`friend-search-${result.userId}`}
+                      className="player-friend-request-card player-friend-search-card"
+                    >
+                      <div className="player-friend-card-top">
+                        <img
+                          src={result.avatarUrl || "/placeholder.png"}
+                          alt={result.name}
+                          className="player-friend-avatar"
+                        />
+                        <div className="player-friend-copy">
+                          <div className="player-friend-name">{result.name}</div>
+                          <div className="player-friend-status-row">
+                            <span className="player-friend-status idle">
+                              {result.friendCode || "SoundCloud user"}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        className={`player-now-playing-follow-btn ${result.status === "friends" ? "following" : ""}`}
+                        onClick={() => {
+                          if (result.status === "incoming") {
+                            void handleAcceptFriendRequest(result.userId);
+                            return;
+                          }
+                          if (result.status === "none") {
+                            void handleSendFriendRequest(result.userId);
+                          }
+                        }}
+                        disabled={
+                          result.status === "self" ||
+                          result.status === "outgoing" ||
+                          result.status === "friends"
+                        }
+                      >
+                        {result.status === "incoming"
+                          ? "Accept Friend"
+                          : result.status === "outgoing"
+                            ? "Requested"
+                            : result.status === "friends"
+                              ? "Friends"
+                              : result.status === "self"
+                                ? "You"
+                                : "Add Friend"}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : friendSearchQuery.trim() && !friendSearchLoading && !friendSearchError ? (
+                <div className="player-sidebar-empty">
+                  <div className="player-sidebar-empty-title">No matches found</div>
+                  <div className="player-sidebar-empty-copy">
+                    Try a SoundCloud username or paste a friend code.
+                  </div>
+                </div>
+              ) : null}
+            </section>
+            {incomingFriendRequests.length ? (
+              <section className="player-queue-section">
+                <div className="player-queue-section-label">Friend Requests</div>
+                {incomingFriendRequests.map((request) => (
+                  <div key={`friend-request-${request.userId}`} className="player-friend-request-card">
+                    <div className="player-friend-card-top">
+                      <img
+                        src={request.avatarUrl || "/placeholder.png"}
+                        alt={request.name}
+                        className="player-friend-avatar"
+                      />
+                      <div className="player-friend-copy">
+                        <div className="player-friend-name">{request.name}</div>
+                        <div className="player-friend-status-row">
+                          <span className="player-friend-status idle">Incoming request</span>
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className="player-now-playing-follow-btn"
+                      onClick={() => void handleAcceptFriendRequest(request.userId)}
+                    >
+                      Accept Friend
+                    </button>
+                  </div>
+                ))}
+              </section>
+            ) : null}
+            {visibleFriendActivity.length ? (
+              visibleFriendActivity.map((friend) => {
+                const activeTrack = friend.online
+                  ? friend.currentTrack
+                  : friend.lastTrack;
+                const statusLabel = friend.online ? "Online" : "Offline";
+
+                return (
+                  <section
+                    key={friend.id}
+                    className={`player-friend-card ${activeTrack ? "player-friend-card-listening" : ""}`}
+                    style={
+                      activeTrack?.artwork
+                        ? ({
+                            "--player-friend-artwork": `url("${activeTrack.artwork}")`,
+                          } as CSSProperties)
+                        : undefined
+                    }
+                  >
+                    <div className="player-friend-card-top">
+                      <img
+                        src={friend.avatarUrl || "/placeholder.png"}
+                        alt={friend.name}
+                        className="player-friend-avatar"
+                      />
+                      <div className="player-friend-copy">
+                        <div className="player-friend-name">{friend.name}</div>
+                        {activeTrack ? (
+                          <div className="player-friend-banner-copy">
+                            <div className="player-friend-track-title">
+                              {activeTrack.title}
+                            </div>
+                            <div className="player-friend-track-artist">
+                              {activeTrack.artist || "Unknown"}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="player-friend-status-row">
+                            <span className={`player-friend-status ${friend.online ? "online" : "offline"}`}>
+                              {statusLabel}
+                            </span>
+                            {friend.updatedAt ? (
+                            <span className="player-friend-time">
+                              {new Date(friend.updatedAt).toLocaleTimeString([], {
+                                hour: "numeric",
+                                minute: "2-digit",
+                              })}
+                            </span>
+                            ) : null}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </section>
+                );
+              })
+            ) : incomingFriendRequests.length ? null : (
+              <div className="player-sidebar-empty">
+                <div className="player-sidebar-empty-title">No friends yet</div>
+                <div className="player-sidebar-empty-copy">
+                  Open an artist profile and use Add Friend to start building your list.
+                </div>
+              </div>
             )}
-          </section>
-        </div>
+          </div>
+        ) : (
+          <div className="player-queue-list player-sidebar-now-playing">
+            <section className="player-now-playing-card">
+              <img
+                src={getTrackArtwork(currentTrack)}
+                alt={currentTrack.title}
+                className="player-now-playing-cover"
+              />
+              <div className="player-now-playing-copy">
+                <div className="player-now-playing-title">{currentTrack.title}</div>
+                <div className="player-now-playing-artist">
+                  {currentTrack.user?.username || "Unknown"}
+                </div>
+              </div>
+            </section>
+            <section className="player-now-playing-artist-card">
+              <div className="player-queue-section-label">Artist Preview</div>
+              <div
+                role="button"
+                tabIndex={0}
+                className="player-now-playing-artist-shell"
+                onClick={() => {
+                  if (currentTrack.user && onArtistClick) {
+                    onArtistClick(currentTrack.user);
+                  }
+                }}
+                onKeyDown={(event) => {
+                  if ((event.key === "Enter" || event.key === " ") && currentTrack.user && onArtistClick) {
+                    event.preventDefault();
+                    onArtistClick(currentTrack.user);
+                  }
+                }}
+              >
+                <div
+                  className="player-now-playing-artist-banner"
+                  style={{
+                    backgroundImage: `linear-gradient(180deg, rgba(8,8,12,0.18), rgba(8,8,12,0.88)), url("${
+                      currentTrack.user?.avatar_url?.replace?.("-large", "-t500x500") ||
+                      getTrackArtwork(currentTrack)
+                    }")`,
+                  }}
+                />
+                <img
+                  src={
+                    currentTrack.user?.avatar_url?.replace?.("-large", "-t500x500") ||
+                    "/placeholder.png"
+                  }
+                  alt={currentTrack.user?.username || "Unknown"}
+                  className="player-now-playing-artist-avatar"
+                />
+                <div className="player-now-playing-artist-copy">
+                  <div className="player-now-playing-artist-name">
+                    {currentTrack.user?.username || "Unknown"}
+                  </div>
+                  <div className="player-now-playing-artist-meta">
+                    {typeof currentTrack.user?.followers_count === "number"
+                      ? `${Number(currentTrack.user.followers_count).toLocaleString()} followers`
+                      : "SoundCloud artist profile"}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className={`player-now-playing-follow-btn ${isFollowingCurrentArtist ? "following" : ""}`}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    void toggleCurrentArtistFollow();
+                  }}
+                >
+                  {checkingCurrentArtistFollow
+                    ? "..."
+                    : isFollowingCurrentArtist
+                      ? "Following"
+                      : "Follow"}
+                </button>
+              </div>
+            </section>
+            <section className="player-queue-section">
+              <div className="player-queue-section-label">Up Next</div>
+              {upcomingQueueTracks.length ? (
+                upcomingQueueTracks.slice(0, 5).map((track, index) => (
+                  <div key={`now-playing-next-${track.id || index}`} className="player-queue-item">
+                    <img
+                      src={getTrackArtwork(track)}
+                      alt={track.title}
+                      className="player-queue-item-cover"
+                    />
+                    <div className="player-queue-item-copy">
+                      <div className="player-queue-item-title">{track.title}</div>
+                      <div className="player-queue-item-artist">
+                        {track.user?.username || "Unknown"}
+                      </div>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="player-queue-empty">Nothing queued after this track.</div>
+              )}
+            </section>
+          </div>
+        )}
       </aside>
+      <button
+        type="button"
+        className={`player-queue-pull-tab ${isQueuePanelOpen ? "open" : ""} ${isQueueResizing ? "dragging" : ""}`}
+        style={{
+          right: isQueuePanelOpen ? `${Math.max(queuePanelWidth, 0)}px` : "0px",
+        }}
+        onPointerDown={handleQueuePullTabPointerDown}
+        onClick={handleQueuePullTabClick}
+        aria-label={isQueuePanelOpen ? "Close sidebar" : "Open sidebar"}
+        aria-expanded={isQueuePanelOpen}
+      >
+        <span className="player-queue-pull-tab-grip" />
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path
+            d={isQueuePanelOpen ? "M15 6l-6 6 6 6" : "M9 6l6 6-6 6"}
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </button>
       <div
         role="button"
         tabIndex={0}
@@ -2327,6 +3160,12 @@ const Player = memo(function Player({
 });
 
 export default Player;
+
+
+
+
+
+
 
 
 

@@ -1,0 +1,1 @@
+# Desktop App`n`nThis folder is the home for the Electron desktop client.`n`nCurrent state:`n- Electron main and preload files have been moved here.`n- The renderer is still powered by the existing Next.js app during this migration.`n

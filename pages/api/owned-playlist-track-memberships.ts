@@ -1,0 +1,120 @@
+import type { NextApiRequest, NextApiResponse } from "next";
+import axios, { type AxiosResponse } from "axios";
+import { requireSoundCloudAccessToken } from "../../src/server/auth/soundcloud";
+
+type MembershipMap = Record<number, number[]>;
+
+interface SoundCloudCollectionResponse<T = any> {
+  collection?: T[];
+  next_href?: string | null;
+}
+
+const CACHE_TTL_MS = 60_000;
+const snapshotCache = new Map<
+  string,
+  { expiresAt: number; memberships: MembershipMap }
+>();
+
+const fetchPaginatedCollection = async (
+  url: string,
+  token: string,
+  limit = 200,
+) => {
+  const collection: any[] = [];
+  let nextUrl: string | null = url;
+  let isFirstRequest = true;
+
+  while (nextUrl) {
+    const response: AxiosResponse<SoundCloudCollectionResponse> = await axios.get(
+      nextUrl,
+      {
+        headers: { Authorization: `OAuth ${token}` },
+        params: isFirstRequest ? { limit, linked_partitioning: 1 } : undefined,
+        timeout: 10000,
+      },
+    );
+
+    collection.push(...(response.data?.collection || []));
+    nextUrl = response.data?.next_href || null;
+    isFirstRequest = false;
+  }
+
+  return collection;
+};
+
+export default async function handler(
+  req: NextApiRequest,
+  res: NextApiResponse,
+) {
+  const token = await requireSoundCloudAccessToken(req, res);
+
+  if (!token) {
+    return res.status(401).json({ error: "Not authenticated", memberships: {} });
+  }
+
+  const cacheKey = token.slice(0, 24);
+  const cached = snapshotCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return res.json({ memberships: cached.memberships });
+  }
+
+  try {
+    const meResponse = await axios.get("https://api.soundcloud.com/me", {
+      headers: { Authorization: `OAuth ${token}` },
+      timeout: 10000,
+    });
+    const currentUserId = Number(meResponse.data?.id);
+
+    const playlists = await fetchPaginatedCollection(
+      "https://api.soundcloud.com/me/playlists",
+      token,
+      100,
+    );
+    const ownedPlaylists = playlists.filter(
+      (playlist: any) => Number(playlist?.user?.id) === currentUserId,
+    );
+
+    const memberships: MembershipMap = {};
+
+    for (const playlist of ownedPlaylists) {
+      try {
+        const tracks = await fetchPaginatedCollection(
+          `https://api.soundcloud.com/playlists/${playlist.id}/tracks`,
+          token,
+          200,
+        );
+        for (const item of tracks) {
+          const track = item?.track || item;
+          const trackId = Number(track?.id);
+          if (!Number.isFinite(trackId) || trackId <= 0) continue;
+          if (!memberships[trackId]) {
+            memberships[trackId] = [];
+          }
+          if (!memberships[trackId].includes(playlist.id)) {
+            memberships[trackId].push(playlist.id);
+          }
+        }
+      } catch (error) {
+        console.warn(`Could not preload playlist ${playlist.id}`);
+      }
+    }
+
+    snapshotCache.set(cacheKey, {
+      expiresAt: Date.now() + CACHE_TTL_MS,
+      memberships,
+    });
+
+    return res.json({ memberships });
+  } catch (error: any) {
+    console.error(
+      "Owned playlist membership preload error:",
+      error.response?.status,
+      error.message,
+    );
+    return res.status(error.response?.status || 500).json({
+      error:
+        error.response?.data?.message || "Failed to preload playlist memberships",
+      memberships: {},
+    });
+  }
+}

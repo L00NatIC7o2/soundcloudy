@@ -1,0 +1,40 @@
+{
+  "users": {
+    "189576713": {
+      "userId": 189576713,
+      "username": "L00NatIC",
+      "avatarUrl": "https://i1.sndcdn.com/avatars-qqD0cuyaPF0rTohr-toKIYw-large.jpg",
+      "permalink": "l00natic"
+    },
+    "1243429759": {
+      "userId": 1243429759,
+      "username": "killuridols",
+      "avatarUrl": "https://i1.sndcdn.com/avatars-Px9LJFx17piyqOMT-RWzCsg-large.jpg",
+      "permalink": "killuridolsx"
+    },
+    "1686699134": {
+      "userId": 1686699134,
+      "username": "Angellopez9666",
+      "avatarUrl": "https://a1.sndcdn.com/images/default_avatar_large.png",
+      "permalink": "angellopez9666"
+    }
+  },
+  "friendRequests": [],
+  "friendships": [
+    {
+      "userA": 189576713,
+      "userB": 1686699134,
+      "createdAt": 1774678693807
+    }
+  ],
+  "privacy": {
+    "189576713": {
+      "appearOffline": false,
+      "shareListeningActivity": true
+    },
+    "1686699134": {
+      "appearOffline": false,
+      "shareListeningActivity": true
+    }
+  }
+}

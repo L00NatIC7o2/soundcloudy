@@ -1,4 +1,4 @@
-﻿import {
+import {
   useState,
   useEffect,
   useRef,
@@ -134,12 +134,19 @@ export default function Home() {
   const [rowTrackPlaylistsMap, setRowTrackPlaylistsMap] = useState<
     Record<number, number[]>
   >({});
+  const [verifiedRowTrackPlaylistsMap, setVerifiedRowTrackPlaylistsMap] =
+    useState<Record<number, boolean>>({});
   const [mobileRowPlaylistTrack, setMobileRowPlaylistTrack] = useState<any>(null);
   const [isInSelectedPlaylist, setIsInSelectedPlaylist] = useState(false);
   const [checkingSelectedPlaylist, setCheckingSelectedPlaylist] =
     useState(false);
   const [isFollowingArtist, setIsFollowingArtist] = useState(false);
   const [checkingArtistFollow, setCheckingArtistFollow] = useState(false);
+  const [artistFriendStatus, setArtistFriendStatus] = useState<
+    "self" | "none" | "incoming" | "outgoing" | "friends"
+  >("none");
+  const [checkingArtistFriendStatus, setCheckingArtistFriendStatus] =
+    useState(false);
   const [contextFollow, setContextFollow] = useState<{
     userId: number;
     isFollowing: boolean;
@@ -623,6 +630,36 @@ export default function Home() {
     [CACHE_DURATION],
   );
 
+  const preloadOwnedPlaylistMemberships = useCallback(async () => {
+    try {
+      const response = await fetch("/api/owned-playlist-track-memberships");
+      if (!response.ok) {
+        throw new Error(`Failed to preload memberships: ${response.status}`);
+      }
+      const data = await response.json();
+      const memberships = data.memberships || {};
+
+      setRowTrackPlaylistsMap((prev) => {
+        const next = { ...prev };
+        for (const [trackId, playlistIds] of Object.entries(memberships)) {
+          next[Number(trackId)] = Array.isArray(playlistIds)
+            ? (playlistIds as number[])
+            : [];
+        }
+        return next;
+      });
+
+      Object.keys(memberships).forEach((trackId) => {
+        const numericTrackId = Number(trackId);
+        if (Number.isFinite(numericTrackId) && numericTrackId > 0) {
+          requestedTrackPlaylistMembershipRef.current.add(numericTrackId);
+        }
+      });
+    } catch (error) {
+      console.error("Failed to preload owned playlist memberships:", error);
+    }
+  }, []);
+
   // Fetch last played track
   const fetchLastPlayedTrack = async () => {
     try {
@@ -645,6 +682,18 @@ export default function Home() {
   const resolvePlaylistItem = (item: any) => {
     if (!item) return null;
     if (item.playlist) return item.playlist;
+    return item;
+  };
+
+  const resolveTrackItem = (item: any) => {
+    if (!item) return null;
+    if (item.kind === "playlist" || item.kind === "playlist-like") return null;
+    if (item.track && (item.track.kind === "track" || typeof item.track.duration === "number")) {
+      return item.track;
+    }
+    if (item.origin && (item.origin.kind === "track" || typeof item.origin.duration === "number")) {
+      return item.origin;
+    }
     return item;
   };
 
@@ -691,8 +740,9 @@ export default function Home() {
   };
   const handleInfoClick = (event: ReactMouseEvent, item: any) => {
     event.stopPropagation();
-    if (isTrackItem(item)) {
-      handleTrackPageOpen(item);
+    const resolvedTrack = resolveTrackItem(item);
+    if (isTrackItem(resolvedTrack)) {
+      handleTrackPageOpen(resolvedTrack);
       return;
     }
     const resolved = resolvePlaylistItem(item);
@@ -1770,6 +1820,64 @@ export default function Home() {
       return false;
     }
   };
+  const checkFriendStatus = useCallback(async (userId: number) => {
+    try {
+      const response = await fetch(`/api/friends/status?userId=${userId}`);
+      if (!response.ok) return "none";
+      const data = await response.json();
+      return (data?.status || "none") as
+        | "self"
+        | "none"
+        | "incoming"
+        | "outgoing"
+        | "friends";
+    } catch (error) {
+      console.error("Failed to check friend status:", error);
+      return "none";
+    }
+  }, []);
+
+  const sendFriendRequestToUser = async (userId: number) => {
+    try {
+      const response = await fetch("/api/friends/request", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ targetUserId: userId }),
+      });
+      return response.ok;
+    } catch (error) {
+      console.error("Failed to send friend request:", error);
+      return false;
+    }
+  };
+
+  const acceptFriendRequestForUser = async (userId: number) => {
+    try {
+      const response = await fetch("/api/friends/accept", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ requesterUserId: userId }),
+      });
+      return response.ok;
+    } catch (error) {
+      console.error("Failed to accept friend request:", error);
+      return false;
+    }
+  };
+
+  const removeFriendForUser = async (userId: number) => {
+    try {
+      const response = await fetch("/api/friends/remove", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ targetUserId: userId }),
+      });
+      return response.ok;
+    } catch (error) {
+      console.error("Failed to remove friend:", error);
+      return false;
+    }
+  };
 
   useEffect(() => {
     if (!contextMenu) return;
@@ -1869,6 +1977,29 @@ export default function Home() {
       active = false;
     };
   }, [viewingArtist, selectedArtist?.id, checkFollowStatus]);
+
+  useEffect(() => {
+    let active = true;
+
+    const run = async () => {
+      if (!viewingArtist || !selectedArtist?.id) {
+        setArtistFriendStatus("none");
+        setCheckingArtistFriendStatus(false);
+        return;
+      }
+
+      setCheckingArtistFriendStatus(true);
+      const status = await checkFriendStatus(selectedArtist.id);
+      if (!active) return;
+      setArtistFriendStatus(status);
+      setCheckingArtistFriendStatus(false);
+    };
+
+    void run();
+    return () => {
+      active = false;
+    };
+  }, [viewingArtist, selectedArtist?.id, checkFriendStatus]);
 
   const addToQueue = (track: any) => {
     if (!track?.id) return;
@@ -2290,6 +2421,10 @@ export default function Home() {
         ...prev,
         [Number(trackId)]: ids,
       }));
+      setVerifiedRowTrackPlaylistsMap((prev) => ({
+        ...prev,
+        [Number(trackId)]: true,
+      }));
       return ids;
     } catch (error) {
       console.error("Failed to fetch row track playlists:", error);
@@ -2552,6 +2687,7 @@ export default function Home() {
         } else {
           setIsAuthenticated(true);
           fetchPlaylists();
+          preloadOwnedPlaylistMemberships();
           // Seed likes and liked-playlists cache so UI reflects server state immediately
           seedLikes(true);
           seedLikedPlaylists();
@@ -2566,7 +2702,7 @@ export default function Home() {
       }
     };
     checkAuth();
-  }, [router]);
+  }, [router, fetchPlaylists, preloadOwnedPlaylistMemberships]);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -3162,23 +3298,6 @@ export default function Home() {
     return title.includes(term) || artist.includes(term);
   });
 
-  useEffect(() => {
-    if (!currentPlaylistId || !visiblePlaylistTracks.length) return;
-    setRowTrackPlaylistsMap((prev) => {
-      const next = { ...prev };
-      let changed = false;
-      for (const track of visiblePlaylistTracks) {
-        if (!track?.id) continue;
-        const current = next[track.id] || [];
-        if (!current.includes(currentPlaylistId)) {
-          next[track.id] = [...current, currentPlaylistId];
-          changed = true;
-        }
-      }
-      return changed ? next : prev;
-    });
-  }, [currentPlaylistId, visiblePlaylistTracks]);
-
   const visibleRowTrackIds = Array.from(
     new Set(
       [
@@ -3187,7 +3306,7 @@ export default function Home() {
         ...filteredProfileReposts,
         ...(searchView === "tracks" ? tracks : tracks.slice(0, 15)),
       ]
-        .map((track: any) => Number(track?.id))
+        .map((track: any) => Number(resolveTrackItem(track)?.id))
         .filter((id) => Number.isFinite(id) && id > 0),
     ),
   );
@@ -3200,123 +3319,137 @@ export default function Home() {
     trackItems: any[],
     rowKeyPrefix: string,
     playlistContextId: number | null = null,
-  ) => (
-    <div className="track-list">
-      {trackItems.map((track: any, index: number) => (
-        <div
-          key={`${rowKeyPrefix}-${track.id || index}`}
-          className="track-row"
-          onClick={() => handleTrackClick(track, "playlist", trackItems)}
-          onContextMenu={(event) =>
-            handleContextMenu(event, track, "playlist", trackItems)
-          }
-        >
-          <img
-            src={getTrackCover(track)}
-            alt={track.title}
-            className="track-row-cover"
-            loading="lazy"
-            decoding="async"
-          />
-          <div className="track-row-info">
-            <div className="track-row-title">{track.title}</div>
+  ) => {
+    const resolvedTrackItems = trackItems
+      .map((item: any) => resolveTrackItem(item))
+      .filter((item: any) => isTrackItem(item));
+
+    return (
+      <div className="track-list">
+        {trackItems.map((track: any, index: number) => {
+          const resolvedTrack = resolveTrackItem(track);
+          if (!resolvedTrack) return null;
+          const hasVerifiedPlaylistMembership =
+            Boolean(verifiedRowTrackPlaylistsMap[resolvedTrack.id]) &&
+            (rowTrackPlaylistsMap[resolvedTrack.id] || []).length > 0;
+
+          return (
             <div
-              className="track-row-artist"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleArtistClick(track.user);
-              }}
-              style={{
-                cursor: "pointer",
-                textDecoration: "underline",
-              }}
-            >
-              {track.user?.username || "Unknown"}
-            </div>
-          </div>
-          <div
-            className="track-row-actions"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <button
-              type="button"
-              className={`track-like-btn track-row-like-btn ${
-                likedTracks[track.id] ? "liked" : ""
-              }`}
-              onClick={() => void toggleTrackLike(track.id, track)}
-              aria-label={
-                likedTracks[track.id] ? "Remove like" : "Add like"
+              key={`${rowKeyPrefix}-${resolvedTrack.id || track.id || index}`}
+              className="track-row"
+              onClick={() =>
+                handleTrackClick(resolvedTrack, "playlist", resolvedTrackItems)
+              }
+              onContextMenu={(event) =>
+                handleContextMenu(
+                  event,
+                  resolvedTrack,
+                  "playlist",
+                  resolvedTrackItems,
+                )
               }
             >
-              {renderHeartIcon(Boolean(likedTracks[track.id]))}
-            </button>
-            <div className="track-row-playlist-wrap">
-              <button
-                type="button"
-                className={`track-row-playlist-btn ${
-                  (
-                    rowTrackPlaylistsMap[track.id] ||
-                    (playlistContextId ? [playlistContextId] : [])
-                  ).length
-                    ? "in-playlist"
-                    : ""
-                }`}
-                onClick={() => {
-                  void fetchTrackPlaylistsMembership(track.id);
-                  if (
-                    typeof window !== "undefined" &&
-                    window.innerWidth <= 1000
-                  ) {
-                    setMobileRowPlaylistTrack(track);
-                    return;
-                  }
-                  setRowPlaylistMenuTrackId((prev) =>
-                    prev === track.id ? null : track.id,
-                  );
-                }}
-                aria-label="Add to playlist"
-              >
-                <img
-                  src={
-                    (
-                      rowTrackPlaylistsMap[track.id] ||
-                      (playlistContextId ? [playlistContextId] : [])
-                    ).length
-                      ? "https://img.icons8.com/parakeet-line/50/checked.png"
-                      : "https://img.icons8.com/parakeet-line/48/add.png"
-                  }
-                  alt="Add to playlist"
-                  className="player-add-playlist-icon"
-                />
-              </button>
-              <PlaylistMenu
-                trackId={track.id}
-                isOpen={rowPlaylistMenuTrackId === track.id}
-                onClose={() => setRowPlaylistMenuTrackId(null)}
-                playlistsWithTrack={
-                  rowTrackPlaylistsMap[track.id] ||
-                  (playlistContextId ? [playlistContextId] : [])
-                }
+              <img
+                src={getTrackCover(resolvedTrack)}
+                alt={resolvedTrack.title}
+                className="track-row-cover"
+                loading="lazy"
+                decoding="async"
               />
+              <div className="track-row-info">
+                <div className="track-row-title">{resolvedTrack.title}</div>
+                <div
+                  className="track-row-artist"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleArtistClick(resolvedTrack.user);
+                  }}
+                  style={{
+                    cursor: "pointer",
+                    textDecoration: "underline",
+                  }}
+                >
+                  {resolvedTrack.user?.username || "Unknown"}
+                </div>
+              </div>
+              <div
+                className="track-row-actions"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <button
+                  type="button"
+                  className={`track-like-btn track-row-like-btn ${
+                    likedTracks[resolvedTrack.id] ? "liked" : ""
+                  }`}
+                  onClick={() =>
+                    void toggleTrackLike(resolvedTrack.id, resolvedTrack)
+                  }
+                  aria-label={
+                    likedTracks[resolvedTrack.id] ? "Remove like" : "Add like"
+                  }
+                >
+                  {renderHeartIcon(Boolean(likedTracks[resolvedTrack.id]))}
+                </button>
+                <div className="track-row-playlist-wrap">
+                <button
+                  type="button"
+                  className={`track-row-playlist-btn ${
+                      hasVerifiedPlaylistMembership
+                        ? "in-playlist"
+                        : ""
+                    }`}
+                    onClick={() => {
+                      void fetchTrackPlaylistsMembership(resolvedTrack.id);
+                      if (
+                        typeof window !== "undefined" &&
+                        window.innerWidth <= 1000
+                      ) {
+                        setMobileRowPlaylistTrack(resolvedTrack);
+                        return;
+                      }
+                      setRowPlaylistMenuTrackId((prev) =>
+                        prev === resolvedTrack.id ? null : resolvedTrack.id,
+                      );
+                    }}
+                    aria-label="Add to playlist"
+                  >
+                    <img
+                      src={
+                        hasVerifiedPlaylistMembership
+                          ? "https://img.icons8.com/parakeet-line/50/checked.png"
+                          : "https://img.icons8.com/parakeet-line/48/add.png"
+                      }
+                      alt="Add to playlist"
+                      className="player-add-playlist-icon"
+                    />
+                  </button>
+                  <PlaylistMenu
+                    trackId={resolvedTrack.id}
+                    isOpen={rowPlaylistMenuTrackId === resolvedTrack.id}
+                    onClose={() => setRowPlaylistMenuTrackId(null)}
+                    playlistsWithTrack={rowTrackPlaylistsMap[resolvedTrack.id] || []}
+                  />
+                </div>
+              </div>
+              <div className="track-row-duration">
+                {formatDuration(resolvedTrack.duration)}
+              </div>
+              <div className="track-row-year">
+                {resolvedTrack.created_at ? getYear(resolvedTrack.created_at) : "-"}
+              </div>
+              <div className="track-row-added">
+                {track.added_at
+                  ? formatTimeAgo(track.added_at)
+                  : resolvedTrack.created_at
+                    ? formatTimeAgo(resolvedTrack.created_at)
+                    : "-"}
+              </div>
             </div>
-          </div>
-          <div className="track-row-duration">
-            {formatDuration(track.duration)}
-          </div>
-          <div className="track-row-year">
-            {track.created_at ? getYear(track.created_at) : "-"}
-          </div>
-          <div className="track-row-added">
-            {track.added_at
-              ? formatTimeAgo(track.added_at)
-              : track.created_at
-                ? formatTimeAgo(track.created_at)
-                : "-"}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
+          );
+        })}
+      </div>
+    );
+  };
 
   const renderSearchTrackCards = (trackItems: any[]) => (
     <div className="horizontal-scroll drag-scroll">
@@ -3423,7 +3556,7 @@ export default function Home() {
               className="sidebar-toggle"
               onClick={() => setSidebarExpanded(!sidebarExpanded)}
             >
-              {sidebarExpanded ? "◀" : "▶"}
+              {sidebarExpanded ? "?" : "?"}
             </button>
 
             <nav className="sidebar-nav">
@@ -3587,7 +3720,7 @@ export default function Home() {
                 onClick={handleLogout}
               >
                 {sidebarExpanded && <span className="nav-label">Log out</span>}
-                {!sidebarExpanded && <span aria-hidden="true">⎋</span>}
+                {!sidebarExpanded && <span aria-hidden="true">?</span>}
               </button>
             </div>
           </>
@@ -4095,23 +4228,78 @@ export default function Home() {
                           )}
                         </h2>
                         {viewingArtist && selectedArtist?.id && (
-                          <button
-                            className={`follow-btn ${isFollowingArtist ? "following" : ""}`}
-                            onClick={async () => {
-                              if (checkingArtistFollow) return;
-                              setCheckingArtistFollow(true);
-                              const success = isFollowingArtist
-                                ? await unfollowUser(selectedArtist.id)
-                                : await followUser(selectedArtist.id);
-                              if (success) {
-                                setIsFollowingArtist(!isFollowingArtist);
+                          <div className="profile-header-actions">
+                            <button
+                              className={`follow-btn ${isFollowingArtist ? "following" : ""}`}
+                              onClick={async () => {
+                                if (checkingArtistFollow) return;
+                                setCheckingArtistFollow(true);
+                                const success = isFollowingArtist
+                                  ? await unfollowUser(selectedArtist.id)
+                                  : await followUser(selectedArtist.id);
+                                if (success) {
+                                  setIsFollowingArtist(!isFollowingArtist);
+                                }
+                                setCheckingArtistFollow(false);
+                              }}
+                              disabled={checkingArtistFollow}
+                            >
+                              {isFollowingArtist ? "Following" : "Follow"}
+                            </button>
+                            <button
+                              type="button"
+                              className={`friend-btn ${artistFriendStatus === "friends" ? "active" : ""}`}
+                              onClick={async () => {
+                                if (
+                                  checkingArtistFriendStatus ||
+                                  !selectedArtist?.id
+                                ) {
+                                  return;
+                                }
+
+                                setCheckingArtistFriendStatus(true);
+                                let success = false;
+
+                                if (artistFriendStatus === "incoming") {
+                                  success = await acceptFriendRequestForUser(
+                                    selectedArtist.id,
+                                  );
+                                } else if (artistFriendStatus === "none") {
+                                  success = await sendFriendRequestToUser(
+                                    selectedArtist.id,
+                                  );
+                                } else if (artistFriendStatus === "friends") {
+                                  success = await removeFriendForUser(
+                                    selectedArtist.id,
+                                  );
+                                }
+
+                                if (success) {
+                                  const nextStatus = await checkFriendStatus(
+                                    selectedArtist.id,
+                                  );
+                                  setArtistFriendStatus(nextStatus);
+                                }
+
+                                setCheckingArtistFriendStatus(false);
+                              }}
+                              disabled={
+                                checkingArtistFriendStatus ||
+                                artistFriendStatus === "self" ||
+                                artistFriendStatus === "outgoing"
                               }
-                              setCheckingArtistFollow(false);
-                            }}
-                            disabled={checkingArtistFollow}
-                          >
-                            {isFollowingArtist ? "Following" : "Follow"}
-                          </button>
+                            >
+                              {checkingArtistFriendStatus
+                                ? "Loading..."
+                                : artistFriendStatus === "incoming"
+                                  ? "Accept Friend"
+                                  : artistFriendStatus === "outgoing"
+                                    ? "Requested"
+                                    : artistFriendStatus === "friends"
+                                      ? "Friends"
+                                      : "Add Friend"}
+                            </button>
+                          </div>
                         )}
                       </div>
                     </div>
@@ -5398,6 +5586,13 @@ export default function Home() {
     </div>
   );
 }
+
+
+
+
+
+
+
 
 
 

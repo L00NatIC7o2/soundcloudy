@@ -4,11 +4,11 @@
   "version": "0.1.0",
   "description": "A SoundCloud music player",
   "author": "Soundcloudy",
-  "main": "electron/main.cjs",
+  "main": "apps/desktop/electron/main.cjs",
   "scripts": {
     "dev": "next dev",
     "dev:host": "next dev --hostname 0.0.0.0 --port 3000",
-    "socket:start": "node server/socket-server.js",
+    "socket:start": "node apps/socket-server/src/server.js",
     "dev:all": "concurrently \"npm run dev:host\" \"npm run socket:start\"",
     "tunnel:web": "ngrok http 3000",
     "tunnel:socket": "ngrok http 3001",
@@ -67,7 +67,7 @@
       "output": "E:\\soundcloudy-build"
     },
     "files": [
-      "electron/**/*",
+      "apps/desktop/electron/**/*",
       ".next/static/**/*",
       "public/**/*",
       "icon.ico",

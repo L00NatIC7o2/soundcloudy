@@ -51,6 +51,13 @@ export default async function handler(
 
   try {
     const trackIdNum = parseInt(trackId as string);
+    const meResponse = await axios.get("https://api.soundcloud.com/me", {
+      headers: {
+        Authorization: `OAuth ${token}`,
+      },
+      timeout: 10000,
+    });
+    const currentUserId = Number(meResponse.data?.id);
 
     if (playlistId) {
       const targetPlaylistId = parseInt(playlistId as string);
@@ -81,10 +88,13 @@ export default async function handler(
       token,
       100,
     );
+    const ownedPlaylists = playlists.filter(
+      (playlist: any) => Number(playlist?.user?.id) === currentUserId,
+    );
     const playlistsWithTrack: any[] = [];
 
     // Check each playlist for the track
-    for (const playlist of playlists) {
+    for (const playlist of ownedPlaylists) {
       try {
         const tracks = await fetchPaginatedCollection(
           `https://api.soundcloud.com/playlists/${playlist.id}/tracks`,

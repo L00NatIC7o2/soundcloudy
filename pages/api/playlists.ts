@@ -15,6 +15,14 @@ export default async function handler(
   }
 
   try {
+    const meResponse = await axios.get("https://api.soundcloud.com/me", {
+      headers: {
+        Authorization: `OAuth ${token}`,
+      },
+      timeout: 10000,
+    });
+    const currentUserId = Number(meResponse.data?.id);
+
     const response = await axios.get(
       "https://api.soundcloud.com/me/playlists",
       {
@@ -35,7 +43,9 @@ export default async function handler(
       response.data.collection?.length || response.data.length || 0,
     );
 
-    const playlists = response.data.collection || response.data || [];
+    const playlists = (response.data.collection || response.data || []).filter(
+      (playlist: any) => Number(playlist?.user?.id) === currentUserId,
+    );
     res.json({ playlists });
   } catch (error: any) {
     console.error(
