@@ -1093,7 +1093,7 @@ export default function Home() {
     }
   };
 
-  const openHomepage = useCallback(() => {
+  const openHomepage = () => {
     setViewingHomepage(true);
     setSelectedPlaylist(null);
     setViewingLikes(false);
@@ -1103,28 +1103,28 @@ export default function Home() {
     setSelectedArtist(null);
     setUserProfile(null);
     pushTabState("homepage");
-  }, []);
+  };
 
-  const openProfileView = useCallback(() => {
+  const openProfileView = () => {
     setViewingHomepage(false);
     void handleProfileClick();
-  }, []);
+  };
 
-  const openLikesView = useCallback(() => {
+  const openLikesView = () => {
     setViewingHomepage(false);
     void handleLikesClick();
-  }, []);
+  };
 
-  const openLibraryView = useCallback(() => {
+  const openLibraryView = () => {
     setViewingHomepage(false);
     void handleLibraryClick();
-  }, []);
+  };
 
-  const openNewReleasesView = useCallback(() => {
+  const openNewReleasesView = () => {
     setViewingHomepage(false);
     setSelectedPlaylist(null);
     setViewingLikes(false);
-  }, []);
+  };
 
   const normalizeHistoryItems = (items: any[]) =>
     items.map((item: any) => ({

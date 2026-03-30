@@ -3,6 +3,7 @@ const {
   BrowserWindow,
   Tray,
   Menu,
+  dialog,
   globalShortcut,
   nativeImage,
   ipcMain,
@@ -19,6 +20,7 @@ let mainWindow = null;
 let tray = null;
 let isQuitting = false;
 let serverProcess = null;
+let updateDownloadNotified = false;
 const PROTOCOL = "soundcloudy";
 const HISTORY_COOKIE_FILENAME = "soundcloud-history-cookies.json";
 
@@ -1022,6 +1024,60 @@ const setupShortcuts = () => {
   });
 };
 
+const setupAutoUpdater = () => {
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+
+  autoUpdater.on("checking-for-update", () => {
+    updateDownloadNotified = false;
+    console.log("[updater] checking for update");
+  });
+
+  autoUpdater.on("update-available", (info) => {
+    console.log("[updater] update available", info?.version || null);
+  });
+
+  autoUpdater.on("update-not-available", () => {
+    console.log("[updater] update not available");
+  });
+
+  autoUpdater.on("error", (error) => {
+    console.error("[updater] error", error?.message || error);
+  });
+
+  autoUpdater.on("download-progress", (progress) => {
+    console.log(
+      "[updater] download progress",
+      `${Math.round(progress?.percent || 0)}%`,
+    );
+  });
+
+  autoUpdater.on("update-downloaded", async (info) => {
+    console.log("[updater] update downloaded", info?.version || null);
+    if (updateDownloadNotified) return;
+    updateDownloadNotified = true;
+
+    try {
+      const result = await dialog.showMessageBox(mainWindow || undefined, {
+        type: "info",
+        buttons: ["Install Now", "Later"],
+        defaultId: 0,
+        cancelId: 1,
+        title: "Update Ready",
+        message: `Soundcloudy ${info?.version || ""} is ready to install.`,
+        detail:
+          "The update has finished downloading. Install now to restart the app and apply it.",
+      });
+
+      if (result.response === 0) {
+        autoUpdater.quitAndInstall();
+      }
+    } catch (error) {
+      console.error("[updater] failed to show install prompt", error);
+    }
+  });
+};
+
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
   app.quit();
@@ -1043,6 +1099,7 @@ app.on("ready", async () => {
   await createWindow();
   setupTray();
   setupShortcuts();
+  setupAutoUpdater();
 
   if (app.isPackaged) {
     autoUpdater.checkForUpdatesAndNotify();

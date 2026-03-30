@@ -21,6 +21,7 @@
     "electron:dev": "concurrently \"npm run dev\" \"wait-on http://localhost:3000 && electron .\"",
     "electron:build": "npm run build && electron-builder",
     "electron:pack": "npm run build && electron-builder --dir",
+    "electron:publish": "npm run build && electron-builder --publish always",
     "tauri": "tauri",
     "tauri-dev": "tauri dev",
     "tauri-build": "tauri build"
@@ -99,6 +100,13 @@
     "asar": true,
     "win": {
       "target": "nsis"
-    }
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "L00NatIC7o2",
+        "repo": "soundcloudy"
+      }
+    ]
   }
 }
