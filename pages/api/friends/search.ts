@@ -10,6 +10,7 @@ import {
 import {
   getFriendStatus,
   readFriendStore,
+  type StoredFriendUser,
   upsertStoredUser,
   writeFriendStore,
 } from "../../../src/server/friends/store";
@@ -42,12 +43,12 @@ export default async function handler(
       ? [await fetchSoundCloudUserById(auth.token, codeUserId)]
       : await searchSoundCloudUsers(auth.token, query);
 
-    users.forEach((user) => upsertStoredUser(store, user));
+    users.forEach((user: StoredFriendUser) => upsertStoredUser(store, user));
     await writeFriendStore(store);
 
     const results = users
-      .filter((user) => Number(user.userId) > 0)
-      .map((user) => ({
+      .filter((user: StoredFriendUser) => Number(user.userId) > 0)
+      .map((user: StoredFriendUser) => ({
         userId: user.userId,
         name: user.username,
         avatarUrl: user.avatarUrl || null,
