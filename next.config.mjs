@@ -21,6 +21,7 @@ const allowedDevOrigins = Array.from(
 
 const nextConfig = {
   allowedDevOrigins,
+  output: "standalone",
   serverExternalPackages: ["puppeteer"],
 };
 
