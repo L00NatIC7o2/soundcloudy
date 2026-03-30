@@ -7,6 +7,13 @@ export type SoundCloudAuthContext = {
   queryValue: string;
 };
 
+export type SoundCloudWebCredentials = {
+  clientId: string;
+  appVersion?: string | null;
+  appLocale?: string | null;
+  updatedAt?: number;
+};
+
 type RefreshResult = {
   accessToken: string;
   refreshToken: string;
@@ -18,6 +25,7 @@ type StoredUserTokens = {
   username?: string | null;
   accessToken: string;
   refreshToken?: string;
+  webCredentials?: SoundCloudWebCredentials | null;
   expiresAt: number;
   updatedAt: number;
 };
@@ -37,6 +45,7 @@ declare global {
 const SESSION_COOKIE = "soundcloudy_session";
 const REFRESH_GRACE_MS = 30_000;
 const SESSION_MAX_AGE = 31536000;
+const DEFAULT_WEB_APP_LOCALE = process.env.SOUNDCLOUD_APP_LOCALE || "en";
 const refreshLocks = new Map<string, Promise<RefreshResult>>();
 
 const getTokenStore = () => {
@@ -152,12 +161,15 @@ const persistUserTokens = (
   refreshToken?: string,
   expiresIn = 3600,
   username?: string | null,
+  webCredentials?: SoundCloudWebCredentials | null,
 ) => {
+  const previous = getTokenStore().get(userId);
   const tokens: StoredUserTokens = {
     userId,
-    username: username ?? getTokenStore().get(userId)?.username ?? null,
+    username: username ?? previous?.username ?? null,
     accessToken,
     refreshToken,
+    webCredentials: webCredentials ?? previous?.webCredentials ?? null,
     expiresAt: Date.now() + expiresIn * 1000,
     updatedAt: Date.now(),
   };
@@ -291,12 +303,73 @@ export const getStoredSoundCloudSession = async (
   return await getSessionStateFromRequest(req, res);
 };
 
+const sanitizeWebCredentials = (
+  webCredentials?: Partial<SoundCloudWebCredentials> | null,
+) => {
+  if (!webCredentials?.clientId) return null;
+  return {
+    clientId: String(webCredentials.clientId),
+    appVersion: webCredentials.appVersion
+      ? String(webCredentials.appVersion)
+      : null,
+    appLocale: webCredentials.appLocale
+      ? String(webCredentials.appLocale)
+      : DEFAULT_WEB_APP_LOCALE,
+    updatedAt: Date.now(),
+  } satisfies SoundCloudWebCredentials;
+};
+
+export const setSoundCloudWebCredentialsForUser = (
+  userId: string,
+  webCredentials?: Partial<SoundCloudWebCredentials> | null,
+) => {
+  const sanitized = sanitizeWebCredentials(webCredentials);
+  if (!sanitized) return null;
+  const existing = getTokenStore().get(userId);
+  if (!existing) return null;
+  const nextTokens: StoredUserTokens = {
+    ...existing,
+    webCredentials: sanitized,
+    updatedAt: Date.now(),
+  };
+  getTokenStore().set(userId, nextTokens);
+  return sanitized;
+};
+
+export const setRequestSoundCloudWebCredentials = async (
+  req: NextApiRequest,
+  res: NextApiResponse,
+  webCredentials?: Partial<SoundCloudWebCredentials> | null,
+) => {
+  const sessionState = await getSessionStateFromRequest(req, res);
+  const userId = sessionState?.session?.userId;
+  if (!userId) return null;
+  return setSoundCloudWebCredentialsForUser(userId, webCredentials);
+};
+
+export const getRequestSoundCloudWebCredentials = async (
+  req: NextApiRequest,
+  res: NextApiResponse,
+) => {
+  const sessionState = await getSessionStateFromRequest(req, res);
+  const credentials = sessionState?.tokens?.webCredentials;
+  if (credentials?.clientId) {
+    return {
+      clientId: credentials.clientId,
+      appVersion: credentials.appVersion || null,
+      appLocale: credentials.appLocale || DEFAULT_WEB_APP_LOCALE,
+      updatedAt: credentials.updatedAt || Date.now(),
+    } satisfies SoundCloudWebCredentials;
+  }
+  return null;
+};
 export const establishSoundCloudSession = async (
   req: NextApiRequest,
   res: NextApiResponse,
   accessToken: string,
   refreshToken?: string,
   expiresIn = 3600,
+  webCredentials?: Partial<SoundCloudWebCredentials> | null,
 ) => {
   const user = await fetchSoundCloudUser(accessToken);
   const tokens = persistUserTokens(
@@ -305,6 +378,7 @@ export const establishSoundCloudSession = async (
     refreshToken,
     expiresIn,
     user.username,
+    sanitizeWebCredentials(webCredentials),
   );
   const existingSessionId = req.cookies[SESSION_COOKIE];
   const existingSession = existingSessionId
@@ -474,6 +548,7 @@ export const refreshSoundCloudAuth = async (
       refreshed.refreshToken,
       refreshed.expiresIn,
       sessionState.tokens?.username,
+      sessionState.tokens?.webCredentials,
     );
     setSoundCloudSessionCookie(res, sessionState.session.sessionId);
     syncRequestCookies(
@@ -501,4 +576,13 @@ export const refreshSoundCloudAuth = async (
 
   return getSoundCloudAuthContext(refreshed.accessToken);
 };
+
+
+
+
+
+
+
+
+
 

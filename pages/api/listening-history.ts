@@ -4,8 +4,10 @@ import path from "path";
 import axios from "axios";
 import puppeteer, { type Browser, type Page } from "puppeteer";
 import {
+  getRequestSoundCloudWebCredentials,
   refreshSoundCloudAuth,
   refreshSoundCloudTokenValue,
+  setRequestSoundCloudWebCredentials,
 } from "../../src/server/auth/soundcloud";
 
 const HISTORY_URL = "https://soundcloud.com/you/history";
@@ -130,6 +132,25 @@ const getAppVersion = () => {
   return process.env.SOUNDCLOUD_APP_VERSION || PLAY_HISTORY_APP_VERSION;
 };
 
+const resolveRequestWebCredentials = async (req: NextApiRequest, res: NextApiResponse) => {
+  const sessionCredentials = await getRequestSoundCloudWebCredentials(req, res);
+  const clientId =
+    sessionCredentials?.clientId ||
+    getV2ClientId();
+  const appVersion =
+    sessionCredentials?.appVersion ||
+    getAppVersion();
+  const appLocale =
+    sessionCredentials?.appLocale ||
+    PLAY_HISTORY_LOCALE;
+
+  return {
+    clientId,
+    appVersion,
+    appLocale,
+  };
+};
+
 const normalizePlayHistoryItem = (item: any) => {
   const track =
     item?.track || item?.played_track || item?.item || item?.sound || item;
@@ -172,15 +193,20 @@ const refreshAccessToken = async (refreshToken: string) => {
 const fetchPlayHistory = async (
   token: string,
   limit: number,
+  webCredentials: {
+    clientId: string;
+    appVersion: string;
+    appLocale: string;
+  },
   refreshToken?: string,
 ) => {
-  const clientId = getV2ClientId();
-  const appVersion = getAppVersion();
+  const clientId = webCredentials.clientId;
+  const appVersion = webCredentials.appVersion;
   const params = {
     limit,
     client_id: clientId,
     app_version: appVersion,
-    app_locale: PLAY_HISTORY_LOCALE,
+    app_locale: webCredentials.appLocale,
     oauth_token: token,
   };
   let response;
@@ -529,6 +555,7 @@ const collectSampleNodes = (input: unknown, limit: number) => {
 
 const getListeningHistoryInternal = async (
   req: NextApiRequest,
+  res: NextApiResponse,
   tokenOverride?: string,
   refreshTokenOverride?: string,
 ) => {
@@ -550,10 +577,13 @@ const getListeningHistoryInternal = async (
     throw new Error("Not authenticated");
   }
 
+  const requestWebCredentials = await resolveRequestWebCredentials(req, res);
+
   try {
     const { tracks, rawCount } = await fetchPlayHistory(
       token,
       limit,
+      requestWebCredentials,
       refreshToken,
     );
     return {
@@ -576,9 +606,9 @@ const getListeningHistoryInternal = async (
             url: PLAY_HISTORY_URL,
             params: {
               limit,
-              client_id: getV2ClientId(),
-              app_version: PLAY_HISTORY_APP_VERSION,
-              app_locale: PLAY_HISTORY_LOCALE,
+              client_id: requestWebCredentials.clientId,
+              app_version: requestWebCredentials.appVersion,
+              app_locale: requestWebCredentials.appLocale,
             },
           }
         : undefined;
@@ -826,6 +856,11 @@ const getListeningHistoryInternal = async (
         appVersion: capturedAppVersion,
         timestamp: Date.now(),
       };
+      await setRequestSoundCloudWebCredentials(req, res, {
+        clientId: capturedClientId,
+        appVersion: capturedAppVersion,
+        appLocale: PLAY_HISTORY_LOCALE,
+      });
     }
 
     const loggedOut = /signin|login|connect|session/.test(pageUrl);
@@ -853,14 +888,17 @@ const getListeningHistoryInternal = async (
   }
 };
 
-const getListeningHistory = async (req: NextApiRequest) => {
+const getListeningHistory = async (
+  req: NextApiRequest,
+  res: NextApiResponse,
+) => {
   try {
-    return await getListeningHistoryInternal(req);
+    return await getListeningHistoryInternal(req, res);
   } catch (error: any) {
     const message = error instanceof Error ? error.message : String(error);
     if (message.includes("Connection closed")) {
       browserPromise = null;
-      return await getListeningHistoryInternal(req);
+      return await getListeningHistoryInternal(req, res);
     }
     throw error;
   }
@@ -895,7 +933,7 @@ export default async function handler(
       return res.status(200).json({ ...historyCache.data, cached: true });
     }
 
-    const payload = await getListeningHistoryInternal(req, token);
+    const payload = await getListeningHistoryInternal(req, res, token);
 
     // Store in cache
     if (token) {

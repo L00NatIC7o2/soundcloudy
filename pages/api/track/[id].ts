@@ -2,6 +2,7 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import axios from "axios";
 import {
   getRequestSoundCloudAuthContext,
+  getRequestSoundCloudWebCredentials,
   refreshSoundCloudAuth,
   type SoundCloudAuthContext,
 } from "../../../src/server/auth/soundcloud";
@@ -20,11 +21,6 @@ type CacheEntry = {
 
 const TRACK_CACHE_TTL_MS = 60 * 1000;
 const trackResponseCache = new Map<string, CacheEntry>();
-
-const getPublicClientId = () =>
-  process.env.SOUNDCLOUD_V2_CLIENT_ID ||
-  process.env.SOUNDCLOUD_CLIENT_ID ||
-  "BecG5WJDDxYMffAfWcjJleNqrGyJyZhI";
 
 const readCache = (trackId: string) => {
   const cached = trackResponseCache.get(trackId);
@@ -46,6 +42,7 @@ const writeCache = (trackId: string, data: TrackApiResponse) => {
 const requestWithFallback = async <T>(
   urls: string[],
   auth: SoundCloudAuthContext | null,
+  publicClientId: string,
   refreshAuth?: () => Promise<SoundCloudAuthContext | null>,
   params: Record<string, string | number> = {},
 ) => {
@@ -100,7 +97,7 @@ const requestWithFallback = async <T>(
 
     try {
       return await axios.get<T>(url, {
-        params: { ...params, client_id: getPublicClientId() },
+        params: { ...params, client_id: publicClientId },
         timeout: 10000,
       });
     } catch (publicError: any) {
@@ -123,6 +120,7 @@ const buildArtist = (user: any) => ({
 const fetchTrackPayload = async (
   trackId: string,
   auth: SoundCloudAuthContext | null,
+  publicClientId: string,
   refreshAuth: () => Promise<SoundCloudAuthContext | null>,
 ): Promise<TrackApiResponse> => {
   const trackRes = await requestWithFallback<any>(
@@ -131,6 +129,7 @@ const fetchTrackPayload = async (
       `https://api.soundcloud.com/tracks/${trackId}`,
     ],
     auth,
+    publicClientId,
     refreshAuth,
   );
   const track = trackRes.data;
@@ -142,6 +141,7 @@ const fetchTrackPayload = async (
         `https://api.soundcloud.com/tracks/${trackId}/comments`,
       ],
       auth,
+      publicClientId,
       refreshAuth,
       { limit: 50 },
     ),
@@ -151,6 +151,7 @@ const fetchTrackPayload = async (
         `https://api.soundcloud.com/tracks/${trackId}/related`,
       ],
       auth,
+      publicClientId,
       refreshAuth,
       { limit: 8 },
     ),
@@ -208,6 +209,11 @@ export default async function handler(
   const { id } = req.query;
   const trackId = Array.isArray(id) ? id[0] : id;
   let auth = await getRequestSoundCloudAuthContext(req, res);
+  const webCredentials = await getRequestSoundCloudWebCredentials(req, res);
+  const publicClientId =
+    webCredentials?.clientId ||
+    process.env.SOUNDCLOUD_CLIENT_ID ||
+    "BecG5WJDDxYMffAfWcjJleNqrGyJyZhI";
 
   if (!trackId) {
     return res.status(400).json({ error: "Missing track id" });
@@ -224,7 +230,12 @@ export default async function handler(
   };
 
   try {
-    const payload = await fetchTrackPayload(trackId, auth, refreshAuth);
+    const payload = await fetchTrackPayload(
+      trackId,
+      auth,
+      publicClientId,
+      refreshAuth,
+    );
     writeCache(trackId, payload);
     return res.json(payload);
   } catch (error: any) {
