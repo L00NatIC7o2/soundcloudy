@@ -11,7 +11,9 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
   const { connect_code } = req.query;
   if (!connect_code || typeof connect_code !== "string")
     return res.status(400).json({ error: "missing connect_code" });
-  if (!codes.has(connect_code))
+
+  const existingEntry = codes.get(connect_code);
+  if (!existingEntry)
     return res.status(404).json({ error: "invalid connect_code" });
 
   const clientId = process.env.SOUNDCLOUD_CLIENT_ID;
@@ -24,7 +26,7 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
   const codeChallenge = generateCodeChallenge(codeVerifier);
 
   codes.set(connect_code, {
-    ...codes.get(connect_code),
+    ...existingEntry,
     codeVerifier,
     status: "pending",
     createdAt: Date.now(),
