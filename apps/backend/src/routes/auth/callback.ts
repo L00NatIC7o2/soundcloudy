@@ -9,7 +9,11 @@ export default async function handler(
   res: NextApiResponse,
 ) {
   const { code, state } = req.query;
-  const verifier = req.cookies.soundcloud_code_verifier;
+  const store = getConnectStore();
+  const stateKey = typeof state === "string" ? state : null;
+  const storedEntry = stateKey ? store.get(stateKey) : null;
+  const verifier =
+    req.cookies.soundcloud_code_verifier || storedEntry?.codeVerifier;
 
   if (!code || typeof code !== "string") {
     res.status(400).json({ error: "Missing authorization code" });
@@ -58,29 +62,27 @@ export default async function handler(
       return;
     }
 
-    if (state && typeof state === "string") {
-      const store = getConnectStore();
-      if (store.has(state)) {
-        store.set(state, {
-          ...store.get(state),
-          status: "complete",
-          tokens: tokenJson,
-          createdAt: Date.now(),
-          expires_in: Number(tokenJson.expires_in) || 600,
-        });
+    if (stateKey && store.has(stateKey)) {
+      store.set(stateKey, {
+        ...store.get(stateKey),
+        status: "complete",
+        tokens: tokenJson,
+        createdAt: Date.now(),
+        expires_in: Number(tokenJson.expires_in) || 600,
+        codeVerifier: undefined,
+      });
 
-        res.setHeader("Content-Type", "text/html");
-        res.send(`
-          <html>
-            <body style="font-family: sans-serif; text-align: center; padding-top: 50px;">
-              <h1>Successfully Connected!</h1>
-              <p>You can close this window and return to your other device.</p>
-              <script>setTimeout(() => window.close(), 3000);</script>
-            </body>
-          </html>
-        `);
-        return;
-      }
+      res.setHeader("Content-Type", "text/html");
+      res.send(`
+        <html>
+          <body style="font-family: sans-serif; text-align: center; padding-top: 50px;">
+            <h1>Successfully Connected!</h1>
+            <p>You can close this window and return to your other device.</p>
+            <script>setTimeout(() => window.close(), 3000);</script>
+          </body>
+        </html>
+      `);
+      return;
     }
 
     await establishSoundCloudSession(
@@ -112,4 +114,3 @@ export default async function handler(
     return;
   }
 }
-

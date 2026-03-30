@@ -1,4 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
+import crypto from "crypto";
+import { getConnectStore } from "../../server/auth/connectStore";
 import {
   generateCodeChallenge,
   generateCodeVerifier,
@@ -9,7 +11,8 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
   const clientId = process.env.SOUNDCLOUD_CLIENT_ID;
   const requestedRedirect =
     typeof req.query.redirect_uri === "string" ? req.query.redirect_uri : null;
-  const state = typeof req.query.state === "string" ? req.query.state : null;
+  const requestedState =
+    typeof req.query.state === "string" ? req.query.state : null;
   const redirectUri = requestedRedirect
     ? requestedRedirect
     : getAuthCallbackUrl(req);
@@ -22,6 +25,15 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
 
   const codeVerifier = generateCodeVerifier();
   const codeChallenge = generateCodeChallenge(codeVerifier);
+  const state = requestedState || crypto.randomUUID();
+
+  const store = getConnectStore();
+  store.set(state, {
+    createdAt: Date.now(),
+    expires_in: 600,
+    status: "pending",
+    codeVerifier,
+  });
 
   res.setHeader(
     "Set-Cookie",
@@ -35,10 +47,7 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
   url.searchParams.set("scope", "non-expiring");
   url.searchParams.set("code_challenge", codeChallenge);
   url.searchParams.set("code_challenge_method", "S256");
-  if (state) {
-    url.searchParams.set("state", state);
-  }
+  url.searchParams.set("state", state);
 
   res.redirect(url.toString());
 }
-

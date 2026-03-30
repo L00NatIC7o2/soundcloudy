@@ -1,6 +1,7 @@
 type ConnectEntry = {
   createdAt: number;
   expires_in: number;
+  codeVerifier?: string;
   status?: "pending" | "complete";
   tokens?: {
     access_token?: string;
