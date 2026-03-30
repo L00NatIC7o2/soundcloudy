@@ -1,6 +1,8 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import backendHandler from "../../../apps/backend/src/routes/auth/complete";
 
+const DEFAULT_REMOTE_API_URL = "https://soundcloudy-backend.onrender.com";
+
 function getRequestOrigin(req: NextApiRequest) {
   const protoHeader = req.headers["x-forwarded-proto"];
   const hostHeader = req.headers["x-forwarded-host"];
@@ -10,7 +12,7 @@ function getRequestOrigin(req: NextApiRequest) {
 }
 
 function getRemoteApiBase(req: NextApiRequest) {
-  const configured = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") || "";
+  const configured = (process.env.NEXT_PUBLIC_API_URL || DEFAULT_REMOTE_API_URL).replace(/\/$/, "");
   const requestOrigin = getRequestOrigin(req);
   if (!configured || configured === requestOrigin) {
     return null;
@@ -41,11 +43,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       `${remoteApiBase}/api/auth/complete?connect_code=${encodeURIComponent(connectCode)}`,
     );
     const text = await response.text();
-    const body = text ? JSON.parse(text) : null;
+    let body = null;
+    try {
+      body = text ? JSON.parse(text) : null;
+    } catch {
+      body = text ? { raw: text } : null;
+    }
     return res.status(response.status).json(body);
   } catch (error) {
     return res.status(502).json({
       error: error instanceof Error ? error.message : "Failed to reach auth backend",
+      remoteApiBase,
     });
   }
 }
