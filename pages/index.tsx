@@ -3555,8 +3555,18 @@ export default function Home() {
             <button
               className="sidebar-toggle"
               onClick={() => setSidebarExpanded(!sidebarExpanded)}
+              aria-label={sidebarExpanded ? "Collapse sidebar" : "Expand sidebar"}
+              title={sidebarExpanded ? "Collapse sidebar" : "Expand sidebar"}
             >
-              {sidebarExpanded ? "?" : "?"}
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path
+                  d={sidebarExpanded ? "M15 6l-6 6 6 6" : "M9 6l6 6-6 6"}
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
             </button>
 
             <nav className="sidebar-nav">
@@ -3718,9 +3728,17 @@ export default function Home() {
                 type="button"
                 className="sidebar-logout-btn"
                 onClick={handleLogout}
+                aria-label="Log out"
+                title="Log out"
               >
+                {!sidebarExpanded && (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path d="M15 17l5-5-5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                    <path d="M20 12H9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                    <path d="M12 19H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                )}
                 {sidebarExpanded && <span className="nav-label">Log out</span>}
-                {!sidebarExpanded && <span aria-hidden="true">?</span>}
               </button>
             </div>
           </>

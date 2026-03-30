@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, memo, type CSSProperties } from "react";
+import { useEffect, useRef, useState, memo, type CSSProperties, type MouseEvent as ReactMouseEvent } from "react";
 import { io, Socket } from "socket.io-client";
 import PlaylistMenu from "./PlaylistMenu";
 import MobilePlaylistSheet from "./MobilePlaylistSheet";
@@ -411,6 +411,14 @@ const Player = memo(function Player({
   const [isLiked, setIsLiked] = useState(false);
   const [loading, setLoading] = useState(false);
   const [isPlaylistMenuOpen, setIsPlaylistMenuOpen] = useState(false);
+  const [artworkContextMenu, setArtworkContextMenu] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
+  const [artworkContextPlaylistMenu, setArtworkContextPlaylistMenu] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
   const [isQueuePanelOpen, setIsQueuePanelOpen] = useState(false);
   const [activeSidebarTab, setActiveSidebarTab] =
     useState<PlayerSidebarTab>("queue");
@@ -462,6 +470,7 @@ const Player = memo(function Player({
   const queueResizeStartWidthRef = useRef<number>(320);
   const queuePullTabStartXRef = useRef<number | null>(null);
   const queuePullTabDraggedRef = useRef(false);
+  const artworkContextMenuRef = useRef<HTMLDivElement | null>(null);
   const playlistMembershipRequestRef = useRef(0);
   const [friendActivity, setFriendActivity] = useState<FriendActivity[]>([]);
   const [incomingFriendRequests, setIncomingFriendRequests] = useState<
@@ -865,6 +874,7 @@ const Player = memo(function Player({
   } as CSSProperties;
   const mobileTrackArtist =
     mobileTrackDetails?.artist || currentTrack?.user || currentTrack?.artist || null;
+  const nowPlayingArtist = mobileTrackArtist;
   const mobileTrackStats = [
     {
       label: "Plays",
@@ -1261,6 +1271,33 @@ const Player = memo(function Player({
   }, [isVolumePopoverOpen]);
 
   useEffect(() => {
+    if (!artworkContextMenu && !artworkContextPlaylistMenu) return;
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (
+        artworkContextMenuRef.current &&
+        !artworkContextMenuRef.current.contains(event.target as Node)
+      ) {
+        setArtworkContextMenu(null);
+      }
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setArtworkContextMenu(null);
+        setArtworkContextPlaylistMenu(null);
+      }
+    };
+
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleEscape);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [artworkContextMenu, artworkContextPlaylistMenu]);
+
+  useEffect(() => {
     if (typeof window === "undefined") return;
 
     const handleResize = () => {
@@ -1316,6 +1353,49 @@ const Player = memo(function Player({
       );
     } catch (error) {
       console.error("Failed to dispatch liked songs toast:", error);
+    }
+  };
+
+  const closeArtworkMenus = () => {
+    setArtworkContextMenu(null);
+    setArtworkContextPlaylistMenu(null);
+  };
+
+  const handleArtworkContextMenu = (event: ReactMouseEvent) => {
+    event.preventDefault();
+    setArtworkContextPlaylistMenu(null);
+    setArtworkContextMenu({ x: event.clientX, y: event.clientY });
+  };
+
+  const shareCurrentTrack = async () => {
+    const shareUrl =
+      currentTrack?.permalink_url ||
+      (typeof window !== "undefined"
+        ? `${window.location.origin}/track/${currentTrack?.id}`
+        : "");
+
+    if (!shareUrl) return;
+
+    try {
+      if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
+        await navigator.share({
+          title: currentTrack?.title || "Track",
+          text: currentTrack?.user?.username || undefined,
+          url: shareUrl,
+        });
+        return;
+      }
+    } catch (error) {
+      if (!(error instanceof DOMException && error.name === "AbortError")) {
+        console.error("Failed to share track:", error);
+      }
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+    } catch (error) {
+      console.error("Failed to copy track URL:", error);
     }
   };
 
@@ -1880,10 +1960,7 @@ const Player = memo(function Player({
                   e.preventDefault();
                   onTrackOpen?.(currentTrack);
                 }}
-                onContextMenu={(e) => {
-                  e.preventDefault();
-                  alert("Share | Go to Track | Add to Playlist");
-                }}
+                onContextMenu={handleArtworkContextMenu}
               >
                 <img
                   src={getTrackArtwork(currentTrack)}
@@ -1902,7 +1979,7 @@ const Player = memo(function Player({
                       className="player-link player-artist"
                       onClick={() => onArtistClick?.(currentTrack.user)}
                     >
-                      {currentTrack.user?.username || "Unknown"}
+                      {nowPlayingArtist?.username || "Unknown"}
                     </button>
                   ) : (
                     <span className="player-artist">
@@ -2039,6 +2116,60 @@ const Player = memo(function Player({
               onClose={() => setIsPlaylistMenuOpen(false)}
               playlistsWithTrack={playlistsWithTrack}
             />
+            {artworkContextMenu ? (
+              <div
+                ref={artworkContextMenuRef}
+                className="context-menu"
+                style={{ top: artworkContextMenu.y, left: artworkContextMenu.x }}
+              >
+                <button
+                  type="button"
+                  className="context-menu-item"
+                  onClick={async () => {
+                    await shareCurrentTrack();
+                    closeArtworkMenus();
+                  }}
+                >
+                  Share
+                </button>
+                <button
+                  type="button"
+                  className="context-menu-item"
+                  onClick={() => {
+                    onTrackOpen?.(currentTrack);
+                    closeArtworkMenus();
+                  }}
+                >
+                  Go to Track
+                </button>
+                <button
+                  type="button"
+                  className="context-menu-item"
+                  onClick={() => {
+                    setArtworkContextPlaylistMenu(artworkContextMenu);
+                    setArtworkContextMenu(null);
+                  }}
+                >
+                  Add to Playlist...
+                </button>
+              </div>
+            ) : null}
+            <div
+              className="context-playlist-menu"
+              style={{
+                top: artworkContextPlaylistMenu?.y,
+                left: artworkContextPlaylistMenu?.x,
+                visibility: artworkContextPlaylistMenu ? "visible" : "hidden",
+                pointerEvents: artworkContextPlaylistMenu ? "auto" : "none",
+              }}
+            >
+              <PlaylistMenu
+                trackId={currentTrack.id}
+                isOpen={!!artworkContextPlaylistMenu}
+                onClose={() => setArtworkContextPlaylistMenu(null)}
+                playlistsWithTrack={playlistsWithTrack}
+              />
+            </div>
             {isDeviceMenuOpen ? (
               <div className="player-device-menu">
                 <div className="player-device-menu-title">Listen On</div>
@@ -2572,7 +2703,7 @@ const Player = memo(function Player({
               <div className="player-now-playing-copy">
                 <div className="player-now-playing-title">{currentTrack.title}</div>
                 <div className="player-now-playing-artist">
-                  {currentTrack.user?.username || "Unknown"}
+                  {nowPlayingArtist?.username || "Unknown"}
                 </div>
               </div>
             </section>
@@ -2583,14 +2714,14 @@ const Player = memo(function Player({
                 tabIndex={0}
                 className="player-now-playing-artist-shell"
                 onClick={() => {
-                  if (currentTrack.user && onArtistClick) {
-                    onArtistClick(currentTrack.user);
+                  if (nowPlayingArtist && onArtistClick) {
+                    onArtistClick(nowPlayingArtist);
                   }
                 }}
                 onKeyDown={(event) => {
-                  if ((event.key === "Enter" || event.key === " ") && currentTrack.user && onArtistClick) {
+                  if ((event.key === "Enter" || event.key === " ") && nowPlayingArtist && onArtistClick) {
                     event.preventDefault();
-                    onArtistClick(currentTrack.user);
+                    onArtistClick(nowPlayingArtist);
                   }
                 }}
               >
@@ -2598,17 +2729,17 @@ const Player = memo(function Player({
                   className="player-now-playing-artist-banner"
                   style={{
                     backgroundImage: `linear-gradient(180deg, rgba(8,8,12,0.18), rgba(8,8,12,0.88)), url("${
-                      currentTrack.user?.avatar_url?.replace?.("-large", "-t500x500") ||
+                      nowPlayingArtist?.avatar_url?.replace?.("-large", "-t500x500") ||
                       getTrackArtwork(currentTrack)
                     }")`,
                   }}
                 />
                 <img
                   src={
-                    currentTrack.user?.avatar_url?.replace?.("-large", "-t500x500") ||
+                    nowPlayingArtist?.avatar_url?.replace?.("-large", "-t500x500") ||
                     "/placeholder.png"
                   }
-                  alt={currentTrack.user?.username || "Unknown"}
+                  alt={nowPlayingArtist?.username || "Unknown"}
                   className="player-now-playing-artist-avatar"
                 />
                 <div className="player-now-playing-artist-copy">
@@ -2616,8 +2747,8 @@ const Player = memo(function Player({
                     {currentTrack.user?.username || "Unknown"}
                   </div>
                   <div className="player-now-playing-artist-meta">
-                    {typeof currentTrack.user?.followers_count === "number"
-                      ? `${Number(currentTrack.user.followers_count).toLocaleString()} followers`
+                    {typeof nowPlayingArtist?.followers_count === "number"
+                      ? `${Number(nowPlayingArtist.followers_count).toLocaleString()} followers`
                       : "SoundCloud artist profile"}
                   </div>
                 </div>
