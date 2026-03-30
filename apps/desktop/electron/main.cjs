@@ -26,6 +26,10 @@ const HISTORY_COOKIE_FILENAME = "soundcloud-history-cookies.json";
 
 const PORT = 3000;
 const DEV_URL = "http://localhost:3000";
+const REMOTE_API_URL =
+  process.env.NEXT_PUBLIC_API_URL || "https://soundcloudy-backend.onrender.com";
+const REMOTE_SOCKET_URL =
+  process.env.NEXT_PUBLIC_SOCKET_URL || "https://soundcloudy-socket.onrender.com";
 const FALLBACK_CLIENT_ID = "BecG5WJDDxYMffAfWcjJleNqrGyJyZhI";
 const FALLBACK_APP_VERSION = "1770366292";
 
@@ -541,6 +545,8 @@ const startNextServer = () => {
       NODE_ENV: "production",
       PORT: String(PORT),
       HOSTNAME: "127.0.0.1",
+      NEXT_PUBLIC_API_URL: REMOTE_API_URL,
+      NEXT_PUBLIC_SOCKET_URL: REMOTE_SOCKET_URL,
       SOUNDCLOUD_HISTORY_COOKIE_PATH: getHistoryCookiePath(),
       ELECTRON_RUN_AS_NODE: "1",
     },
