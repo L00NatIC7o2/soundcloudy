@@ -2,7 +2,7 @@ import type { AppProps } from "next/app";
 import Head from "next/head";
 import { useEffect, useMemo, useState } from "react";
 import "../src/styles/main.css";
-import { getClientAppBase } from "../src/lib/runtimeConfig";
+import { getClientApiBase, getClientAppBase } from "../src/lib/runtimeConfig";
 
 export default function MyApp({ Component, pageProps }: AppProps) {
   const [userId, setUserId] = useState<string | null>(null);
@@ -117,28 +117,55 @@ export default function MyApp({ Component, pageProps }: AppProps) {
     if (connecting) return;
     setConnecting(true);
     try {
-      const res = await fetch(`/api/auth/bridge`, { method: "POST" });
+      const apiBase = getClientApiBase(window.location.origin);
+      const res = await fetch(`${apiBase}/api/auth/bridge`, { method: "POST" });
       const json = await res.json();
       const code = json.connect_code;
-      const startUrl = `/api/auth/start?connect_code=${code}`;
+      if (!res.ok || !code) {
+        throw new Error(json?.error || "Failed to start SoundCloud login");
+      }
+
+      const startUrl = `${apiBase}/api/auth/start?connect_code=${encodeURIComponent(code)}`;
       const electronApi = (window as any).electronAPI;
       if (electronApi?.openExternal) {
-        await electronApi.openExternal(`${window.location.origin}${startUrl}`);
+        await electronApi.openExternal(startUrl);
       } else {
         window.open(startUrl, "_blank");
       }
 
       for (let i = 0; i < 60; i++) {
         await new Promise((r) => setTimeout(r, 2000));
-        const c = await fetch(`/api/auth/complete?connect_code=${code}`);
+        const c = await fetch(
+          `${apiBase}/api/auth/complete?connect_code=${encodeURIComponent(code)}`,
+        );
         if (c.status === 200) {
           const body = await c.json();
+          const consumeResponse = await fetch(`/api/auth/consume`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body.tokens || {}),
+          });
+
+          if (!consumeResponse.ok) {
+            const consumeBody = await consumeResponse
+              .json()
+              .catch(() => null);
+            throw new Error(
+              consumeBody?.error || "Failed to import SoundCloud session",
+            );
+          }
+
           localStorage.setItem(
             "soundcloudy_tokens",
             JSON.stringify(body.tokens),
           );
           setScTokens(body.tokens);
           break;
+        }
+
+        if (c.status !== 202) {
+          const body = await c.json().catch(() => null);
+          throw new Error(body?.error || "SoundCloud login failed");
         }
       }
     } catch (err) {

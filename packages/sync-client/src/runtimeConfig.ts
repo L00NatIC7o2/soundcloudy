@@ -18,6 +18,15 @@ export function getClientAppBase(currentOrigin?: string) {
   return DEFAULT_APP_URL;
 }
 
+export function getClientApiBase(currentOrigin?: string) {
+  const configured = process.env.NEXT_PUBLIC_API_URL;
+  if (configured) {
+    return trimTrailingSlash(configured);
+  }
+
+  return getClientAppBase(currentOrigin);
+}
+
 export function getClientSocketUrl(baseUrl?: string) {
   const configured = process.env.NEXT_PUBLIC_SOCKET_URL;
   if (configured) {

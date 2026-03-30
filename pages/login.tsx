@@ -1,5 +1,6 @@
 import { useRouter } from "next/router";
 import { useEffect, useState } from "react";
+import { getClientApiBase } from "../src/lib/runtimeConfig";
 
 export default function Login() {
   const router = useRouter();
@@ -10,12 +11,15 @@ export default function Login() {
     if (connecting) return;
 
     const isElectron = Boolean((window as any)?.electronAPI?.openExternal);
+    const apiBase = getClientApiBase(window.location.origin);
 
     if (isElectron) {
       setError(null);
       setConnecting(true);
       try {
-        const bridgeResponse = await fetch("/api/auth/bridge", { method: "POST" });
+        const bridgeResponse = await fetch(`${apiBase}/api/auth/bridge`, {
+          method: "POST",
+        });
         if (!bridgeResponse.ok) {
           throw new Error("Failed to start Electron login");
         }
@@ -26,14 +30,14 @@ export default function Login() {
           throw new Error("Missing connect code");
         }
 
-        const loginUrl = `${window.location.origin}/api/auth/start?connect_code=${encodeURIComponent(connectCode)}`;
+        const loginUrl = `${apiBase}/api/auth/start?connect_code=${encodeURIComponent(connectCode)}`;
         await (window as any).electronAPI.openExternal(loginUrl);
 
         let completed = false;
         for (let attempt = 0; attempt < 90; attempt++) {
           await new Promise((resolve) => setTimeout(resolve, 2000));
           const completionResponse = await fetch(
-            `/api/auth/complete?connect_code=${encodeURIComponent(connectCode)}`,
+            `${apiBase}/api/auth/complete?connect_code=${encodeURIComponent(connectCode)}`,
           );
 
           if (completionResponse.status === 202) {
@@ -45,7 +49,19 @@ export default function Login() {
             throw new Error(body?.error || "Electron login failed");
           }
 
-          window.location.href = `/api/auth/consume?connect_code=${encodeURIComponent(connectCode)}`;
+          const completionBody = await completionResponse.json();
+          const consumeResponse = await fetch(`/api/auth/consume`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(completionBody.tokens || {}),
+          });
+
+          if (!consumeResponse.ok) {
+            const body = await consumeResponse.json().catch(() => null);
+            throw new Error(body?.error || "Failed to import SoundCloud session");
+          }
+
+          window.location.href = "/";
           completed = true;
           break;
         }
@@ -60,7 +76,7 @@ export default function Login() {
       return;
     }
 
-    const loginUrl = `${window.location.origin}/api/auth/login`;
+    const loginUrl = `${apiBase}/api/auth/login`;
     window.location.href = loginUrl;
   };
 

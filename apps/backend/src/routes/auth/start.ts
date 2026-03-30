@@ -23,6 +23,13 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
   const codeVerifier = generateCodeVerifier();
   const codeChallenge = generateCodeChallenge(codeVerifier);
 
+  codes.set(connect_code, {
+    ...codes.get(connect_code),
+    codeVerifier,
+    status: "pending",
+    createdAt: Date.now(),
+  });
+
   res.setHeader(
     "Set-Cookie",
     `soundcloud_code_verifier=${codeVerifier}; Path=/; HttpOnly; SameSite=Lax; Max-Age=600`,
@@ -36,4 +43,3 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
 
   res.redirect(authUrl);
 }
-
