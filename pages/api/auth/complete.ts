@@ -1,1 +1,51 @@
-export { default } from "../../../apps/backend/src/routes/auth/complete";
+import type { NextApiRequest, NextApiResponse } from "next";
+import backendHandler from "../../../apps/backend/src/routes/auth/complete";
+
+function getRequestOrigin(req: NextApiRequest) {
+  const protoHeader = req.headers["x-forwarded-proto"];
+  const hostHeader = req.headers["x-forwarded-host"];
+  const proto = Array.isArray(protoHeader) ? protoHeader[0] : protoHeader || "http";
+  const host = Array.isArray(hostHeader) ? hostHeader[0] : hostHeader || req.headers.host;
+  return host ? `${proto}://${host}`.replace(/\/$/, "") : "";
+}
+
+function getRemoteApiBase(req: NextApiRequest) {
+  const configured = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") || "";
+  const requestOrigin = getRequestOrigin(req);
+  if (!configured || configured === requestOrigin) {
+    return null;
+  }
+  return configured;
+}
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  const remoteApiBase = getRemoteApiBase(req);
+  if (!remoteApiBase) {
+    return backendHandler(req, res);
+  }
+
+  if (req.method !== "GET") {
+    res.setHeader("Allow", "GET");
+    return res.status(405).json({ error: "Method not allowed" });
+  }
+
+  const connectCode =
+    typeof req.query.connect_code === "string" ? req.query.connect_code : null;
+
+  if (!connectCode) {
+    return res.status(400).json({ error: "missing connect_code" });
+  }
+
+  try {
+    const response = await fetch(
+      `${remoteApiBase}/api/auth/complete?connect_code=${encodeURIComponent(connectCode)}`,
+    );
+    const text = await response.text();
+    const body = text ? JSON.parse(text) : null;
+    return res.status(response.status).json(body);
+  } catch (error) {
+    return res.status(502).json({
+      error: error instanceof Error ? error.message : "Failed to reach auth backend",
+    });
+  }
+}

@@ -17,7 +17,7 @@ export default function Login() {
       setError(null);
       setConnecting(true);
       try {
-        const bridgeResponse = await fetch(`${apiBase}/api/auth/bridge`, {
+        const bridgeResponse = await fetch(`/api/auth/bridge`, {
           method: "POST",
         });
         if (!bridgeResponse.ok) {
@@ -37,7 +37,7 @@ export default function Login() {
         for (let attempt = 0; attempt < 90; attempt++) {
           await new Promise((resolve) => setTimeout(resolve, 2000));
           const completionResponse = await fetch(
-            `${apiBase}/api/auth/complete?connect_code=${encodeURIComponent(connectCode)}`,
+            `/api/auth/complete?connect_code=${encodeURIComponent(connectCode)}`,
           );
 
           if (completionResponse.status === 202) {

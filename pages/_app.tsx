@@ -118,7 +118,7 @@ export default function MyApp({ Component, pageProps }: AppProps) {
     setConnecting(true);
     try {
       const apiBase = getClientApiBase(window.location.origin);
-      const res = await fetch(`${apiBase}/api/auth/bridge`, { method: "POST" });
+      const res = await fetch(`/api/auth/bridge`, { method: "POST" });
       const json = await res.json();
       const code = json.connect_code;
       if (!res.ok || !code) {
@@ -136,7 +136,7 @@ export default function MyApp({ Component, pageProps }: AppProps) {
       for (let i = 0; i < 60; i++) {
         await new Promise((r) => setTimeout(r, 2000));
         const c = await fetch(
-          `${apiBase}/api/auth/complete?connect_code=${encodeURIComponent(code)}`,
+          `/api/auth/complete?connect_code=${encodeURIComponent(code)}`,
         );
         if (c.status === 200) {
           const body = await c.json();
