@@ -1,5 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from "next";
-import backendHandler from "../../../apps/backend/src/routes/auth/complete";
+import { getConnectStore } from "../../../apps/backend/src/server/auth/connectStore";
 
 const DEFAULT_REMOTE_API_URL = "https://soundcloudy-backend.onrender.com";
 
@@ -20,10 +20,31 @@ function getRemoteApiBase(req: NextApiRequest) {
   return configured;
 }
 
+function handleLocalComplete(req: NextApiRequest, res: NextApiResponse) {
+  if (req.method !== "GET") {
+    res.setHeader("Allow", "GET");
+    return res.status(405).json({ error: "Method not allowed" });
+  }
+
+  const connectCode =
+    typeof req.query.connect_code === "string" ? req.query.connect_code : null;
+
+  if (!connectCode) {
+    return res.status(400).json({ error: "missing connect_code" });
+  }
+
+  const codes = getConnectStore();
+  const entry = codes.get(connectCode);
+  if (!entry) return res.status(404).json({ error: "invalid connect_code" });
+  if (!entry.tokens) return res.status(202).json({ status: "pending" });
+
+  return res.json({ status: "complete", tokens: entry.tokens, source: "local" });
+}
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const remoteApiBase = getRemoteApiBase(req);
   if (!remoteApiBase) {
-    return backendHandler(req, res);
+    return handleLocalComplete(req, res);
   }
 
   if (req.method !== "GET") {
@@ -51,6 +72,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
     return res.status(response.status).json(body);
   } catch (error) {
+    console.error("[auth complete proxy] failed", {
+      remoteApiBase,
+      connectCode,
+      message: error instanceof Error ? error.message : String(error),
+    });
     return res.status(502).json({
       error: error instanceof Error ? error.message : "Failed to reach auth backend",
       remoteApiBase,

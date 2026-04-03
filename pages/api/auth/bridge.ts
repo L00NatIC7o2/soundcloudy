@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
-import backendHandler from "../../../apps/backend/src/routes/auth/bridge";
+import { randomBytes } from "crypto";
+import { getConnectStore, type ConnectEntry } from "../../../apps/backend/src/server/auth/connectStore";
 
 const DEFAULT_REMOTE_API_URL = "https://soundcloudy-backend.onrender.com";
 
@@ -20,10 +21,28 @@ function getRemoteApiBase(req: NextApiRequest) {
   return configured;
 }
 
+function handleLocalBridge(req: NextApiRequest, res: NextApiResponse) {
+  if (req.method !== "POST") {
+    res.setHeader("Allow", "POST");
+    return res.status(405).json({ error: "Method not allowed" });
+  }
+
+  const store = getConnectStore();
+  const connectCode = randomBytes(6).toString("hex");
+  const expires_in = 300;
+  const entry: ConnectEntry = {
+    createdAt: Date.now(),
+    expires_in,
+    status: "pending",
+  };
+  store.set(connectCode, entry);
+  return res.status(200).json({ connect_code: connectCode, expires_in, source: "local" });
+}
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const remoteApiBase = getRemoteApiBase(req);
   if (!remoteApiBase) {
-    return backendHandler(req, res);
+    return handleLocalBridge(req, res);
   }
 
   if (req.method !== "POST") {
@@ -44,6 +63,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
     return res.status(response.status).json(body);
   } catch (error) {
+    console.error("[auth bridge proxy] failed", {
+      remoteApiBase,
+      message: error instanceof Error ? error.message : String(error),
+    });
     return res.status(502).json({
       error: error instanceof Error ? error.message : "Failed to reach auth backend",
       remoteApiBase,
