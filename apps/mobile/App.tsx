@@ -11,25 +11,13 @@ import {
   TextInput,
   View,
 } from "react-native";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import { io, Socket } from "socket.io-client";
 import * as WebBrowser from "expo-web-browser";
 
-import { DEFAULT_API_URL, DEFAULT_SOCKET_URL } from "./constants/config";
+import { DEFAULT_API_URL } from "./constants/config";
 
 WebBrowser.maybeCompleteAuthSession();
 
 type TabKey = "home" | "search" | "library";
-
-type PlaybackState = {
-  playing?: boolean;
-  track?: string;
-  artist?: string;
-  artwork?: string;
-  position?: number;
-  duration?: number;
-  trackData?: any;
-};
 
 type SearchResult = {
   id: number;
@@ -42,12 +30,11 @@ type SearchResult = {
   };
 };
 
-type ConnectionState =
-  | "idle"
-  | "connecting"
-  | "connected"
-  | "disconnected"
-  | "error";
+type SessionState = {
+  authenticated: boolean;
+  loading: boolean;
+  label: string;
+};
 
 const TAB_ITEMS: Array<{ key: TabKey; label: string }> = [
   { key: "home", label: "Home" },
@@ -55,94 +42,52 @@ const TAB_ITEMS: Array<{ key: TabKey; label: string }> = [
   { key: "library", label: "Library" },
 ];
 
-function formatTime(value?: number) {
-  if (typeof value !== "number" || Number.isNaN(value) || value < 0) {
-    return "0:00";
-  }
-  const mins = Math.floor(value / 60);
-  const secs = Math.floor(value % 60);
-  return `${mins}:${secs.toString().padStart(2, "0")}`;
+const FEATURE_CARDS = [
+  {
+    title: "Liked Songs",
+    subtitle: "Your saved tracks, rebuilt as a native screen.",
+  },
+  {
+    title: "Playlists",
+    subtitle: "Browse and manage playlists without leaving the app.",
+  },
+  {
+    title: "Friends",
+    subtitle: "See live listening activity in the same social layer as desktop.",
+  },
+];
+
+function getArtwork(track?: SearchResult) {
+  return (
+    track?.artwork_url?.replace?.("-large", "-t500x500") ||
+    track?.user?.avatar_url?.replace?.("-large", "-t500x500") ||
+    null
+  );
 }
 
 export default function App() {
-  const socketRef = useRef<Socket | null>(null);
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
   const [activeTab, setActiveTab] = useState<TabKey>("home");
-  const [roomId, setRoomId] = useState("");
-  const [apiBase, setApiBase] = useState(DEFAULT_API_URL);
-  const [savedApiBase, setSavedApiBase] = useState(DEFAULT_API_URL);
-  const [connectionState, setConnectionState] =
-    useState<ConnectionState>("idle");
-  const [statusMessage, setStatusMessage] = useState(
-    "Connect to your desktop and keep the same backend/socket as the desktop app.",
-  );
-  const [playback, setPlayback] = useState<PlaybackState>({});
+  const [apiBase] = useState(DEFAULT_API_URL);
+  const [sessionState, setSessionState] = useState<SessionState>({
+    authenticated: false,
+    loading: true,
+    label: "Checking session...",
+  });
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState("");
-  const [soundCloudConnected, setSoundCloudConnected] = useState(false);
-  const [authLoading, setAuthLoading] = useState(false);
-  const [libraryCards] = useState([
-    {
-      title: "Liked Songs",
-      subtitle: "Mirror the mobile web likes screen here",
-    },
-    {
-      title: "Playlists",
-      subtitle: "Native playlist browsing and editing comes next",
-    },
-    {
-      title: "Friends",
-      subtitle: "Realtime friend activity will plug into this section",
-    },
-  ]);
-
-  const socketUrl = DEFAULT_SOCKET_URL;
 
   useEffect(() => {
-    let cancelled = false;
-
-    AsyncStorage.multiGet([
-      "soundcloudy_mobile_room_id",
-      "soundcloudy_mobile_api_base",
-    ]).then((entries) => {
-      if (cancelled) return;
-      const storedRoomId = entries.find(([key]) => key === "soundcloudy_mobile_room_id")?.[1];
-      const storedApiBase =
-        entries.find(([key]) => key === "soundcloudy_mobile_api_base")?.[1] || DEFAULT_API_URL;
-
-      if (storedRoomId) setRoomId(storedRoomId);
-      setApiBase(storedApiBase);
-      setSavedApiBase(storedApiBase);
-    });
+    void refreshSession();
 
     return () => {
-      cancelled = true;
       if (searchTimeoutRef.current) {
         clearTimeout(searchTimeoutRef.current);
       }
-      socketRef.current?.disconnect();
-      socketRef.current = null;
     };
   }, []);
-
-  useEffect(() => {
-    const checkAuth = async () => {
-      setAuthLoading(true);
-      try {
-        const response = await fetch(`${apiBase}/api/auth/check`);
-        setSoundCloudConnected(response.ok);
-      } catch {
-        setSoundCloudConnected(false);
-      } finally {
-        setAuthLoading(false);
-      }
-    };
-
-    void checkAuth();
-  }, [apiBase]);
 
   useEffect(() => {
     if (!searchQuery.trim()) {
@@ -157,95 +102,70 @@ export default function App() {
 
     searchTimeoutRef.current = setTimeout(() => {
       void runSearch(searchQuery);
-    }, 280);
+    }, 260);
 
     return () => {
       if (searchTimeoutRef.current) {
         clearTimeout(searchTimeoutRef.current);
       }
     };
-  }, [searchQuery, apiBase]);
+  }, [searchQuery]);
 
-  const persistMobileConfig = async (nextRoomId: string, nextApiBase: string) => {
-    await AsyncStorage.multiSet([
-      ["soundcloudy_mobile_room_id", nextRoomId],
-      ["soundcloudy_mobile_api_base", nextApiBase],
-    ]);
-  };
+  const refreshSession = async () => {
+    setSessionState((previous) => ({ ...previous, loading: true }));
+    try {
+      const response = await fetch(`${apiBase}/api/auth/check`);
+      if (!response.ok) {
+        setSessionState({
+          authenticated: false,
+          loading: false,
+          label: "Sign in with SoundCloud to unlock the native app.",
+        });
+        return;
+      }
 
-  const connectDesktop = async () => {
-    const trimmedRoomId = roomId.trim();
-    if (!trimmedRoomId) {
-      Alert.alert("Room ID needed", "Enter the desktop room ID first.");
-      return;
-    }
-
-    const trimmedApiBase = apiBase.trim() || DEFAULT_API_URL;
-    setApiBase(trimmedApiBase);
-    setSavedApiBase(trimmedApiBase);
-    await persistMobileConfig(trimmedRoomId, trimmedApiBase);
-
-    socketRef.current?.disconnect();
-    setConnectionState("connecting");
-    setStatusMessage("Connecting to your desktop...");
-
-    const socket = io(socketUrl, {
-      transports: ["websocket"],
-      reconnection: true,
-      reconnectionAttempts: 8,
-      timeout: 6000,
-    });
-
-    socketRef.current = socket;
-
-    socket.on("connect", () => {
-      socket.emit("join", trimmedRoomId, (response?: any) => {
-        if (response?.ok) {
-          setConnectionState("connected");
-          setStatusMessage(`Connected to room ${trimmedRoomId}.`);
-          if (response.playbackState) {
-            setPlayback(response.playbackState);
-          }
-        } else {
-          setConnectionState("error");
-          setStatusMessage(response?.error || "Failed to join the desktop room.");
+      let username = "Connected";
+      try {
+        const sessionResponse = await fetch(`${apiBase}/api/auth/session`);
+        if (sessionResponse.ok) {
+          const session = await sessionResponse.json();
+          username =
+            session?.user?.username ||
+            session?.username ||
+            session?.user?.permalink ||
+            "Connected";
         }
+      } catch {
+        // Keep the simpler connected label if session hydration fails.
+      }
+
+      setSessionState({
+        authenticated: true,
+        loading: false,
+        label: username,
       });
-    });
-
-    socket.on("disconnect", () => {
-      setConnectionState("disconnected");
-      setStatusMessage("Disconnected from the desktop socket.");
-    });
-
-    socket.on("connect_error", (error: Error) => {
-      setConnectionState("error");
-      setStatusMessage(error.message || "Unable to reach the socket server.");
-    });
-
-    socket.on("playback-update", (state: PlaybackState) => {
-      setPlayback(state || {});
-    });
-  };
-
-  const disconnectDesktop = () => {
-    socketRef.current?.disconnect();
-    socketRef.current = null;
-    setConnectionState("disconnected");
-    setStatusMessage("Disconnected.");
-  };
-
-  const sendDesktopCommand = (command: string | Record<string, unknown>) => {
-    const trimmedRoomId = roomId.trim();
-    if (!socketRef.current || connectionState !== "connected" || !trimmedRoomId) {
-      Alert.alert("Desktop not connected", "Connect to your desktop first.");
-      return;
+    } catch {
+      setSessionState({
+        authenticated: false,
+        loading: false,
+        label: "Unable to reach the backend right now.",
+      });
     }
+  };
 
-    socketRef.current.emit("remote-command", {
-      userId: trimmedRoomId,
-      command,
-    });
+  const connectSoundCloud = async () => {
+    try {
+      const loginUrl = `${apiBase}/api/auth/login`;
+      await WebBrowser.openBrowserAsync(loginUrl);
+      setTimeout(() => {
+        void refreshSession();
+      }, 1500);
+    } catch (error) {
+      Alert.alert(
+        "Unable to open login",
+        error instanceof Error ? error.message : "Try again in a moment.",
+      );
+    }
   };
 
   const runSearch = async (query: string) => {
@@ -254,7 +174,6 @@ export default function App() {
 
     setSearching(true);
     setSearchError("");
-
     try {
       const response = await fetch(
         `${apiBase}/api/search?q=${encodeURIComponent(trimmed)}&limit=20`,
@@ -263,13 +182,13 @@ export default function App() {
       if (!response.ok) {
         throw new Error(
           response.status === 401
-            ? "Connect SoundCloud on the backend first."
+            ? "Log in first to search SoundCloud."
             : `Search failed with ${response.status}`,
         );
       }
 
-      const data = await response.json();
-      setSearchResults(Array.isArray(data.collection) ? data.collection : []);
+      const payload = await response.json();
+      setSearchResults(Array.isArray(payload?.collection) ? payload.collection : []);
     } catch (error) {
       setSearchResults([]);
       setSearchError(
@@ -280,53 +199,11 @@ export default function App() {
     }
   };
 
-  const connectSoundCloud = async () => {
-    setAuthLoading(true);
-    try {
-      const bridgeResponse = await fetch(`${apiBase}/api/auth/bridge`, {
-        method: "POST",
-      });
-
-      if (!bridgeResponse.ok) {
-        throw new Error(`Bridge failed (${bridgeResponse.status})`);
-      }
-
-      const bridgeBody = await bridgeResponse.json();
-      const connectCode = bridgeBody?.connect_code;
-
-      if (!connectCode) {
-        throw new Error("Missing connect code from backend.");
-      }
-
-      const startUrl = `${apiBase}/api/auth/start?connect_code=${encodeURIComponent(connectCode)}`;
-      await WebBrowser.openBrowserAsync(startUrl);
-
-      let completed = false;
-      for (let attempt = 0; attempt < 60; attempt += 1) {
-        await new Promise((resolve) => setTimeout(resolve, 2000));
-        const completeResponse = await fetch(
-          `${apiBase}/api/auth/complete?connect_code=${encodeURIComponent(connectCode)}`,
-        );
-
-        if (completeResponse.status === 200) {
-          completed = true;
-          setSoundCloudConnected(true);
-          setStatusMessage("Connected to SoundCloud.");
-          break;
-        }
-      }
-
-      if (!completed) {
-        throw new Error("SoundCloud connection timed out.");
-      }
-    } catch (error) {
-      Alert.alert(
-        "SoundCloud connect failed",
-        error instanceof Error ? error.message : "Unable to connect right now.",
-      );
-    } finally {
-      setAuthLoading(false);
-    }
+  const openPlaceholder = (label: string) => {
+    Alert.alert(
+      label,
+      "This native screen is the next part to port from the mobile web app.",
+    );
   };
 
   const renderHome = () => (
@@ -336,109 +213,67 @@ export default function App() {
     >
       <View style={styles.heroCard}>
         <Text style={styles.eyebrow}>Soundcloudy Native</Text>
-        <Text style={styles.heroTitle}>Phone player, queue companion, and remote.</Text>
+        <Text style={styles.heroTitle}>The mobile app should feel like the main app, not a remote.</Text>
         <Text style={styles.heroSubtitle}>
-          This is the native foundation that mirrors the mobile web app: playback,
-          search, library, and desktop handoff.
+          This shell is now focused on the real mobile product: home, search,
+          library, playback, and social features from the desktop/web app rebuilt
+          with native UI.
         </Text>
-      </View>
-
-      <View style={styles.card}>
-        <Text style={styles.sectionTitle}>Connection</Text>
-        <Text style={styles.helperText}>{statusMessage}</Text>
-        <View style={styles.inputGroup}>
-          <Text style={styles.inputLabel}>Desktop room ID</Text>
-          <TextInput
-            value={roomId}
-            onChangeText={setRoomId}
-            placeholder="Paste your desktop room id"
-            placeholderTextColor="#6e6b76"
-            style={styles.input}
-            autoCapitalize="none"
-          />
-        </View>
-        <View style={styles.inputGroup}>
-          <Text style={styles.inputLabel}>Backend URL</Text>
-          <TextInput
-            value={apiBase}
-            onChangeText={setApiBase}
-            placeholder={DEFAULT_API_URL}
-            placeholderTextColor="#6e6b76"
-            style={styles.input}
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
-        </View>
-        <View style={styles.row}>
-          <Pressable style={styles.primaryButton} onPress={() => void connectDesktop()}>
-            <Text style={styles.primaryButtonText}>Connect Desktop</Text>
-          </Pressable>
-          <Pressable style={styles.secondaryButton} onPress={disconnectDesktop}>
-            <Text style={styles.secondaryButtonText}>Disconnect</Text>
-          </Pressable>
-        </View>
-        <View style={styles.connectionPills}>
-          <View style={styles.pill}>
-            <Text style={styles.pillLabel}>Socket</Text>
-            <Text style={styles.pillValue}>{connectionState}</Text>
-          </View>
-          <View style={styles.pill}>
-            <Text style={styles.pillLabel}>SoundCloud</Text>
-            <Text style={styles.pillValue}>
-              {authLoading ? "Checking..." : soundCloudConnected ? "Connected" : "Not connected"}
-            </Text>
-          </View>
-        </View>
       </View>
 
       <View style={styles.card}>
         <View style={styles.cardHeaderRow}>
-          <Text style={styles.sectionTitle}>SoundCloud</Text>
-          <Pressable style={styles.secondaryButtonCompact} onPress={() => void connectSoundCloud()}>
-            <Text style={styles.secondaryButtonText}>
-              {authLoading ? "Working..." : soundCloudConnected ? "Reconnect" : "Connect"}
-            </Text>
+          <Text style={styles.sectionTitle}>Account</Text>
+          <Pressable
+            style={styles.secondaryButtonCompact}
+            onPress={() => void refreshSession()}
+          >
+            <Text style={styles.secondaryButtonText}>Refresh</Text>
           </Pressable>
         </View>
         <Text style={styles.helperText}>
-          This uses the hosted backend auth flow so the native app can eventually share the same
-          account/session model as desktop.
+          Backend: {apiBase.replace(/^https?:\/\//, "")}
         </Text>
+        <View style={styles.accountPill}>
+          <Text style={styles.accountPillLabel}>SoundCloud</Text>
+          <Text style={styles.accountPillValue}>
+            {sessionState.loading ? "Checking..." : sessionState.label}
+          </Text>
+        </View>
+        {!sessionState.authenticated ? (
+          <Pressable style={styles.primaryButton} onPress={() => void connectSoundCloud()}>
+            <Text style={styles.primaryButtonText}>Log In With SoundCloud</Text>
+          </Pressable>
+        ) : null}
       </View>
 
-      <View style={styles.nowPlayingCard}>
+      <View style={styles.card}>
         <Text style={styles.sectionTitle}>Now Playing</Text>
-        <View style={styles.nowPlayingRow}>
+        <Text style={styles.helperText}>
+          This area will become the native player lane that mirrors the mobile web app’s
+          collapsed player and full-sheet experience.
+        </Text>
+        <View style={styles.nowPlayingPreview}>
           <View style={styles.artworkPlaceholder} />
           <View style={styles.nowPlayingMeta}>
-            <Text numberOfLines={1} style={styles.nowPlayingTrack}>
-              {playback.track || "Nothing synced yet"}
-            </Text>
-            <Text numberOfLines={1} style={styles.nowPlayingArtist}>
-              {playback.artist || "Connect to the desktop player"}
-            </Text>
-            <Text style={styles.progressText}>
-              {formatTime(playback.position)} / {formatTime(playback.duration)}
+            <Text style={styles.nowPlayingTitle}>No track loaded yet</Text>
+            <Text style={styles.nowPlayingArtist}>
+              Native playback UI comes next
             </Text>
           </View>
         </View>
-        <View style={styles.controlsRow}>
-          <Pressable style={styles.iconButton} onPress={() => sendDesktopCommand("prev")}>
-            <Text style={styles.iconButtonText}>Prev</Text>
-          </Pressable>
-          <Pressable
-            style={styles.primaryButton}
-            onPress={() => sendDesktopCommand(playback.playing ? "pause" : "play")}
-          >
-            <Text style={styles.primaryButtonText}>
-              {playback.playing ? "Pause" : "Play"}
-            </Text>
-          </Pressable>
-          <Pressable style={styles.iconButton} onPress={() => sendDesktopCommand("next")}>
-            <Text style={styles.iconButtonText}>Next</Text>
-          </Pressable>
-        </View>
       </View>
+
+      {FEATURE_CARDS.map((card) => (
+        <Pressable
+          key={card.title}
+          style={styles.featureCard}
+          onPress={() => openPlaceholder(card.title)}
+        >
+          <Text style={styles.featureTitle}>{card.title}</Text>
+          <Text style={styles.featureSubtitle}>{card.subtitle}</Text>
+        </Pressable>
+      ))}
     </ScrollView>
   );
 
@@ -447,8 +282,8 @@ export default function App() {
       <View style={styles.card}>
         <Text style={styles.sectionTitle}>Search</Text>
         <Text style={styles.helperText}>
-          This is the native version of the mobile web search lane. The results can be sent straight
-          to desktop playback.
+          Native search already uses your hosted backend. This becomes the same search
+          experience as mobile web, just rebuilt properly for mobile.
         </Text>
         <TextInput
           value={searchQuery}
@@ -471,36 +306,43 @@ export default function App() {
         data={searchResults}
         keyExtractor={(item) => String(item.id)}
         contentContainerStyle={styles.listContent}
-        renderItem={({ item }) => (
-          <Pressable
-            style={styles.trackRow}
-            onPress={() =>
-              sendDesktopCommand({
-                type: "load-track",
-                track: item,
-                position: 0,
-                shouldPlay: true,
-              })
-            }
-          >
-            <View style={styles.trackArtwork} />
-            <View style={styles.trackMeta}>
-              <Text style={styles.trackTitle} numberOfLines={1}>
-                {item.title}
-              </Text>
-              <Text style={styles.trackArtist} numberOfLines={1}>
-                {item.user?.username || "Unknown"}
-              </Text>
-            </View>
-            <Text style={styles.rowAction}>Play</Text>
-          </Pressable>
-        )}
+        renderItem={({ item }) => {
+          const artwork = getArtwork(item);
+          return (
+            <Pressable
+              style={styles.trackRow}
+              onPress={() => openPlaceholder(item.title)}
+            >
+              <View style={styles.trackArtworkWrap}>
+                {artwork ? (
+                  <View style={styles.trackArtworkFallback}>
+                    <Text style={styles.trackArtworkFallbackText}>
+                      {item.title.slice(0, 1).toUpperCase()}
+                    </Text>
+                  </View>
+                ) : (
+                  <View style={styles.trackArtworkFallback}>
+                    <Text style={styles.trackArtworkFallbackText}>SC</Text>
+                  </View>
+                )}
+              </View>
+              <View style={styles.trackMeta}>
+                <Text style={styles.trackTitle} numberOfLines={1}>
+                  {item.title}
+                </Text>
+                <Text style={styles.trackArtist} numberOfLines={1}>
+                  {item.user?.username || "Unknown"}
+                </Text>
+              </View>
+            </Pressable>
+          );
+        }}
         ListEmptyComponent={
           !searching ? (
             <View style={styles.emptyState}>
               <Text style={styles.emptyTitle}>Search tracks</Text>
               <Text style={styles.emptySubtitle}>
-                Results will show here once you start typing.
+                Results will appear here once you start typing.
               </Text>
             </View>
           ) : null
@@ -517,26 +359,21 @@ export default function App() {
       <View style={styles.card}>
         <Text style={styles.sectionTitle}>Library</Text>
         <Text style={styles.helperText}>
-          This native section is where the mobile web tabs like likes, playlists, and friends will
-          land next.
+          This is the native home for your likes, playlists, reposts, profile, and friends.
+          It replaces the old remote-only mobile concept.
         </Text>
       </View>
 
-      {libraryCards.map((card) => (
-        <View key={card.title} style={styles.libraryCard}>
+      {FEATURE_CARDS.map((card) => (
+        <Pressable
+          key={card.title}
+          style={styles.libraryCard}
+          onPress={() => openPlaceholder(card.title)}
+        >
           <Text style={styles.libraryTitle}>{card.title}</Text>
           <Text style={styles.librarySubtitle}>{card.subtitle}</Text>
-        </View>
+        </Pressable>
       ))}
-
-      <View style={styles.card}>
-        <Text style={styles.sectionTitle}>Current Mobile Scope</Text>
-        <Text style={styles.helperText}>
-          Native shell, backend/socket config, SoundCloud connect flow, desktop playback sync, and
-          native search are now in place. Likes, playlists, track page, and friends are the next
-          slices to port over from the mobile web experience.
-        </Text>
-      </View>
     </ScrollView>
   );
 
@@ -545,9 +382,7 @@ export default function App() {
       <View style={styles.container}>
         <View style={styles.header}>
           <Text style={styles.headerTitle}>Soundcloudy</Text>
-          <Text style={styles.headerSubtitle}>
-            {savedApiBase.replace(/^https?:\/\//, "")}
-          </Text>
+          <Text style={styles.headerSubtitle}>Native mobile app</Text>
         </View>
 
         <View style={styles.content}>
@@ -614,8 +449,6 @@ const styles = StyleSheet.create({
     gap: 14,
   },
   heroCard: {
-    margin: 18,
-    marginBottom: 0,
     borderRadius: 28,
     padding: 22,
     backgroundColor: "#131317",
@@ -643,23 +476,12 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   card: {
-    marginHorizontal: 18,
     borderRadius: 24,
     padding: 18,
     backgroundColor: "#121216",
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.06)",
     gap: 12,
-  },
-  nowPlayingCard: {
-    marginHorizontal: 18,
-    marginBottom: 18,
-    borderRadius: 24,
-    padding: 18,
-    backgroundColor: "#111114",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.06)",
-    gap: 14,
   },
   sectionTitle: {
     color: "#ffffff",
@@ -671,36 +493,29 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 19,
   },
-  inputGroup: {
-    gap: 6,
-  },
-  inputLabel: {
-    color: "#c4bfca",
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  input: {
-    backgroundColor: "#0a0a0d",
-    color: "#ffffff",
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 15,
-  },
-  row: {
-    flexDirection: "row",
-    gap: 10,
-  },
   cardHeaderRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     gap: 12,
   },
+  accountPill: {
+    borderRadius: 18,
+    padding: 12,
+    backgroundColor: "#0c0c10",
+  },
+  accountPillLabel: {
+    color: "#8f8b99",
+    fontSize: 11,
+    textTransform: "uppercase",
+    marginBottom: 4,
+  },
+  accountPillValue: {
+    color: "#ffffff",
+    fontSize: 14,
+    fontWeight: "700",
+  },
   primaryButton: {
-    flex: 1,
     minHeight: 48,
     borderRadius: 999,
     alignItems: "center",
@@ -711,16 +526,6 @@ const styles = StyleSheet.create({
     color: "#ffffff",
     fontSize: 14,
     fontWeight: "800",
-  },
-  secondaryButton: {
-    flex: 1,
-    minHeight: 48,
-    borderRadius: 999,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#1c1b20",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
   },
   secondaryButtonCompact: {
     minHeight: 38,
@@ -737,28 +542,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "700",
   },
-  connectionPills: {
-    flexDirection: "row",
-    gap: 10,
-  },
-  pill: {
-    flex: 1,
-    borderRadius: 18,
-    padding: 12,
-    backgroundColor: "#0c0c10",
-  },
-  pillLabel: {
-    color: "#8f8b99",
-    fontSize: 11,
-    textTransform: "uppercase",
-    marginBottom: 4,
-  },
-  pillValue: {
-    color: "#ffffff",
-    fontSize: 14,
-    fontWeight: "700",
-  },
-  nowPlayingRow: {
+  nowPlayingPreview: {
     flexDirection: "row",
     gap: 14,
     alignItems: "center",
@@ -773,7 +557,7 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: 4,
   },
-  nowPlayingTrack: {
+  nowPlayingTitle: {
     color: "#ffffff",
     fontSize: 18,
     fontWeight: "800",
@@ -782,27 +566,33 @@ const styles = StyleSheet.create({
     color: "#bbb5c1",
     fontSize: 14,
   },
-  progressText: {
-    color: "#8f8b99",
-    fontSize: 12,
-    marginTop: 2,
+  featureCard: {
+    borderRadius: 22,
+    padding: 18,
+    backgroundColor: "#111115",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.06)",
+    gap: 8,
   },
-  controlsRow: {
-    flexDirection: "row",
-    gap: 10,
-  },
-  iconButton: {
-    flex: 1,
-    minHeight: 48,
-    borderRadius: 999,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#1b1b20",
-  },
-  iconButtonText: {
+  featureTitle: {
     color: "#ffffff",
-    fontSize: 14,
+    fontSize: 17,
     fontWeight: "700",
+  },
+  featureSubtitle: {
+    color: "#a29daa",
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  input: {
+    backgroundColor: "#0a0a0d",
+    color: "#ffffff",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 15,
   },
   loadingWrap: {
     paddingTop: 20,
@@ -821,11 +611,21 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.06)",
   },
-  trackArtwork: {
+  trackArtworkWrap: {
+    width: 56,
+    height: 56,
+  },
+  trackArtworkFallback: {
     width: 56,
     height: 56,
     borderRadius: 16,
     backgroundColor: "#1d1c22",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  trackArtworkFallbackText: {
+    color: "#ffffff",
+    fontWeight: "800",
   },
   trackMeta: {
     flex: 1,
@@ -839,11 +639,6 @@ const styles = StyleSheet.create({
   trackArtist: {
     color: "#9e98a5",
     fontSize: 13,
-  },
-  rowAction: {
-    color: "#ff8a45",
-    fontSize: 13,
-    fontWeight: "700",
   },
   emptyState: {
     alignItems: "center",
@@ -867,7 +662,6 @@ const styles = StyleSheet.create({
     paddingTop: 10,
   },
   libraryCard: {
-    marginHorizontal: 18,
     borderRadius: 22,
     padding: 18,
     backgroundColor: "#111115",
