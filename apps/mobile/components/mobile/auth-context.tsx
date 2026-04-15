@@ -1,5 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { createContext, useContext, useEffect, useState } from "react";
+import { Alert } from "react-native";
 import * as WebBrowser from "expo-web-browser";
 
 import { DEFAULT_API_URL } from "@/constants/config";
@@ -136,18 +137,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setTokens(nextTokens);
         await AsyncStorage.setItem(TOKENS_STORAGE_KEY, JSON.stringify(nextTokens));
 
-        const success = await refresh();
-        if (success) {
-          return;
-        }
+        // Let the app continue immediately once we have tokens. Expo Go does
+        // not share the browser cookie jar, so the app should trust its
+        // captured tokens first and let later API calls validate them.
+        setAuthenticated(true);
+        setLabel("Connected");
+        return;
       }
 
       throw new Error("SoundCloud login timed out.");
     } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Unable to complete SoundCloud login.";
       setAuthenticated(false);
-      setLabel(
-        error instanceof Error ? error.message : "Unable to complete SoundCloud login.",
-      );
+      setLabel(message);
+      Alert.alert("Login failed", message);
     } finally {
       setLoading(false);
     }
