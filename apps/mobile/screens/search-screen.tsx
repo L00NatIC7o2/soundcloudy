@@ -71,6 +71,9 @@ export function SearchScreen() {
     try {
       const response = await fetch(
         `${DEFAULT_API_URL}/api/search?q=${encodeURIComponent(trimmed)}&limit=20`,
+        {
+          headers: auth.authHeaders,
+        },
       );
       if (!response.ok) {
         throw new Error(
@@ -226,3 +229,5 @@ const styles = StyleSheet.create({
     paddingBottom: 10,
   },
 });
+
+

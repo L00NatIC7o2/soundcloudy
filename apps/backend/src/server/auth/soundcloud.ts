@@ -42,11 +42,7 @@ declare global {
   var __SC_APP_SESSIONS: Map<string, StoredAppSession> | undefined;
 }
 
-const SESSION_COOKIE = "soundcloudy_session";
-const REFRESH_GRACE_MS = 30_000;
-const SESSION_MAX_AGE = 31536000;
-const DEFAULT_WEB_APP_LOCALE = process.env.SOUNDCLOUD_APP_LOCALE || "en";
-const refreshLocks = new Map<string, Promise<RefreshResult>>();
+const SESSION_COOKIE = "soundcloudy_session";`r`nconst REFRESH_GRACE_MS = 30_000;`r`nconst SESSION_MAX_AGE = 31536000;`r`nconst DEFAULT_WEB_APP_LOCALE = process.env.SOUNDCLOUD_APP_LOCALE || "en";`r`nconst refreshLocks = new Map<string, Promise<RefreshResult>>();`r`n`r`nconst getHeaderValue = (header?: string | string[]) =>`r`n  Array.isArray(header) ? header[0] : header;`r`n`r`nconst getHeaderAccessToken = (req: NextApiRequest) => {`r`n  const authorization = getHeaderValue(req.headers.authorization);`r`n  if (!authorization) return null;`r`n  const match = authorization.match(/^Bearer\s+(.+)$/i);`r`n  return match?.[1]?.trim() || null;`r`n};`r`n`r`nconst getHeaderRefreshToken = (req: NextApiRequest) => {`r`n  const refreshHeader = getHeaderValue(req.headers["x-soundcloud-refresh-token"]);`r`n  return refreshHeader?.trim() || null;`r`n};
 
 const getTokenStore = () => {
   if (!globalThis.__SC_USER_TOKENS) {
@@ -487,13 +483,7 @@ export const getRequestSoundCloudToken = async (
     }
   }
 
-  if (req.cookies.soundcloud_token && !sessionState?.tokens) {
-    return req.cookies.soundcloud_token;
-  }
-
-  if (!refreshIfNeeded) {
-    return sessionState?.tokens?.accessToken || req.cookies.soundcloud_token || null;
-  }
+  if (req.cookies.soundcloud_token && !sessionState?.tokens) {`r`n    return req.cookies.soundcloud_token;`r`n  }`r`n`r`n  const headerAccessToken = getHeaderAccessToken(req);`r`n  if (headerAccessToken) {`r`n    return headerAccessToken;`r`n  }`r`n`r`n  if (!refreshIfNeeded) {`r`n    return (`r`n      sessionState?.tokens?.accessToken ||`r`n      req.cookies.soundcloud_token ||`r`n      headerAccessToken ||`r`n      null`r`n    );`r`n  }
 
   const refreshed = await refreshSoundCloudAuth(req, res);
   return refreshed?.rawToken || null;
@@ -520,8 +510,7 @@ export const refreshSoundCloudAuth = async (
   res: NextApiResponse,
 ): Promise<SoundCloudAuthContext | null> => {
   const sessionState = await getSessionStateFromRequest(req, res);
-  const refreshToken =
-    sessionState?.tokens?.refreshToken || req.cookies.soundcloud_refresh_token;
+  const refreshToken =`r`n    sessionState?.tokens?.refreshToken ||`r`n    req.cookies.soundcloud_refresh_token ||`r`n    getHeaderRefreshToken(req);
 
   if (!refreshToken) {
     return null;
@@ -576,6 +565,7 @@ export const refreshSoundCloudAuth = async (
 
   return getSoundCloudAuthContext(refreshed.accessToken);
 };
+
 
 
 

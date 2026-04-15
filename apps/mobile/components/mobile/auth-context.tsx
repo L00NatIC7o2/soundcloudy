@@ -1,9 +1,18 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { createContext, useContext, useEffect, useState } from "react";
 import * as WebBrowser from "expo-web-browser";
 
 import { DEFAULT_API_URL } from "@/constants/config";
 
 WebBrowser.maybeCompleteAuthSession();
+
+const TOKENS_STORAGE_KEY = "soundcloudy_mobile_tokens";
+
+type StoredTokens = {
+  accessToken: string;
+  refreshToken?: string;
+  expiresIn?: number;
+};
 
 type AuthState = {
   authenticated: boolean;
@@ -12,42 +21,52 @@ type AuthState = {
   refresh: () => Promise<void>;
   login: () => Promise<void>;
   logout: () => Promise<void>;
+  authHeaders: Record<string, string>;
 };
 
 const AuthContext = createContext<AuthState | null>(null);
+
+function buildAuthHeaders(tokens: StoredTokens | null) {
+  if (!tokens?.accessToken) return {};
+
+  return {
+    Authorization: `Bearer ${tokens.accessToken}`,
+    ...(tokens.refreshToken
+      ? { "x-soundcloud-refresh-token": tokens.refreshToken }
+      : {}),
+  };
+}
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [authenticated, setAuthenticated] = useState(false);
   const [loading, setLoading] = useState(true);
   const [label, setLabel] = useState("Checking session...");
+  const [tokens, setTokens] = useState<StoredTokens | null>(null);
 
   const refresh = async () => {
     setLoading(true);
     try {
-      const response = await fetch(`${DEFAULT_API_URL}/api/auth/check`);
+      let storedTokens = tokens;
+      if (!storedTokens) {
+        const raw = await AsyncStorage.getItem(TOKENS_STORAGE_KEY);
+        if (raw) {
+          storedTokens = JSON.parse(raw);
+          setTokens(storedTokens);
+        }
+      }
+
+      const response = await fetch(`${DEFAULT_API_URL}/api/auth/check`, {
+        headers: buildAuthHeaders(storedTokens),
+      });
+
       if (!response.ok) {
         setAuthenticated(false);
         setLabel("Sign in with SoundCloud to unlock the app.");
         return false;
       }
 
-      let username = "Connected";
-      try {
-        const sessionResponse = await fetch(`${DEFAULT_API_URL}/api/auth/session`);
-        if (sessionResponse.ok) {
-          const session = await sessionResponse.json();
-          username =
-            session?.user?.username ||
-            session?.username ||
-            session?.user?.permalink ||
-            "Connected";
-        }
-      } catch {
-        // Keep generic connected label if session enrichment fails.
-      }
-
       setAuthenticated(true);
-      setLabel(username);
+      setLabel("Connected");
       return true;
     } catch {
       setAuthenticated(false);
@@ -98,21 +117,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
 
         const completeBody = await completeResponse.json();
-        if (!completeBody?.tokens) {
+        if (!completeBody?.tokens?.access_token) {
           throw new Error("Missing completed auth tokens.");
         }
 
-        const consumeResponse = await fetch(`${DEFAULT_API_URL}/api/auth/consume`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(completeBody.tokens),
-        });
+        const nextTokens: StoredTokens = {
+          accessToken: completeBody.tokens.access_token,
+          refreshToken:
+            typeof completeBody.tokens.refresh_token === "string"
+              ? completeBody.tokens.refresh_token
+              : undefined,
+          expiresIn:
+            typeof completeBody.tokens.expires_in === "number"
+              ? completeBody.tokens.expires_in
+              : Number(completeBody.tokens.expires_in) || 3600,
+        };
 
-        if (!consumeResponse.ok) {
-          throw new Error(`Consume failed (${consumeResponse.status})`);
-        }
+        setTokens(nextTokens);
+        await AsyncStorage.setItem(TOKENS_STORAGE_KEY, JSON.stringify(nextTokens));
 
         const success = await refresh();
         if (success) {
@@ -136,10 +158,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       await fetch(`${DEFAULT_API_URL}/api/auth/logout`, {
         method: "POST",
+        headers: buildAuthHeaders(tokens),
       });
     } catch {
       // Even if logout request fails, reset local auth gate state.
     } finally {
+      setTokens(null);
+      await AsyncStorage.removeItem(TOKENS_STORAGE_KEY);
       setAuthenticated(false);
       setLabel("Sign in with SoundCloud to unlock the app.");
       setLoading(false);
@@ -159,6 +184,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         refresh,
         login,
         logout,
+        authHeaders: buildAuthHeaders(tokens),
       }}
     >
       {children}
