@@ -42,7 +42,26 @@ declare global {
   var __SC_APP_SESSIONS: Map<string, StoredAppSession> | undefined;
 }
 
-const SESSION_COOKIE = "soundcloudy_session";`r`nconst REFRESH_GRACE_MS = 30_000;`r`nconst SESSION_MAX_AGE = 31536000;`r`nconst DEFAULT_WEB_APP_LOCALE = process.env.SOUNDCLOUD_APP_LOCALE || "en";`r`nconst refreshLocks = new Map<string, Promise<RefreshResult>>();`r`n`r`nconst getHeaderValue = (header?: string | string[]) =>`r`n  Array.isArray(header) ? header[0] : header;`r`n`r`nconst getHeaderAccessToken = (req: NextApiRequest) => {`r`n  const authorization = getHeaderValue(req.headers.authorization);`r`n  if (!authorization) return null;`r`n  const match = authorization.match(/^Bearer\s+(.+)$/i);`r`n  return match?.[1]?.trim() || null;`r`n};`r`n`r`nconst getHeaderRefreshToken = (req: NextApiRequest) => {`r`n  const refreshHeader = getHeaderValue(req.headers["x-soundcloud-refresh-token"]);`r`n  return refreshHeader?.trim() || null;`r`n};
+const SESSION_COOKIE = "soundcloudy_session";
+const REFRESH_GRACE_MS = 30_000;
+const SESSION_MAX_AGE = 31536000;
+const DEFAULT_WEB_APP_LOCALE = process.env.SOUNDCLOUD_APP_LOCALE || "en";
+const refreshLocks = new Map<string, Promise<RefreshResult>>();
+
+const getHeaderValue = (header?: string | string[]) =>
+  Array.isArray(header) ? header[0] : header;
+
+const getHeaderAccessToken = (req: NextApiRequest) => {
+  const authorization = getHeaderValue(req.headers.authorization);
+  if (!authorization) return null;
+  const match = authorization.match(/^Bearer\s+(.+)$/i);
+  return match?.[1]?.trim() || null;
+};
+
+const getHeaderRefreshToken = (req: NextApiRequest) => {
+  const refreshHeader = getHeaderValue(req.headers["x-soundcloud-refresh-token"]);
+  return refreshHeader?.trim() || null;
+};
 
 const getTokenStore = () => {
   if (!globalThis.__SC_USER_TOKENS) {
@@ -565,6 +584,7 @@ export const refreshSoundCloudAuth = async (
 
   return getSoundCloudAuthContext(refreshed.accessToken);
 };
+
 
 
 
