@@ -502,7 +502,23 @@ export const getRequestSoundCloudToken = async (
     }
   }
 
-  if (req.cookies.soundcloud_token && !sessionState?.tokens) {`r`n    return req.cookies.soundcloud_token;`r`n  }`r`n`r`n  const headerAccessToken = getHeaderAccessToken(req);`r`n  if (headerAccessToken) {`r`n    return headerAccessToken;`r`n  }`r`n`r`n  if (!refreshIfNeeded) {`r`n    return (`r`n      sessionState?.tokens?.accessToken ||`r`n      req.cookies.soundcloud_token ||`r`n      headerAccessToken ||`r`n      null`r`n    );`r`n  }
+  if (req.cookies.soundcloud_token && !sessionState?.tokens) {
+    return req.cookies.soundcloud_token;
+  }
+
+  const headerAccessToken = getHeaderAccessToken(req);
+  if (headerAccessToken) {
+    return headerAccessToken;
+  }
+
+  if (!refreshIfNeeded) {
+    return (
+      sessionState?.tokens?.accessToken ||
+      req.cookies.soundcloud_token ||
+      headerAccessToken ||
+      null
+    );
+  }
 
   const refreshed = await refreshSoundCloudAuth(req, res);
   return refreshed?.rawToken || null;
@@ -529,7 +545,10 @@ export const refreshSoundCloudAuth = async (
   res: NextApiResponse,
 ): Promise<SoundCloudAuthContext | null> => {
   const sessionState = await getSessionStateFromRequest(req, res);
-  const refreshToken =`r`n    sessionState?.tokens?.refreshToken ||`r`n    req.cookies.soundcloud_refresh_token ||`r`n    getHeaderRefreshToken(req);
+  const refreshToken =
+    sessionState?.tokens?.refreshToken ||
+    req.cookies.soundcloud_refresh_token ||
+    getHeaderRefreshToken(req);
 
   if (!refreshToken) {
     return null;
@@ -584,6 +603,8 @@ export const refreshSoundCloudAuth = async (
 
   return getSoundCloudAuthContext(refreshed.accessToken);
 };
+
+
 
 
 
