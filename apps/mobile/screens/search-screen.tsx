@@ -1,8 +1,10 @@
 import React, { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, FlatList, StyleSheet, Text, View } from "react-native";
 
+import { useAuth } from "../components/mobile/auth-context";
 import { DEFAULT_API_URL } from "../constants/config";
 import { AppTheme } from "../components/mobile/app-theme";
+import { LoginGate } from "../components/mobile/login-gate";
 import {
   AppInput,
   Card,
@@ -21,11 +23,22 @@ type SearchResult = {
 };
 
 export function SearchScreen() {
+  const auth = useAuth();
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState("");
+
+  if (!auth.authenticated) {
+    return (
+      <LoginGate
+        loading={auth.loading}
+        label={auth.label}
+        onLogin={() => void auth.login()}
+      />
+    );
+  }
 
   useEffect(() => {
     if (!searchQuery.trim()) {

@@ -13,7 +13,7 @@
     "tunnel:web": "ngrok http 3000",
     "tunnel:socket": "ngrok http 3001",
     "build": "next build",
-    "start": "next start",
+    "start": "node server/index.cjs",
     "cap:sync": "cap sync",
     "cap:copy": "cap copy",
     "cap:add:ios": "cap add ios",
@@ -110,3 +110,4 @@
     ]
   }
 }
+

@@ -2,6 +2,8 @@ import React from "react";
 import { Pressable, StyleSheet, Text } from "react-native";
 
 import { AppTheme } from "../components/mobile/app-theme";
+import { useAuth } from "../components/mobile/auth-context";
+import { LoginGate } from "../components/mobile/login-gate";
 import { Card, HelperText, ScreenScroll, SectionTitle } from "../components/mobile/primitives";
 import { MobileShell } from "../components/mobile/shell";
 
@@ -25,6 +27,18 @@ const LIBRARY_SECTIONS = [
 ];
 
 export function LibraryScreen() {
+  const auth = useAuth();
+
+  if (!auth.authenticated) {
+    return (
+      <LoginGate
+        loading={auth.loading}
+        label={auth.label}
+        onLogin={() => void auth.login()}
+      />
+    );
+  }
+
   return (
     <MobileShell
       title="Library"

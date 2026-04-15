@@ -8,8 +8,8 @@ This is the native Expo app for Soundcloudy. It is meant to become the mobile-we
 2. Set your hosted services:
 
 ```env
-EXPO_PUBLIC_API_URL=https://soundcloudy-backend.onrender.com
-EXPO_PUBLIC_SOCKET_URL=https://soundcloudy-socket.onrender.com
+EXPO_PUBLIC_API_URL=https://soundcloudy-app.onrender.com
+EXPO_PUBLIC_SOCKET_URL=https://soundcloudy-app.onrender.com
 ```
 
 3. Install dependencies:
@@ -34,3 +34,4 @@ npm run start
   - desktop playback sync
   - native search screen
   - library/friends/playlist landing area for the next ported screens
+

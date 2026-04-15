@@ -27,9 +27,9 @@ const HISTORY_COOKIE_FILENAME = "soundcloud-history-cookies.json";
 const PORT = 3000;
 const DEV_URL = "http://localhost:3000";
 const REMOTE_API_URL =
-  process.env.NEXT_PUBLIC_API_URL || "https://soundcloudy-backend.onrender.com";
+  process.env.NEXT_PUBLIC_API_URL || "https://soundcloudy-app.onrender.com";
 const REMOTE_SOCKET_URL =
-  process.env.NEXT_PUBLIC_SOCKET_URL || "https://soundcloudy-socket.onrender.com";
+  process.env.NEXT_PUBLIC_SOCKET_URL || REMOTE_API_URL;
 const FALLBACK_CLIENT_ID = "BecG5WJDDxYMffAfWcjJleNqrGyJyZhI";
 const FALLBACK_APP_VERSION = "1770366292";
 
@@ -1207,3 +1207,4 @@ ipcMain.handle("get-local-network-url", () => {
   }
   return "http://localhost:3000";
 });
+

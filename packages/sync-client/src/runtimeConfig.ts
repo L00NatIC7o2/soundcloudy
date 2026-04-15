@@ -33,6 +33,11 @@ export function getClientSocketUrl(baseUrl?: string) {
     return trimTrailingSlash(configured);
   }
 
+  const configuredApiBase = process.env.NEXT_PUBLIC_API_URL;
+  if (configuredApiBase) {
+    return trimTrailingSlash(configuredApiBase);
+  }
+
   const appBase = getClientAppBase(baseUrl);
 
   try {
@@ -43,3 +48,4 @@ export function getClientSocketUrl(baseUrl?: string) {
     return `http://localhost:${process.env.NEXT_PUBLIC_SOCKET_PORT || DEFAULT_SOCKET_PORT}`;
   }
 }
+

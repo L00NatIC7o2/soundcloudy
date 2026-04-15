@@ -3,14 +3,14 @@ import React from "react";
 import { Card, HelperText, ScreenScroll, SectionTitle } from "../components/mobile/primitives";
 import { MobileShell } from "../components/mobile/shell";
 
-export function ProfileScreen() {
+export function LikesScreen() {
   return (
-    <MobileShell title="Profile" subtitle="Native mobile profile view">
+    <MobileShell title="Liked Songs" subtitle="Native mobile liked tracks view">
       <ScreenScroll>
         <Card>
-          <SectionTitle>Profile</SectionTitle>
+          <SectionTitle>Liked Songs</SectionTitle>
           <HelperText>
-            This is where the mobile web profile and artist experience will be ported natively.
+            This is where the mobile web liked songs list will be ported natively.
           </HelperText>
         </Card>
       </ScreenScroll>

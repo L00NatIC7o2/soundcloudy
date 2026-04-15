@@ -2,7 +2,7 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import { randomBytes } from "crypto";
 import { getConnectStore, type ConnectEntry } from "../../../apps/backend/src/server/auth/connectStore";
 
-const DEFAULT_REMOTE_API_URL = "https://soundcloudy-backend.onrender.com";
+const DEFAULT_REMOTE_API_URL = "https://soundcloudy-app.onrender.com";
 
 function getRequestOrigin(req: NextApiRequest) {
   const protoHeader = req.headers["x-forwarded-proto"];
@@ -73,3 +73,4 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     });
   }
 }
+

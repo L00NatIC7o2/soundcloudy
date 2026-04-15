@@ -1,24 +1,17 @@
-import React, { useEffect, useState } from "react";
+import React from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import * as WebBrowser from "expo-web-browser";
 
-import { DEFAULT_API_URL } from "../constants/config";
 import { AppTheme } from "../components/mobile/app-theme";
+import { useAuth } from "../components/mobile/auth-context";
+import { LoginGate } from "../components/mobile/login-gate";
 import {
   Card,
   HelperText,
-  PrimaryButton,
   ScreenScroll,
   SectionTitle,
   SecondaryButton,
 } from "../components/mobile/primitives";
 import { MobileShell } from "../components/mobile/shell";
-
-type SessionState = {
-  authenticated: boolean;
-  loading: boolean;
-  label: string;
-};
 
 const FEATURE_CARDS = [
   {
@@ -36,64 +29,17 @@ const FEATURE_CARDS = [
 ];
 
 export function HomeScreen() {
-  const [sessionState, setSessionState] = useState<SessionState>({
-    authenticated: false,
-    loading: true,
-    label: "Checking session...",
-  });
+  const auth = useAuth();
 
-  useEffect(() => {
-    void refreshSession();
-  }, []);
-
-  const refreshSession = async () => {
-    setSessionState((previous) => ({ ...previous, loading: true }));
-    try {
-      const response = await fetch(`${DEFAULT_API_URL}/api/auth/check`);
-      if (!response.ok) {
-        setSessionState({
-          authenticated: false,
-          loading: false,
-          label: "Sign in with SoundCloud to unlock the native app.",
-        });
-        return;
-      }
-
-      let username = "Connected";
-      try {
-        const sessionResponse = await fetch(`${DEFAULT_API_URL}/api/auth/session`);
-        if (sessionResponse.ok) {
-          const session = await sessionResponse.json();
-          username =
-            session?.user?.username ||
-            session?.username ||
-            session?.user?.permalink ||
-            "Connected";
-        }
-      } catch {
-        // keep generic connected label
-      }
-
-      setSessionState({
-        authenticated: true,
-        loading: false,
-        label: username,
-      });
-    } catch {
-      setSessionState({
-        authenticated: false,
-        loading: false,
-        label: "Unable to reach the backend right now.",
-      });
-    }
-  };
-
-  const connectSoundCloud = async () => {
-    await WebBrowser.openBrowserAsync(`${DEFAULT_API_URL}/api/auth/login`);
-    setTimeout(() => {
-      void refreshSession();
-    }, 1500);
-  };
+  if (!auth.authenticated) {
+    return (
+      <LoginGate
+        loading={auth.loading}
+        label={auth.label}
+        onLogin={() => void auth.login()}
+      />
+    );
+  }
 
   return (
     <MobileShell
@@ -115,23 +61,17 @@ export function HomeScreen() {
         <Card>
           <View style={styles.rowHeader}>
             <SectionTitle>Account</SectionTitle>
-            <SecondaryButton label="Refresh" onPress={() => void refreshSession()} />
+            <SecondaryButton label="Refresh" onPress={() => void auth.refresh()} />
           </View>
           <HelperText>
-            Backend: {DEFAULT_API_URL.replace(/^https?:\/\//, "")}
+            Signed in as {auth.label}
           </HelperText>
           <View style={styles.accountPill}>
             <Text style={styles.accountPillLabel}>SoundCloud</Text>
             <Text style={styles.accountPillValue}>
-              {sessionState.loading ? "Checking..." : sessionState.label}
+              {auth.loading ? "Checking..." : auth.label}
             </Text>
           </View>
-          {!sessionState.authenticated ? (
-            <PrimaryButton
-              label="Log In With SoundCloud"
-              onPress={() => void connectSoundCloud()}
-            />
-          ) : null}
         </Card>
 
         <Card>
