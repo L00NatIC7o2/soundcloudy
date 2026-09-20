@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import axios from "axios";
 import {
+  establishSoundCloudSession,
   getStoredSoundCloudSession,
   requireSoundCloudAccessToken,
 } from "../auth/soundcloud";
@@ -13,7 +14,22 @@ export async function requireFriendAuth(
   res: NextApiResponse,
 ) {
   const token = await requireSoundCloudAccessToken(req, res);
-  const sessionState = await getStoredSoundCloudSession(req, res);
+  let sessionState = await getStoredSoundCloudSession(req, res);
+
+  if (!sessionState && token) {
+    try {
+      await establishSoundCloudSession(
+        req,
+        res,
+        token,
+        req.cookies.soundcloud_refresh_token || undefined,
+      );
+      sessionState = await getStoredSoundCloudSession(req, res);
+    } catch {
+      // Keep the original sessionState if bootstrap fails.
+    }
+  }
+
   const userId = Number(
     sessionState?.session?.userId || sessionState?.tokens?.userId || 0,
   );

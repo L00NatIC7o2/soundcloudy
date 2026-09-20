@@ -1,7 +1,15 @@
 import React, { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, FlatList, StyleSheet, Text, View } from "react-native";
+import {
+  ActivityIndicator,
+  FlatList,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 
 import { useAuth } from "../components/mobile/auth-context";
+import { usePlayer } from "../components/mobile/player-context";
 import { DEFAULT_API_URL } from "../constants/config";
 import { AppTheme } from "../components/mobile/app-theme";
 import { LoginGate } from "../components/mobile/login-gate";
@@ -17,6 +25,7 @@ import { MobileShell } from "../components/mobile/shell";
 type SearchResult = {
   id: number;
   title: string;
+  artwork_url?: string | null;
   user?: {
     username?: string;
   };
@@ -24,6 +33,7 @@ type SearchResult = {
 
 export function SearchScreen() {
   const auth = useAuth();
+  const player = usePlayer();
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
@@ -128,7 +138,27 @@ export function SearchScreen() {
           keyExtractor={(item) => String(item.id)}
           contentContainerStyle={styles.listContent}
           renderItem={({ item }) => (
-            <View style={styles.trackRow}>
+            <Pressable
+              style={styles.trackRow}
+              onPress={() =>
+                player.playTrack(
+                  {
+                    id: item.id,
+                    title: item.title,
+                    artist: item.user?.username || "Unknown",
+                    artworkUrl: item.artwork_url,
+                    context: "Search",
+                  },
+                  searchResults.map((track) => ({
+                    id: track.id,
+                    title: track.title,
+                    artist: track.user?.username || "Unknown",
+                    artworkUrl: track.artwork_url,
+                    context: "Search",
+                  })),
+                )
+              }
+            >
               <View style={styles.trackArtworkFallback}>
                 <Text style={styles.trackArtworkFallbackText}>
                   {item.title.slice(0, 1).toUpperCase()}
@@ -142,7 +172,7 @@ export function SearchScreen() {
                   {item.user?.username || "Unknown"}
                 </Text>
               </View>
-            </View>
+            </Pressable>
           )}
           ListEmptyComponent={
             !searching ? (
@@ -169,7 +199,7 @@ const styles = StyleSheet.create({
   },
   listContent: {
     paddingHorizontal: 18,
-    paddingBottom: 18,
+    paddingBottom: 120,
     gap: 10,
   },
   trackRow: {

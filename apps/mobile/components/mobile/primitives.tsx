@@ -82,6 +82,7 @@ export function AppInput(props: React.ComponentProps<typeof TextInput>) {
 const styles = StyleSheet.create({
   pageContent: {
     padding: 18,
+    paddingBottom: 140,
     gap: 14,
   },
   card: {

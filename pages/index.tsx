@@ -136,7 +136,8 @@ export default function Home() {
   >({});
   const [verifiedRowTrackPlaylistsMap, setVerifiedRowTrackPlaylistsMap] =
     useState<Record<number, boolean>>({});
-  const [mobileRowPlaylistTrack, setMobileRowPlaylistTrack] = useState<any>(null);
+  const [mobileRowPlaylistTrack, setMobileRowPlaylistTrack] =
+    useState<any>(null);
   const [isInSelectedPlaylist, setIsInSelectedPlaylist] = useState(false);
   const [checkingSelectedPlaylist, setCheckingSelectedPlaylist] =
     useState(false);
@@ -174,7 +175,8 @@ export default function Home() {
     visible: false,
   });
   const [appBackgroundCurrent, setAppBackgroundCurrent] = useState<string>("");
-  const [appBackgroundPrevious, setAppBackgroundPrevious] = useState<string>("");
+  const [appBackgroundPrevious, setAppBackgroundPrevious] =
+    useState<string>("");
   const [appBackgroundTransitioning, setAppBackgroundTransitioning] =
     useState(false);
   const [isWindowMaximized, setIsWindowMaximized] = useState(false);
@@ -252,7 +254,10 @@ export default function Home() {
         window.scrollTo({ top: 0, behavior: "auto" });
         document.documentElement.scrollTop = 0;
         document.body.scrollTop = 0;
-        mainAreaRef.current?.scrollIntoView({ block: "start", behavior: "auto" });
+        mainAreaRef.current?.scrollIntoView({
+          block: "start",
+          behavior: "auto",
+        });
       }, 0);
     });
   };
@@ -291,7 +296,10 @@ export default function Home() {
   useEffect(() => {
     return () => {
       clearTrackPanelTimer();
-      if (appBackgroundTimerRef.current !== null && typeof window !== "undefined") {
+      if (
+        appBackgroundTimerRef.current !== null &&
+        typeof window !== "undefined"
+      ) {
         window.clearTimeout(appBackgroundTimerRef.current);
       }
     };
@@ -331,7 +339,9 @@ export default function Home() {
           }))
         : [incomingTrack];
       const incomingQueueIndex =
-        typeof detail.currentQueueIndex === "number" ? detail.currentQueueIndex : 0;
+        typeof detail.currentQueueIndex === "number"
+          ? detail.currentQueueIndex
+          : 0;
 
       setCurrentTrack(incomingTrack);
       setQueue(incomingQueue.length ? incomingQueue : [incomingTrack]);
@@ -356,10 +366,7 @@ export default function Home() {
   useEffect(() => {
     const previousTrack = previousCurrentTrackRef.current;
 
-    if (
-      previousTrack?.id &&
-      previousTrack.id !== currentTrack?.id
-    ) {
+    if (previousTrack?.id && previousTrack.id !== currentTrack?.id) {
       const historyEntry = {
         ...previousTrack,
         played_at:
@@ -393,7 +400,10 @@ export default function Home() {
       return;
     }
 
-    if (typeof window !== "undefined" && appBackgroundTimerRef.current !== null) {
+    if (
+      typeof window !== "undefined" &&
+      appBackgroundTimerRef.current !== null
+    ) {
       window.clearTimeout(appBackgroundTimerRef.current);
       appBackgroundTimerRef.current = null;
     }
@@ -663,7 +673,7 @@ export default function Home() {
   // Fetch last played track
   const fetchLastPlayedTrack = async () => {
     try {
-      const response = await fetch("/api/likes");
+      const response = await fetch("/api/likes", { credentials: "include" });
       if (!response.ok) {
         console.error("Failed to fetch last played track:", response.status);
         return;
@@ -688,10 +698,16 @@ export default function Home() {
   const resolveTrackItem = (item: any) => {
     if (!item) return null;
     if (item.kind === "playlist" || item.kind === "playlist-like") return null;
-    if (item.track && (item.track.kind === "track" || typeof item.track.duration === "number")) {
+    if (
+      item.track &&
+      (item.track.kind === "track" || typeof item.track.duration === "number")
+    ) {
       return item.track;
     }
-    if (item.origin && (item.origin.kind === "track" || typeof item.origin.duration === "number")) {
+    if (
+      item.origin &&
+      (item.origin.kind === "track" || typeof item.origin.duration === "number")
+    ) {
       return item.origin;
     }
     return item;
@@ -754,12 +770,16 @@ export default function Home() {
   const mobileSidebarTouchStartRef = useRef<number | null>(null);
   const mobileSidebarTouchCurrentRef = useRef<number | null>(null);
 
-  const handleMobileSidebarTouchStart = (event: React.TouchEvent<HTMLElement>) => {
+  const handleMobileSidebarTouchStart = (
+    event: React.TouchEvent<HTMLElement>,
+  ) => {
     mobileSidebarTouchStartRef.current = event.touches[0]?.clientX ?? null;
     mobileSidebarTouchCurrentRef.current = mobileSidebarTouchStartRef.current;
   };
 
-  const handleMobileSidebarTouchMove = (event: React.TouchEvent<HTMLElement>) => {
+  const handleMobileSidebarTouchMove = (
+    event: React.TouchEvent<HTMLElement>,
+  ) => {
     mobileSidebarTouchCurrentRef.current = event.touches[0]?.clientX ?? null;
   };
 
@@ -769,7 +789,8 @@ export default function Home() {
       mobileSidebarTouchCurrentRef.current !== null
     ) {
       const deltaX =
-        mobileSidebarTouchCurrentRef.current - mobileSidebarTouchStartRef.current;
+        mobileSidebarTouchCurrentRef.current -
+        mobileSidebarTouchStartRef.current;
 
       if (deltaX < -50) {
         setMobileSidebarPage((prev) => Math.min(prev + 1, 2));
@@ -874,7 +895,13 @@ export default function Home() {
     try {
       const response = await fetch(`/api/playlist/${resolvedPlaylist.id}`);
       const data = await response.json();
-      const tracks = data.tracks || [];
+      const fallbackTracks = Array.isArray(resolvedPlaylist?.tracks)
+        ? resolvedPlaylist.tracks
+        : [];
+      const tracks =
+        Array.isArray(data.tracks) && data.tracks.length > 0
+          ? data.tracks
+          : fallbackTracks;
       if (navigate) {
         setPlaylistTracks(tracks);
       }
@@ -962,8 +989,8 @@ export default function Home() {
 
     try {
       const [ownedResponse, likedResponse] = await Promise.all([
-        fetch("/api/playlists"),
-        fetch("/api/likes-playlists"),
+        fetch("/api/playlists", { credentials: "include" }),
+        fetch("/api/likes-playlists", { credentials: "include" }),
       ]);
       const ownedData = await ownedResponse.json();
       const likedData = await likedResponse.json();
@@ -1069,16 +1096,49 @@ export default function Home() {
     setHistoryError(null);
 
     try {
-      const response = await fetch("/api/auth/me");
-      const data = await response.json();
-      console.log("User profile data:", data);
-      setUserProfile(data);
-      if (data.tracks) {
-        setPlaylistTracks(data.tracks);
+      const authCheckResponse = await fetch("/api/auth/check", {
+        credentials: "include",
+      });
+
+      if (!authCheckResponse.ok) {
+        throw new Error("Auth check failed");
       }
-      setProfilePlaylists(data.playlists || []);
-      setProfileAlbums(data.albums || []);
-      setProfileReposts(data.reposts || []);
+
+      const response = await fetch("/api/auth/me", {
+        credentials: "include",
+      });
+      const data = await response.json();
+
+      if (!response.ok || !data?.id) {
+        if (response.status === 401) {
+          setIsAuthenticated(false);
+          setViewingProfile(false);
+          router.push("/login");
+          return;
+        }
+        throw new Error(data?.error || "Failed to fetch current user.");
+      }
+
+      const profileResponse = await fetch(`/api/artist/${data.id}`, {
+        credentials: "include",
+      });
+      const profileData = await profileResponse.json();
+
+      if (!profileResponse.ok) {
+        throw new Error(profileData?.error || "Failed to fetch profile.");
+      }
+
+      console.log("User profile data:", profileData);
+      setUserProfile({
+        ...data,
+        ...profileData,
+      });
+      if (profileData.tracks) {
+        setPlaylistTracks(profileData.tracks);
+      }
+      setProfilePlaylists(profileData.playlists || []);
+      setProfileAlbums(profileData.albums || []);
+      setProfileReposts(profileData.reposts || []);
     } catch (error) {
       console.error("Failed to fetch profile:", error);
     } finally {
@@ -1147,7 +1207,8 @@ export default function Home() {
   const fetchListeningHistoryItems = useCallback(
     async (limit: number) => {
       const api = (window as any).electronAPI;
-      const useElectronFastPath = Boolean(api?.playHistoryViaWeb) && limit <= 100;
+      const useElectronFastPath =
+        Boolean(api?.playHistoryViaWeb) && limit <= 100;
       if (useElectronFastPath) {
         const result = await api.playHistoryViaWeb();
         if (result?.error) {
@@ -1156,10 +1217,14 @@ export default function Home() {
           );
           const data = await response.json();
           if (!response.ok || data?.error) {
-            throw new Error(data?.error || "Unable to fetch listening history.");
+            throw new Error(
+              data?.error || "Unable to fetch listening history.",
+            );
           }
           return {
-            items: mergeHistoryItems(Array.isArray(data.items) ? data.items : []),
+            items: mergeHistoryItems(
+              Array.isArray(data.items) ? data.items : [],
+            ),
             cached: Boolean(data?.cached),
             canLoadMore:
               useElectronFastPath &&
@@ -1171,17 +1236,22 @@ export default function Home() {
         const items = mergeHistoryItems(
           Array.isArray(result?.items) ? result.items : [],
         );
-        const shouldScrapeFallback = result?.source === "stream" || items.length === 0;
+        const shouldScrapeFallback =
+          result?.source === "stream" || items.length === 0;
         if (shouldScrapeFallback) {
           const response = await fetch(
             `/api/listening-history?limit=${limit}&scrape=1&force=1&cache=1`,
           );
           const data = await response.json();
           if (!response.ok || data?.error) {
-            throw new Error(data?.error || "Unable to fetch listening history.");
+            throw new Error(
+              data?.error || "Unable to fetch listening history.",
+            );
           }
           return {
-            items: mergeHistoryItems(Array.isArray(data.items) ? data.items : []),
+            items: mergeHistoryItems(
+              Array.isArray(data.items) ? data.items : [],
+            ),
             cached: Boolean(data?.cached),
             canLoadMore:
               useElectronFastPath &&
@@ -1197,7 +1267,9 @@ export default function Home() {
         };
       }
 
-      const response = await fetch(`/api/listening-history?limit=${limit}&cache=1`);
+      const response = await fetch(
+        `/api/listening-history?limit=${limit}&cache=1`,
+      );
       const data = await response.json();
       if (!response.ok || data?.error) {
         const scrapeResponse = await fetch(
@@ -1206,7 +1278,9 @@ export default function Home() {
         const scrapeData = await scrapeResponse.json();
         if (!scrapeResponse.ok || scrapeData?.error) {
           throw new Error(
-            scrapeData?.error || data?.error || "Unable to fetch listening history.",
+            scrapeData?.error ||
+              data?.error ||
+              "Unable to fetch listening history.",
           );
         }
         return {
@@ -1230,7 +1304,8 @@ export default function Home() {
     const now = Date.now();
     const hasExistingHistory = listeningHistory.length > 0;
     if (historyRefreshInFlightRef.current) return;
-    if (hasExistingHistory && now - lastHistoryRefreshAtRef.current < 15000) return;
+    if (hasExistingHistory && now - lastHistoryRefreshAtRef.current < 15000)
+      return;
 
     historyRefreshInFlightRef.current = true;
     lastHistoryRefreshAtRef.current = now;
@@ -1242,9 +1317,10 @@ export default function Home() {
       }
       setHistoryError(null);
       const result = await fetchListeningHistoryItems(limit);
-      setListeningHistory((prev) => mergeHistoryItems([...result.items, ...prev]));
+      setListeningHistory((prev) =>
+        mergeHistoryItems([...result.items, ...prev]),
+      );
       setHistoryHasMore(result.canLoadMore || result.items.length >= limit);
-
     } catch (error) {
       console.error("Failed to fetch listening history:", error);
       setHistoryError("Unable to fetch listening history.");
@@ -1262,7 +1338,9 @@ export default function Home() {
       setHistoryLoadingMore(true);
       setHistoryError(null);
       const result = await fetchListeningHistoryItems(nextLimit);
-      setListeningHistory((prev) => mergeHistoryItems([...result.items, ...prev]));
+      setListeningHistory((prev) =>
+        mergeHistoryItems([...result.items, ...prev]),
+      );
       setHistoryLimit(nextLimit);
       setHistoryHasMore(result.canLoadMore || result.items.length >= nextLimit);
     } catch (error) {
@@ -1498,11 +1576,7 @@ export default function Home() {
     setViewingHomepage(false);
     if (typeof window !== "undefined") {
       const currentState = window.history.state || {};
-      window.history.replaceState(
-        { ...currentState, scrollY: 0 },
-        "",
-        "",
-      );
+      window.history.replaceState({ ...currentState, scrollY: 0 }, "", "");
     }
     pushTabState("search-section", { query: activeQuery, view });
   };
@@ -1603,7 +1677,9 @@ export default function Home() {
           );
           const appendable = freshRelated.filter((item: any) => {
             const itemId = Number(item?.id);
-            return Number.isFinite(itemId) && itemId > 0 && !currentIds.has(itemId);
+            return (
+              Number.isFinite(itemId) && itemId > 0 && !currentIds.has(itemId)
+            );
           });
           return appendable.length ? [...prev, ...appendable] : prev;
         });
@@ -1699,7 +1775,10 @@ export default function Home() {
         setCurrentQueueIndex(trackIndex);
         setCurrentTrack(trackList[trackIndex]);
         if (trackList.length - trackIndex <= 1) {
-          void extendInfiniteRelatedQueue(trackList[trackList.length - 1], trackList);
+          void extendInfiniteRelatedQueue(
+            trackList[trackList.length - 1],
+            trackList,
+          );
         }
       } else {
         setCurrentTrack(track);
@@ -1715,7 +1794,9 @@ export default function Home() {
     if (queueSource !== "search-related" || queue.length === 0) return;
 
     const remainingCount =
-      currentQueueIndex >= 0 ? queue.length - currentQueueIndex - 1 : queue.length - 1;
+      currentQueueIndex >= 0
+        ? queue.length - currentQueueIndex - 1
+        : queue.length - 1;
 
     if (remainingCount > 3) return;
 
@@ -2068,7 +2149,9 @@ export default function Home() {
 
   const seedLikedPlaylists = async () => {
     try {
-      const resp = await fetch(`/api/likes-playlists`);
+      const resp = await fetch(`/api/likes-playlists`, {
+        credentials: "include",
+      });
       if (!resp.ok) return;
       const data = await resp.json();
       const list = data.playlists || [];
@@ -2082,6 +2165,10 @@ export default function Home() {
     }
   };
 
+  const fetchLikesUrl = async (url: string) => {
+    return fetch(url, { credentials: "include" });
+  };
+
   const fetchPagedLikes = async (fetchAll = false) => {
     const map: Record<number, boolean> = {};
     const collected: any[] = [];
@@ -2089,7 +2176,9 @@ export default function Home() {
     const limit = 50;
     while (true) {
       if (offset >= 200) break;
-      const resp = await fetch(`/api/likes?offset=${offset}&limit=${limit}`);
+      const resp = await fetchLikesUrl(
+        `/api/likes?offset=${offset}&limit=${limit}`,
+      );
       if (!resp.ok) break;
       const data = await resp.json();
       const likes = data.likes || data.tracks || [];
@@ -2109,7 +2198,7 @@ export default function Home() {
     const url = nextHref
       ? `/api/likes?nextHref=${encodeURIComponent(nextHref)}`
       : `/api/likes?limit=${limit}`;
-    const resp = await fetch(url);
+    const resp = await fetchLikesUrl(url);
     if (!resp.ok) {
       throw new Error(`Failed to fetch likes page: ${resp.status}`);
     }
@@ -2177,11 +2266,7 @@ export default function Home() {
     }
   };
 
-  const emitLikeUpdate = (
-    trackId: number,
-    isLiked: boolean,
-    track?: any,
-  ) => {
+  const emitLikeUpdate = (trackId: number, isLiked: boolean, track?: any) => {
     try {
       window.dispatchEvent(
         new CustomEvent("likes-updated", {
@@ -2215,33 +2300,12 @@ export default function Home() {
     setLikedTracks((prev) => ({ ...prev, [trackId]: nextLiked }));
     emitLikeUpdate(trackId, nextLiked, track);
     try {
-      // Ensure token is fresh before making the like request
-      try {
-        await fetch("/api/auth/refresh", { method: "POST" });
-      } catch (err) {
-        console.warn("Token refresh failed before like (continuing):", err);
-      }
       const makeRequest = async () => {
-        const resp = await fetch("/api/like", {
+        return fetch("/api/like", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ trackId, like: nextLiked }),
         });
-        if (!resp.ok && resp.status === 401) {
-          // try refreshing and retry once
-          try {
-            await fetch("/api/auth/refresh", { method: "POST" });
-          } catch (e) {
-            console.warn("refresh failed during like retry", e);
-          }
-          const resp2 = await fetch("/api/like", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ trackId, like: nextLiked }),
-          });
-          return resp2;
-        }
-        return resp;
       };
       const response = await makeRequest();
       if (!response.ok) {
@@ -2312,7 +2376,8 @@ export default function Home() {
     const missing = trackIds
       .filter(
         (id: number) =>
-          likedTracks[id] === undefined && !requestedTrackLikesRef.current.has(id),
+          likedTracks[id] === undefined &&
+          !requestedTrackLikesRef.current.has(id),
       )
       .slice(0, 20);
 
@@ -2377,13 +2442,6 @@ export default function Home() {
 
   const addToSelectedPlaylist = async (track: any) => {
     if (!track?.id || !currentPlaylistId) return;
-
-    // Refresh token to ensure it's fresh
-    try {
-      await fetch("/api/auth/refresh", { method: "POST" });
-    } catch (err) {
-      console.warn("Token refresh failed (continuing anyway):", err);
-    }
 
     try {
       const response = await fetch("/api/add-to-playlist", {
@@ -2680,7 +2738,7 @@ export default function Home() {
   useEffect(() => {
     const checkAuth = async () => {
       try {
-        const res = await fetch("/api/auth/check");
+        const res = await fetch("/api/auth/check", { credentials: "include" });
         if (!res.ok) {
           router.push("/login");
           setIsAuthenticated(false);
@@ -2691,7 +2749,6 @@ export default function Home() {
           // Seed likes and liked-playlists cache so UI reflects server state immediately
           seedLikes(true);
           seedLikedPlaylists();
-          // fetchLastPlayedTrack(); // Removed autoplay on login
         }
       } catch (error) {
         console.error("Auth check failed:", error);
@@ -2705,28 +2762,10 @@ export default function Home() {
   }, [router, fetchPlaylists, preloadOwnedPlaylistMemberships]);
 
   useEffect(() => {
-    if (!isAuthenticated) return;
-    const refresh = async () => {
-      try {
-        await fetch("/api/auth/refresh");
-      } catch (_error) {
-        // silent refresh failure; auth check will handle re-login
-      }
-    };
-    refresh();
-    const interval = window.setInterval(refresh, 45 * 60 * 1000);
-    return () => window.clearInterval(interval);
-  }, [isAuthenticated]);
-
-  useEffect(() => {
-    if (!isAuthenticated || listeningHistory.length > 0 || historyLoading) return;
+    if (!isAuthenticated || listeningHistory.length > 0 || historyLoading)
+      return;
     void fetchListeningHistoryBackground(historyLimit);
-  }, [
-    isAuthenticated,
-    listeningHistory.length,
-    historyLoading,
-    historyLimit,
-  ]);
+  }, [isAuthenticated, listeningHistory.length, historyLoading, historyLimit]);
 
   useEffect(() => {
     if (!viewingProfile || !isAuthenticated) return;
@@ -3163,7 +3202,14 @@ export default function Home() {
     });
 
     return () => window.cancelAnimationFrame(rafId);
-  }, [searchView, loading, sectionLoading, libraryLoading, isLoadingMore, tracks.length]);
+  }, [
+    searchView,
+    loading,
+    sectionLoading,
+    libraryLoading,
+    isLoadingMore,
+    tracks.length,
+  ]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -3176,7 +3222,7 @@ export default function Home() {
         window.scrollY <= 0 &&
         (document.documentElement.scrollTop || 0) <= 0 &&
         (document.body.scrollTop || 0) <= 0 &&
-        ((scrollingElement?.scrollTop ?? 0) <= 0)
+        (scrollingElement?.scrollTop ?? 0) <= 0
       );
     };
 
@@ -3238,12 +3284,12 @@ export default function Home() {
     else setViewingHomepage(false);
   };
 
-    const displayTitle = viewingLikes ? "Liked Songs" : selectedPlaylist?.title;
-    const displayCover = viewingLikes
-      ? getLikedSongsCover()
-      : selectedPlaylist
-        ? getPlaylistCover(selectedPlaylist)
-        : undefined;
+  const displayTitle = viewingLikes ? "Liked Songs" : selectedPlaylist?.title;
+  const displayCover = viewingLikes
+    ? getLikedSongsCover()
+    : selectedPlaylist
+      ? getPlaylistCover(selectedPlaylist)
+      : undefined;
   const activeProfileBanner = viewingProfile
     ? normalizeArtworkUrl(userProfile?.banner_url)
     : normalizeArtworkUrl(
@@ -3391,12 +3437,10 @@ export default function Home() {
                   {renderHeartIcon(Boolean(likedTracks[resolvedTrack.id]))}
                 </button>
                 <div className="track-row-playlist-wrap">
-                <button
-                  type="button"
-                  className={`track-row-playlist-btn ${
-                      hasVerifiedPlaylistMembership
-                        ? "in-playlist"
-                        : ""
+                  <button
+                    type="button"
+                    className={`track-row-playlist-btn ${
+                      hasVerifiedPlaylistMembership ? "in-playlist" : ""
                     }`}
                     onClick={() => {
                       void fetchTrackPlaylistsMembership(resolvedTrack.id);
@@ -3427,7 +3471,9 @@ export default function Home() {
                     trackId={resolvedTrack.id}
                     isOpen={rowPlaylistMenuTrackId === resolvedTrack.id}
                     onClose={() => setRowPlaylistMenuTrackId(null)}
-                    playlistsWithTrack={rowTrackPlaylistsMap[resolvedTrack.id] || []}
+                    playlistsWithTrack={
+                      rowTrackPlaylistsMap[resolvedTrack.id] || []
+                    }
                   />
                 </div>
               </div>
@@ -3435,7 +3481,9 @@ export default function Home() {
                 {formatDuration(resolvedTrack.duration)}
               </div>
               <div className="track-row-year">
-                {resolvedTrack.created_at ? getYear(resolvedTrack.created_at) : "-"}
+                {resolvedTrack.created_at
+                  ? getYear(resolvedTrack.created_at)
+                  : "-"}
               </div>
               <div className="track-row-added">
                 {track.added_at
@@ -3474,12 +3522,22 @@ export default function Home() {
             aria-label={isTrackPlaying(track.id) ? "Pause" : "Play"}
           >
             {isTrackPlaying(track.id) ? (
-              <svg width="40" height="40" viewBox="0 0 24 24" fill="currentColor">
+              <svg
+                width="40"
+                height="40"
+                viewBox="0 0 24 24"
+                fill="currentColor"
+              >
                 <rect x="6" y="4" width="4" height="16" />
                 <rect x="14" y="4" width="4" height="16" />
               </svg>
             ) : (
-              <svg width="40" height="40" viewBox="0 0 24 24" fill="currentColor">
+              <svg
+                width="40"
+                height="40"
+                viewBox="0 0 24 24"
+                fill="currentColor"
+              >
                 <polygon points="5 3 19 12 5 21 5 3" />
               </svg>
             )}
@@ -3533,7 +3591,9 @@ export default function Home() {
     return null;
   }
   const appShellStyle = {
-    "--app-bg-current": appBackgroundCurrent ? `url("${appBackgroundCurrent}")` : "none",
+    "--app-bg-current": appBackgroundCurrent
+      ? `url("${appBackgroundCurrent}")`
+      : "none",
     "--app-bg-previous": appBackgroundPrevious
       ? `url("${appBackgroundPrevious}")`
       : "none",
@@ -3546,8 +3606,12 @@ export default function Home() {
     >
       <aside
         className={`sidebar ${sidebarExpanded ? "expanded" : "collapsed"} ${isMobileViewport ? "sidebar-mobile-paged" : ""}`}
-        onTouchStart={isMobileViewport ? handleMobileSidebarTouchStart : undefined}
-        onTouchMove={isMobileViewport ? handleMobileSidebarTouchMove : undefined}
+        onTouchStart={
+          isMobileViewport ? handleMobileSidebarTouchStart : undefined
+        }
+        onTouchMove={
+          isMobileViewport ? handleMobileSidebarTouchMove : undefined
+        }
         onTouchEnd={isMobileViewport ? handleMobileSidebarTouchEnd : undefined}
       >
         {!isMobileViewport ? (
@@ -3555,10 +3619,18 @@ export default function Home() {
             <button
               className="sidebar-toggle"
               onClick={() => setSidebarExpanded(!sidebarExpanded)}
-              aria-label={sidebarExpanded ? "Collapse sidebar" : "Expand sidebar"}
+              aria-label={
+                sidebarExpanded ? "Collapse sidebar" : "Expand sidebar"
+              }
               title={sidebarExpanded ? "Collapse sidebar" : "Expand sidebar"}
             >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                aria-hidden="true"
+              >
                 <path
                   d={sidebarExpanded ? "M15 6l-6 6 6 6" : "M9 6l6 6-6 6"}
                   stroke="currentColor"
@@ -3570,10 +3642,7 @@ export default function Home() {
             </button>
 
             <nav className="sidebar-nav">
-              <button
-                className="nav-item"
-                onClick={openHomepage}
-              >
+              <button className="nav-item" onClick={openHomepage}>
                 <img
                   src="https://img.icons8.com/parakeet-line/50/home.png"
                   alt="Home"
@@ -3584,10 +3653,7 @@ export default function Home() {
                 {sidebarExpanded && <span className="nav-label">Home</span>}
               </button>
 
-              <button
-                className="nav-item"
-                onClick={openProfileView}
-              >
+              <button className="nav-item" onClick={openProfileView}>
                 <img
                   src="https://img.icons8.com/parakeet-line/48/person-male.png"
                   alt="Profile"
@@ -3598,22 +3664,18 @@ export default function Home() {
                 {sidebarExpanded && <span className="nav-label">Profile</span>}
               </button>
 
-              <button
-                className="nav-item"
-                onClick={openLikesView}
-              >
+              <button className="nav-item" onClick={openLikesView}>
                 <img
                   src="https://img.icons8.com/parakeet-line/48/like.png"
                   alt="Liked Songs"
                   className="nav-icon-img nav-icon-like"
                 />
-                {sidebarExpanded && <span className="nav-label">Liked Songs</span>}
+                {sidebarExpanded && (
+                  <span className="nav-label">Liked Songs</span>
+                )}
               </button>
 
-              <button
-                className="nav-item"
-                onClick={openLibraryView}
-              >
+              <button className="nav-item" onClick={openLibraryView}>
                 <img
                   src="https://img.icons8.com/parakeet-line/48/book.png"
                   alt="My Library"
@@ -3621,13 +3683,12 @@ export default function Home() {
                   loading="lazy"
                   decoding="async"
                 />
-                {sidebarExpanded && <span className="nav-label">My Library</span>}
+                {sidebarExpanded && (
+                  <span className="nav-label">My Library</span>
+                )}
               </button>
 
-              <button
-                className="nav-item"
-                onClick={openNewReleasesView}
-              >
+              <button className="nav-item" onClick={openNewReleasesView}>
                 <img
                   src="https://img.icons8.com/parakeet-line/48/calendar-1.png"
                   alt="Newly Released"
@@ -3691,12 +3752,22 @@ export default function Home() {
                           }
                         >
                           {isPlaylistPlaying(playlist.id) ? (
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                            <svg
+                              width="18"
+                              height="18"
+                              viewBox="0 0 24 24"
+                              fill="currentColor"
+                            >
                               <rect x="6" y="4" width="4" height="16" />
                               <rect x="14" y="4" width="4" height="16" />
                             </svg>
                           ) : (
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                            <svg
+                              width="18"
+                              height="18"
+                              viewBox="0 0 24 24"
+                              fill="currentColor"
+                            >
                               <polygon points="5 3 19 12 5 21 5 3" />
                             </svg>
                           )}
@@ -3732,10 +3803,33 @@ export default function Home() {
                 title="Log out"
               >
                 {!sidebarExpanded && (
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                    <path d="M15 17l5-5-5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                    <path d="M20 12H9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                    <path d="M12 19H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                  <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    aria-hidden="true"
+                  >
+                    <path
+                      d="M15 17l5-5-5-5"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                    <path
+                      d="M20 12H9"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                    />
+                    <path
+                      d="M12 19H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h6"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
                   </svg>
                 )}
                 {sidebarExpanded && <span className="nav-label">Log out</span>}
@@ -3885,7 +3979,19 @@ export default function Home() {
                 }}
                 aria-label="Clear search"
               >
-                <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M2 2l6 6M8 2L2 8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" /></svg>
+                <svg
+                  width="10"
+                  height="10"
+                  viewBox="0 0 10 10"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M2 2l6 6M8 2L2 8"
+                    stroke="currentColor"
+                    strokeWidth="1.4"
+                    strokeLinecap="round"
+                  />
+                </svg>
               </button>
             )}
           </div>
@@ -4068,6 +4174,10 @@ export default function Home() {
             isTrackPlaying={isTrackPlaying}
             isItemPlaying={isItemPlaying}
             onPlaylistClick={handlePlaylistClick}
+            onArtistClick={handleArtistClick}
+            onToggleTrackLike={toggleTrackLike}
+            likedTracks={likedTracks}
+            renderHeartIcon={renderHeartIcon}
             currentTrack={currentTrack}
             onPrevious={handlePrevious}
             onNext={handleNext}
@@ -4182,7 +4292,9 @@ export default function Home() {
                                         : "Add like"
                                     }
                                   >
-                                    {renderHeartIcon(Boolean(likedPlaylists[playlist.id]))}
+                                    {renderHeartIcon(
+                                      Boolean(likedPlaylists[playlist.id]),
+                                    )}
                                   </button>
                                 )}
                             </div>
@@ -4241,7 +4353,21 @@ export default function Home() {
                             ? userProfile?.verified
                             : selectedArtist?.verified) && (
                             <span className="verified-badge" title="Verified">
-                              <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true"><path d="M4.5 9.2l2.4 2.4 6.6-6.6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                              <svg
+                                width="18"
+                                height="18"
+                                viewBox="0 0 18 18"
+                                fill="none"
+                                aria-hidden="true"
+                              >
+                                <path
+                                  d="M4.5 9.2l2.4 2.4 6.6-6.6"
+                                  stroke="currentColor"
+                                  strokeWidth="2"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                />
+                              </svg>
                             </span>
                           )}
                         </h2>
@@ -4412,11 +4538,13 @@ export default function Home() {
                 ) : (
                   <div
                     className="playlist-header-sticky"
-                    style={{
-                      "--playlist-banner-image": displayCover
-                        ? `url(${displayCover})`
-                        : "none",
-                    } as CSSProperties}
+                    style={
+                      {
+                        "--playlist-banner-image": displayCover
+                          ? `url(${displayCover})`
+                          : "none",
+                      } as CSSProperties
+                    }
                   >
                     <img
                       src={displayCover}
@@ -4527,7 +4655,9 @@ export default function Home() {
                                     : "Add like"
                                 }
                               >
-                                {renderHeartIcon(Boolean(likedPlaylists[album.id]))}
+                                {renderHeartIcon(
+                                  Boolean(likedPlaylists[album.id]),
+                                )}
                               </button>
                             </div>
                           </div>
@@ -4629,7 +4759,9 @@ export default function Home() {
                                     : "Add like"
                                 }
                               >
-                                {renderHeartIcon(Boolean(likedPlaylists[playlist.id]))}
+                                {renderHeartIcon(
+                                  Boolean(likedPlaylists[playlist.id]),
+                                )}
                               </button>
                             </div>
                           </div>
@@ -4654,9 +4786,7 @@ export default function Home() {
                       </div>
                     </div>
                     {filteredProfileTracks.length === 0 ? (
-                      <div className="playlist-loading">
-                        No tracks found.
-                      </div>
+                      <div className="playlist-loading">No tracks found.</div>
                     ) : (
                       <>
                         {renderTrackRows(visibleProfileTracks, "profile-track")}
@@ -4708,7 +4838,7 @@ export default function Home() {
                         <div className="track-list">
                           {listeningHistory.map((track: any, index: number) => (
                             <div
-                              key={`history-${track.id || index}`}
+                              key={`history-${track.id || index}-${track.played_at || track.created_at || index}`}
                               className="track-row"
                               onClick={() =>
                                 handleTrackClick(
@@ -5032,7 +5162,9 @@ export default function Home() {
                               : "Add like"
                           }
                         >
-                          {renderHeartIcon(Boolean(likedPlaylists[playlist.id]))}
+                          {renderHeartIcon(
+                            Boolean(likedPlaylists[playlist.id]),
+                          )}
                         </button>
                       </div>
                     </div>
@@ -5207,7 +5339,9 @@ export default function Home() {
                                   : "Add like"
                               }
                             >
-                              {renderHeartIcon(Boolean(likedPlaylists[album.id]))}
+                              {renderHeartIcon(
+                                Boolean(likedPlaylists[album.id]),
+                              )}
                             </button>
                           </div>
                         </div>
@@ -5311,7 +5445,9 @@ export default function Home() {
                                   : "Add like"
                               }
                             >
-                              {renderHeartIcon(Boolean(likedPlaylists[playlist.id]))}
+                              {renderHeartIcon(
+                                Boolean(likedPlaylists[playlist.id]),
+                              )}
                             </button>
                           </div>
                         </div>
@@ -5530,7 +5666,10 @@ export default function Home() {
         }
       />
 
-      {!isMobileViewport && viewingTrack && trackPanelMinimized && selectedTrack ? (
+      {!isMobileViewport &&
+      viewingTrack &&
+      trackPanelMinimized &&
+      selectedTrack ? (
         <button
           className="track-panel-restore"
           onClick={() => {
@@ -5554,7 +5693,10 @@ export default function Home() {
         </button>
       ) : null}
 
-      {!isMobileViewport && viewingTrack && !trackPanelMinimized && selectedTrack ? (
+      {!isMobileViewport &&
+      viewingTrack &&
+      !trackPanelMinimized &&
+      selectedTrack ? (
         <TrackDetailView
           track={selectedTrack}
           panelState={trackPanelState}
@@ -5604,32 +5746,3 @@ export default function Home() {
     </div>
   );
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

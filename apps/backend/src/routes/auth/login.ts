@@ -31,6 +31,7 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
   store.set(state, {
     createdAt: Date.now(),
     expires_in: 600,
+    mode: "web",
     status: "pending",
     codeVerifier,
   });

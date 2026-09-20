@@ -117,12 +117,6 @@ const MobilePlaylistSheet = memo(function MobilePlaylistSheet({
 
     setAddingTo(playlistId);
 
-    try {
-      await fetch("/api/auth/refresh", { method: "POST" });
-    } catch (err) {
-      console.warn("Token refresh failed (continuing anyway):", err);
-    }
-
     const maxRetries = 3;
     let retryCount = 0;
 
@@ -206,12 +200,6 @@ const MobilePlaylistSheet = memo(function MobilePlaylistSheet({
   const handleRemoveFromPlaylist = async (playlistId: number) => {
     if (!trackId) return;
     setRemovingFrom(playlistId);
-
-    try {
-      await fetch("/api/auth/refresh", { method: "POST" });
-    } catch (err) {
-      console.warn("Token refresh failed (continuing anyway):", err);
-    }
 
     try {
       const response = await fetch("/api/remove-from-playlist", {

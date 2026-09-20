@@ -5,6 +5,7 @@ import axios from "axios";
 import puppeteer, { type Browser, type Page } from "puppeteer";
 import {
   getRequestSoundCloudWebCredentials,
+  requireSoundCloudAccessToken,
   refreshSoundCloudAuth,
   refreshSoundCloudTokenValue,
   setRequestSoundCloudWebCredentials,
@@ -22,11 +23,13 @@ let browserPromise: Promise<Browser> | null = null;
 const HISTORY_COOKIE_ENV = "SOUNDCLOUD_HISTORY_COOKIE_PATH";
 const FALLBACK_CLIENT_ID = "BecG5WJDDxYMffAfWcjJleNqrGyJyZhI";
 
-let historyCache: {
-  data: any;
-  timestamp: number;
-  token: string;
-} | null = null;
+const historyCache = new Map<
+  string,
+  {
+    data: any;
+    timestamp: number;
+  }
+>();
 const CACHE_TTL_MS = 60000; // 60 seconds
 
 let extractedCredentials: {
@@ -132,17 +135,14 @@ const getAppVersion = () => {
   return process.env.SOUNDCLOUD_APP_VERSION || PLAY_HISTORY_APP_VERSION;
 };
 
-const resolveRequestWebCredentials = async (req: NextApiRequest, res: NextApiResponse) => {
+const resolveRequestWebCredentials = async (
+  req: NextApiRequest,
+  res: NextApiResponse,
+) => {
   const sessionCredentials = await getRequestSoundCloudWebCredentials(req, res);
-  const clientId =
-    sessionCredentials?.clientId ||
-    getV2ClientId();
-  const appVersion =
-    sessionCredentials?.appVersion ||
-    getAppVersion();
-  const appLocale =
-    sessionCredentials?.appLocale ||
-    PLAY_HISTORY_LOCALE;
+  const clientId = sessionCredentials?.clientId || getV2ClientId();
+  const appVersion = sessionCredentials?.appVersion || getAppVersion();
+  const appLocale = sessionCredentials?.appLocale || PLAY_HISTORY_LOCALE;
 
   return {
     clientId,
@@ -559,7 +559,7 @@ const getListeningHistoryInternal = async (
   tokenOverride?: string,
   refreshTokenOverride?: string,
 ) => {
-  const token = tokenOverride || req.cookies.soundcloud_token;
+  const token = tokenOverride || (await requireSoundCloudAccessToken(req, res));
   const refreshToken =
     refreshTokenOverride || req.cookies.soundcloud_refresh_token;
   const allowScrape = req.query.scrape === "1";
@@ -904,44 +904,68 @@ const getListeningHistory = async (
   }
 };
 
+export const primeSoundCloudWebCredentials = async (
+  req: NextApiRequest,
+  res: NextApiResponse,
+) => {
+  const originalQuery = req.query;
+
+  req.query = {
+    ...originalQuery,
+    limit: "1",
+    scrape: "1",
+    force: "1",
+    cache: "1",
+  };
+
+  try {
+    await getListeningHistory(req, res);
+    return await getRequestSoundCloudWebCredentials(req, res);
+  } finally {
+    req.query = originalQuery;
+  }
+};
+
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
   try {
-    let token = req.cookies.soundcloud_token;
+    let token = await requireSoundCloudAccessToken(req, res);
     const allowCache = req.query.cache === "1";
     const forceRefresh = req.query.force === "1";
 
     if (!token) {
       const auth = await refreshSoundCloudAuth(req, res);
-      token = auth?.rawToken;
+      token = auth?.rawToken ?? null;
     }
 
     if (!token) {
       return res.status(401).json({ error: "Not authenticated" });
     }
 
+    const rawLimit = Array.isArray(req.query.limit)
+      ? req.query.limit[0]
+      : req.query.limit;
+    const cacheKey = `${token}:${rawLimit || "default"}:${req.query.scrape === "1" ? "scrape" : "api"}`;
+
     // Check cache
-    if (
-      allowCache &&
-      !forceRefresh &&
-      historyCache &&
-      historyCache.token === token &&
-      Date.now() - historyCache.timestamp < CACHE_TTL_MS
-    ) {
-      return res.status(200).json({ ...historyCache.data, cached: true });
+    if (allowCache && !forceRefresh && historyCache.has(cacheKey)) {
+      const cached = historyCache.get(cacheKey)!;
+      if (Date.now() - cached.timestamp < CACHE_TTL_MS) {
+        return res.status(200).json({ ...cached.data, cached: true });
+      }
+      historyCache.delete(cacheKey);
     }
 
     const payload = await getListeningHistoryInternal(req, res, token);
 
     // Store in cache
     if (token) {
-      historyCache = {
+      historyCache.set(cacheKey, {
         data: payload,
         timestamp: Date.now(),
-        token,
-      };
+      });
     }
 
     res.status(200).json(payload);
@@ -954,8 +978,3 @@ export default async function handler(
     });
   }
 }
-
-
-
-
-

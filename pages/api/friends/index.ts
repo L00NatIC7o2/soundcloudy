@@ -4,6 +4,7 @@ import {
   fetchCurrentSoundCloudUser,
   requireFriendAuth,
 } from "../../../src/server/friends/api";
+import { refreshSoundCloudAuth } from "../../../src/server/auth/soundcloud";
 import {
   getFriendPresence,
   getFriendStatus,
@@ -29,7 +30,39 @@ export default async function handler(
   }
 
   const store = await readFriendStore();
-  const me = await fetchCurrentSoundCloudUser(auth.token);
+  let me;
+  try {
+    me = await fetchCurrentSoundCloudUser(auth.token);
+  } catch (error: any) {
+    if (error.response?.status === 401) {
+      const refreshedAuth = await refreshSoundCloudAuth(req, res, {
+        force: true,
+      });
+      if (!refreshedAuth) {
+        me = {
+          userId: auth.userId,
+          username:
+            auth.sessionState?.tokens?.username || `User ${auth.userId}`,
+          avatarUrl: null,
+          permalink: null,
+        };
+      } else {
+        try {
+          me = await fetchCurrentSoundCloudUser(refreshedAuth.rawToken);
+        } catch {
+          me = {
+            userId: auth.userId,
+            username:
+              auth.sessionState?.tokens?.username || `User ${auth.userId}`,
+            avatarUrl: null,
+            permalink: null,
+          };
+        }
+      }
+    } else {
+      throw error;
+    }
+  }
   upsertStoredUser(store, me);
 
   const friendIds = listFriendIds(store, auth.userId);

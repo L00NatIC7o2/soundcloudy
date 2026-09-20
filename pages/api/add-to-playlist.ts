@@ -1,34 +1,75 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import axios from "axios";
-import { requireSoundCloudAccessToken } from "../../src/server/auth/soundcloud";
+import {
+  getRequestSoundCloudAuthContext,
+  refreshSoundCloudAuth,
+  type SoundCloudAuthContext,
+} from "../../src/server/auth/soundcloud";
+
+const fetchPlaylist = async (
+  playlistId: string | number,
+  auth: SoundCloudAuthContext,
+) => {
+  return await axios.get(`https://api.soundcloud.com/playlists/${playlistId}`, {
+    headers: { Authorization: auth.headerValue },
+  });
+};
+
+const updatePlaylist = async (
+  playlistId: string | number,
+  payload: any,
+  auth: SoundCloudAuthContext,
+) => {
+  return await axios.put(
+    `https://api.soundcloud.com/playlists/${playlistId}`,
+    payload,
+    {
+      headers: {
+        Authorization: auth.headerValue,
+        "Content-Type": "application/json",
+      },
+    },
+  );
+};
 
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
   const { playlistId, trackId } = req.body;
-  let token = await requireSoundCloudAccessToken(req, res);
+  let auth = await getRequestSoundCloudAuthContext(req, res);
 
   console.log("/api/add-to-playlist called", { playlistId, trackId });
 
-  if (!token) {
-    console.warn("add-to-playlist: missing auth token");
-    return res.status(401).json({ error: "Not authenticated" });
+  if (!auth) {
+    auth = await refreshSoundCloudAuth(req, res);
   }
 
-  if (token && !token.startsWith("OAuth ")) {
-    token = `OAuth ${token}`;
+  if (!auth) {
+    console.warn("add-to-playlist: missing auth token");
+    return res.status(401).json({ error: "Not authenticated" });
   }
 
   try {
     // Step 1: Get existing playlist to preserve existing tracks
     console.log("Fetching existing playlist tracks...");
-    const getResp = await axios.get(
-      `https://api.soundcloud.com/playlists/${playlistId}`,
-      {
-        headers: { Authorization: token },
-      },
-    );
+    let getResp;
+    try {
+      getResp = await fetchPlaylist(playlistId, auth);
+    } catch (error: any) {
+      if (error.response?.status === 401) {
+        const refreshedAuth = await refreshSoundCloudAuth(req, res, {
+          force: true,
+        });
+        if (!refreshedAuth) {
+          return res.status(401).json({ error: "Not authenticated" });
+        }
+        auth = refreshedAuth;
+        getResp = await fetchPlaylist(playlistId, refreshedAuth);
+      } else {
+        throw error;
+      }
+    }
 
     const existingTracks = getResp.data.tracks || [];
     console.log("Existing tracks count:", existingTracks.length);
@@ -58,16 +99,7 @@ export default async function handler(
       updatedTracks.map((t) => ({ id: t.id, type: typeof t.id })),
     );
 
-    const putResp = await axios.put(
-      `https://api.soundcloud.com/playlists/${playlistId}`,
-      payload,
-      {
-        headers: {
-          Authorization: token,
-          "Content-Type": "application/json",
-        },
-      },
-    );
+    await updatePlaylist(playlistId, payload, auth);
 
     console.log("add-to-playlist success");
     res.json({ success: true });

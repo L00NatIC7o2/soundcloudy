@@ -1,6 +1,10 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import axios, { type AxiosResponse } from "axios";
-import { requireSoundCloudAccessToken } from "../../src/server/auth/soundcloud";
+import {
+  getRequestSoundCloudAuthContext,
+  getStoredSoundCloudSession,
+  refreshSoundCloudAuth,
+} from "../../src/server/auth/soundcloud";
 
 type MembershipMap = Record<number, number[]>;
 
@@ -17,7 +21,7 @@ const membershipCache = new Map<
 
 const fetchPaginatedCollection = async (
   url: string,
-  token: string,
+  authHeader: string,
   limit = 200,
 ) => {
   const collection: any[] = [];
@@ -27,7 +31,7 @@ const fetchPaginatedCollection = async (
   while (nextUrl) {
     const response: AxiosResponse<SoundCloudCollectionResponse> =
       await axios.get(nextUrl, {
-      headers: { Authorization: `OAuth ${token}` },
+      headers: { Authorization: authHeader },
       params: isFirstRequest ? { limit, linked_partitioning: 1 } : undefined,
       timeout: 10000,
       });
@@ -44,10 +48,15 @@ export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
-  const token = await requireSoundCloudAccessToken(req, res);
+  let auth = await getRequestSoundCloudAuthContext(req, res);
+  const sessionState = await getStoredSoundCloudSession(req, res);
   const rawTrackIds = typeof req.query.trackIds === "string" ? req.query.trackIds : "";
 
-  if (!token) {
+  if (!auth) {
+    auth = await refreshSoundCloudAuth(req, res);
+  }
+
+  if (!auth) {
     return res.status(401).json({ error: "Not authenticated", memberships: {} });
   }
 
@@ -61,22 +70,24 @@ export default async function handler(
     return res.status(400).json({ error: "Missing trackIds", memberships: {} });
   }
 
-  const cacheKey = `${token.slice(0, 16)}:${trackIds.sort((a, b) => a - b).join(",")}`;
+  const currentUserId = Number(
+    sessionState?.session?.userId || sessionState?.tokens?.userId || 0,
+  );
+
+  if (!currentUserId) {
+    return res.status(401).json({ error: "Not authenticated", memberships: {} });
+  }
+
+  const cacheKey = `${auth.rawToken.slice(0, 16)}:${trackIds.sort((a, b) => a - b).join(",")}`;
   const cached = membershipCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) {
     return res.json({ memberships: cached.memberships });
   }
 
   try {
-    const meResponse = await axios.get("https://api.soundcloud.com/me", {
-      headers: { Authorization: `OAuth ${token}` },
-      timeout: 10000,
-    });
-    const currentUserId = Number(meResponse.data?.id);
-
     const playlists = await fetchPaginatedCollection(
-      "https://api.soundcloud.com/me/playlists",
-      token,
+      `https://api.soundcloud.com/users/${currentUserId}/playlists`,
+      auth.headerValue,
       100,
     );
     const ownedPlaylists = playlists.filter(
@@ -93,7 +104,7 @@ export default async function handler(
       try {
         const tracks = await fetchPaginatedCollection(
           `https://api.soundcloud.com/playlists/${playlist.id}/tracks`,
-          token,
+          auth.headerValue,
           200,
         );
         for (const item of tracks) {
@@ -121,6 +132,75 @@ export default async function handler(
       error.response?.status,
       error.message,
     );
+
+    if (error.response?.status === 401) {
+      try {
+        const refreshedAuth = await refreshSoundCloudAuth(req, res, {
+          force: true,
+          clearOnFailure: false,
+        });
+        if (!refreshedAuth) {
+          return res.status(200).json({
+            memberships: {},
+            transientAuthError: true,
+          });
+        }
+
+        const playlists = await fetchPaginatedCollection(
+          `https://api.soundcloud.com/users/${currentUserId}/playlists`,
+          refreshedAuth.headerValue,
+          100,
+        );
+        const ownedPlaylists = playlists.filter(
+          (playlist: any) => Number(playlist?.user?.id) === currentUserId,
+        );
+        const targetIds = new Set(trackIds);
+        const memberships: MembershipMap = {};
+
+        for (const trackId of trackIds) {
+          memberships[trackId] = [];
+        }
+
+        for (const playlist of ownedPlaylists) {
+          try {
+            const tracks = await fetchPaginatedCollection(
+              `https://api.soundcloud.com/playlists/${playlist.id}/tracks`,
+              refreshedAuth.headerValue,
+              200,
+            );
+            for (const item of tracks) {
+              const track = item?.track || item;
+              const trackId = Number(track?.id);
+              if (!targetIds.has(trackId)) continue;
+              if (!memberships[trackId].includes(playlist.id)) {
+                memberships[trackId].push(playlist.id);
+              }
+            }
+          } catch (playlistError) {
+            console.warn(`Could not check playlist ${playlist.id}`);
+          }
+        }
+
+        membershipCache.set(cacheKey, {
+          expiresAt: Date.now() + CACHE_TTL_MS,
+          memberships,
+        });
+
+        return res.json({ memberships });
+      } catch (retryError: any) {
+        console.error(
+          "Batch check playlists retry error:",
+          retryError.response?.status,
+          retryError.message,
+        );
+        if (retryError.response?.status === 401) {
+          return res.status(200).json({
+            memberships: {},
+            transientAuthError: true,
+          });
+        }
+      }
+    }
 
     return res.status(error.response?.status || 500).json({
       error: error.response?.data?.message || "Failed to check playlists",

@@ -62,7 +62,7 @@ export default async function handler(
       return;
     }
 
-    if (stateKey && store.has(stateKey)) {
+    if (stateKey && store.has(stateKey) && storedEntry?.mode === "bridge") {
       store.set(stateKey, {
         ...store.get(stateKey),
         status: "complete",

@@ -82,7 +82,9 @@ const PlaylistMenu = memo(function PlaylistMenu({
 
     setLoading(true);
     try {
-      const response = await fetch("/api/playlists");
+      const response = await fetch("/api/playlists", {
+        credentials: "include",
+      });
       const data = await response.json();
       const nextPlaylists = data.playlists || [];
       setPlaylists(nextPlaylists);
@@ -122,13 +124,6 @@ const PlaylistMenu = memo(function PlaylistMenu({
 
     setAddingTo(playlistId);
 
-    // Refresh token first to ensure it's fresh
-    try {
-      await fetch("/api/auth/refresh", { method: "POST" });
-    } catch (err) {
-      console.warn("Token refresh failed (continuing anyway):", err);
-    }
-
     const maxRetries = 3;
     let retryCount = 0;
 
@@ -141,6 +136,7 @@ const PlaylistMenu = memo(function PlaylistMenu({
             playlistId,
             trackId,
           }),
+          credentials: "include",
         });
 
         if (!response.ok) {
@@ -240,12 +236,6 @@ const PlaylistMenu = memo(function PlaylistMenu({
     setRemovingFrom(playlistId);
 
     try {
-      await fetch("/api/auth/refresh", { method: "POST" });
-    } catch (err) {
-      console.warn("Token refresh failed (continuing anyway):", err);
-    }
-
-    try {
       const response = await fetch("/api/remove-from-playlist", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -253,6 +243,7 @@ const PlaylistMenu = memo(function PlaylistMenu({
           playlistId,
           trackId,
         }),
+        credentials: "include",
       });
 
       if (!response.ok) {

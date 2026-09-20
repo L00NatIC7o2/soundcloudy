@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { getConnectStore } from "../../../apps/backend/src/server/auth/connectStore";
 import { establishSoundCloudSession } from "../../../apps/backend/src/server/auth/soundcloud";
+import { primeSoundCloudWebCredentials } from "../listening-history";
 
 export default async function handler(
   req: NextApiRequest,
@@ -29,6 +30,12 @@ export default async function handler(
       refreshToken,
       expiresIn,
     );
+
+    try {
+      await primeSoundCloudWebCredentials(req, res);
+    } catch (error) {
+      console.error("Failed to prime SoundCloud web credentials after login:", error);
+    }
 
     return res.status(200).json({ ok: true });
   }
@@ -65,6 +72,12 @@ export default async function handler(
     typeof refresh_token === "string" ? refresh_token : undefined,
     typeof expires_in === "number" ? expires_in : 3600,
   );
+
+  try {
+    await primeSoundCloudWebCredentials(req, res);
+  } catch (error) {
+    console.error("Failed to prime SoundCloud web credentials after login:", error);
+  }
 
   res.redirect(302, "/");
 }

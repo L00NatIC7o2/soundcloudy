@@ -1,6 +1,11 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import axios, { type AxiosResponse } from "axios";
-import { requireSoundCloudAccessToken } from "../../src/server/auth/soundcloud";
+import {
+  getRequestSoundCloudAuthContext,
+  getStoredSoundCloudSession,
+  refreshSoundCloudAuth,
+  type SoundCloudAuthContext,
+} from "../../src/server/auth/soundcloud";
 
 interface SoundCloudCollectionResponse<T = any> {
   collection?: T[];
@@ -9,7 +14,7 @@ interface SoundCloudCollectionResponse<T = any> {
 
 const fetchPaginatedCollection = async (
   url: string,
-  token: string,
+  auth: SoundCloudAuthContext,
   limit = 200,
 ) => {
   const collection: any[] = [];
@@ -19,11 +24,11 @@ const fetchPaginatedCollection = async (
   while (nextUrl) {
     const response: AxiosResponse<SoundCloudCollectionResponse> =
       await axios.get(nextUrl, {
-      headers: {
-        Authorization: `OAuth ${token}`,
-      },
-      params: isFirstRequest ? { limit, linked_partitioning: 1 } : undefined,
-      timeout: 10000,
+        headers: {
+          Authorization: auth.headerValue,
+        },
+        params: isFirstRequest ? { limit, linked_partitioning: 1 } : undefined,
+        timeout: 10000,
       });
 
     collection.push(...(response.data?.collection || []));
@@ -39,32 +44,45 @@ export default async function handler(
   res: NextApiResponse,
 ) {
   const { trackId, playlistId } = req.query;
-  const token = await requireSoundCloudAccessToken(req, res);
-
-  if (!token) {
-    return res.status(401).json({ error: "Not authenticated" });
-  }
+  let auth = await getRequestSoundCloudAuthContext(req, res);
+  let sessionState = await getStoredSoundCloudSession(req, res);
 
   if (!trackId) {
     return res.status(400).json({ error: "Missing trackId" });
   }
 
+  if (!auth) {
+    auth = await refreshSoundCloudAuth(req, res);
+    if (auth && !sessionState) {
+      sessionState = await getStoredSoundCloudSession(req, res);
+    }
+  }
+
+  if (!auth) {
+    return res.status(401).json({ error: "Not authenticated" });
+  }
+
+  const currentUserId = Number(
+    sessionState?.session?.userId || sessionState?.tokens?.userId || 0,
+  );
+
+  if (!currentUserId) {
+    return res.status(401).json({
+      error: "Not authenticated",
+      isInAnyPlaylist: false,
+      playlistsWithTrack: [],
+    });
+  }
+
   try {
     const trackIdNum = parseInt(trackId as string);
-    const meResponse = await axios.get("https://api.soundcloud.com/me", {
-      headers: {
-        Authorization: `OAuth ${token}`,
-      },
-      timeout: 10000,
-    });
-    const currentUserId = Number(meResponse.data?.id);
 
     if (playlistId) {
       const targetPlaylistId = parseInt(playlistId as string);
       try {
         const tracks = await fetchPaginatedCollection(
           `https://api.soundcloud.com/playlists/${targetPlaylistId}/tracks`,
-          token,
+          auth,
           200,
         );
         const isInPlaylist = tracks.some((item: any) => {
@@ -84,8 +102,8 @@ export default async function handler(
 
     // Fetch user's playlists
     const playlists = await fetchPaginatedCollection(
-      "https://api.soundcloud.com/me/playlists",
-      token,
+      `https://api.soundcloud.com/users/${currentUserId}/playlists`,
+      auth,
       100,
     );
     const ownedPlaylists = playlists.filter(
@@ -98,7 +116,7 @@ export default async function handler(
       try {
         const tracks = await fetchPaginatedCollection(
           `https://api.soundcloud.com/playlists/${playlist.id}/tracks`,
-          token,
+          auth,
           200,
         );
         const isInPlaylist = tracks.some((item: any) => {
@@ -124,6 +142,81 @@ export default async function handler(
       playlistsWithTrack,
     });
   } catch (error: any) {
+    if ([401, 403].includes(error.response?.status)) {
+      try {
+        const refreshedAuth = await refreshSoundCloudAuth(req, res, {
+          force: true,
+        });
+        if (refreshedAuth) {
+          const trackIdNum = parseInt(trackId as string);
+
+          if (playlistId) {
+            const targetPlaylistId = parseInt(playlistId as string);
+            const tracks = await fetchPaginatedCollection(
+              `https://api.soundcloud.com/playlists/${targetPlaylistId}/tracks`,
+              refreshedAuth,
+              200,
+            );
+            const isInPlaylist = tracks.some((item: any) => {
+              const track = item?.track || item;
+              return track?.id === trackIdNum;
+            });
+
+            return res.json({
+              isInAnyPlaylist: isInPlaylist,
+              playlistsWithTrack: isInPlaylist
+                ? [{ id: targetPlaylistId }]
+                : [],
+            });
+          }
+
+          const playlists = await fetchPaginatedCollection(
+            `https://api.soundcloud.com/users/${currentUserId}/playlists`,
+            refreshedAuth,
+            100,
+          );
+          const ownedPlaylists = playlists.filter(
+            (playlist: any) => Number(playlist?.user?.id) === currentUserId,
+          );
+          const playlistsWithTrack: any[] = [];
+
+          for (const playlist of ownedPlaylists) {
+            try {
+              const tracks = await fetchPaginatedCollection(
+                `https://api.soundcloud.com/playlists/${playlist.id}/tracks`,
+                refreshedAuth,
+                200,
+              );
+              const isInPlaylist = tracks.some((item: any) => {
+                const track = item?.track || item;
+                return track?.id === trackIdNum;
+              });
+
+              if (isInPlaylist) {
+                playlistsWithTrack.push({
+                  id: playlist.id,
+                  title: playlist.title,
+                  artwork_url: playlist.artwork_url,
+                });
+              }
+            } catch (playlistError) {
+              console.warn(`Could not check playlist ${playlist.id}`);
+            }
+          }
+
+          return res.json({
+            isInAnyPlaylist: playlistsWithTrack.length > 0,
+            playlistsWithTrack,
+          });
+        }
+      } catch (refreshError: any) {
+        console.error(
+          "Check playlists refresh error:",
+          refreshError.response?.data || refreshError.message,
+        );
+      }
+    }
+
     console.error(
       "Check playlists error:",
       error.response?.status,
@@ -145,4 +238,3 @@ export default async function handler(
     });
   }
 }
-

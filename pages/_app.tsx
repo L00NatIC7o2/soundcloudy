@@ -4,6 +4,46 @@ import { useEffect, useMemo, useState } from "react";
 import "../src/styles/main.css";
 import { getClientApiBase, getClientAppBase } from "../src/lib/runtimeConfig";
 
+if (
+  typeof window !== "undefined" &&
+  !(window as any).__soundcloudyFetchWithCredentialsPatched
+) {
+  const apiBase = getClientApiBase(window.location.origin);
+  const originalFetch = window.fetch.bind(window) as typeof window.fetch;
+
+  window.fetch = function (input: RequestInfo | URL, init?: RequestInit) {
+    const requestUrl =
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.href
+          : input.url;
+
+    const shouldIncludeCredentials =
+      requestUrl.startsWith("/api/") ||
+      requestUrl.startsWith(`${window.location.origin}/api/`) ||
+      (apiBase ? requestUrl.startsWith(`${apiBase}/api/`) : false);
+
+    const requestInit = shouldIncludeCredentials
+      ? {
+          ...init,
+          credentials:
+            init?.credentials === "omit"
+              ? init.credentials
+              : ("include" as RequestCredentials),
+        }
+      : init;
+
+    if (typeof input === "string" || input instanceof URL) {
+      return originalFetch(input, requestInit);
+    }
+
+    return originalFetch(new Request(input, requestInit));
+  } as typeof window.fetch;
+
+  (window as any).__soundcloudyFetchWithCredentialsPatched = true;
+}
+
 export default function MyApp({ Component, pageProps }: AppProps) {
   const [userId, setUserId] = useState<string | null>(null);
   const [scTokens, setScTokens] = useState<any>(null);
@@ -14,8 +54,7 @@ export default function MyApp({ Component, pageProps }: AppProps) {
   const [remotePanelOpen, setRemotePanelOpen] = useState(false);
   const [hideSetupUi, setHideSetupUi] = useState(false);
   const connectWidgetTop =
-    typeof window !== "undefined" &&
-    (window as any).electronAPI?.windowControls
+    typeof window !== "undefined" && (window as any).electronAPI?.windowControls
       ? 42
       : "calc(env(safe-area-inset-top) + 8px)";
 
@@ -83,8 +122,8 @@ export default function MyApp({ Component, pageProps }: AppProps) {
       const mobileWidth = window.innerWidth <= 900;
       const standalone =
         window.matchMedia?.("(display-mode: standalone)")?.matches ||
-        (window.navigator as Navigator & { standalone?: boolean }).standalone ===
-          true;
+        (window.navigator as Navigator & { standalone?: boolean })
+          .standalone === true;
 
       setHideSetupUi(mobileWidth);
       root.classList.toggle("ios-standalone-app", Boolean(standalone));
@@ -147,9 +186,7 @@ export default function MyApp({ Component, pageProps }: AppProps) {
           });
 
           if (!consumeResponse.ok) {
-            const consumeBody = await consumeResponse
-              .json()
-              .catch(() => null);
+            const consumeBody = await consumeResponse.json().catch(() => null);
             throw new Error(
               consumeBody?.error || "Failed to import SoundCloud session",
             );
@@ -293,7 +330,10 @@ export default function MyApp({ Component, pageProps }: AppProps) {
                 </div>
               </div>
 
-              <button onClick={connectSoundCloud} style={{ padding: "6px 8px" }}>
+              <button
+                onClick={connectSoundCloud}
+                style={{ padding: "6px 8px" }}
+              >
                 {scTokens
                   ? "Refresh"
                   : connecting
@@ -322,7 +362,9 @@ export default function MyApp({ Component, pageProps }: AppProps) {
                     </div>
                     <input
                       value={remoteBaseInput}
-                      onChange={(event) => setRemoteBaseInput(event.target.value)}
+                      onChange={(event) =>
+                        setRemoteBaseInput(event.target.value)
+                      }
                       placeholder="http://192.168.1.25:3000"
                       style={{
                         padding: "6px 8px",
@@ -395,6 +437,3 @@ export default function MyApp({ Component, pageProps }: AppProps) {
     </>
   );
 }
-
-
-

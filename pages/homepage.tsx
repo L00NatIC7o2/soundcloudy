@@ -107,6 +107,10 @@ export default function HomePage({
   isTrackPlaying,
   isItemPlaying,
   onPlaylistClick,
+  onArtistClick,
+  onToggleTrackLike,
+  likedTracks,
+  renderHeartIcon,
   currentTrack,
   onPrevious,
   onNext,
@@ -133,6 +137,10 @@ export default function HomePage({
   isTrackPlaying?: (trackId: number) => boolean;
   isItemPlaying?: (item: any) => boolean;
   onPlaylistClick?: (playlist: any) => void;
+  onArtistClick?: (artist: any) => void;
+  onToggleTrackLike?: (trackId: number, track?: any) => void | Promise<void>;
+  likedTracks?: Record<number, boolean>;
+  renderHeartIcon?: (filled: boolean) => React.ReactNode;
   currentTrack: any;
   onPrevious: () => void;
   onNext: () => void;
@@ -171,7 +179,7 @@ export default function HomePage({
   useEffect(() => {
     setLoading(true);
 
-    fetch("/api/discover")
+    fetch("/api/discover", { cache: "no-store" })
       .then((res) => res.json())
       .then((data) => {
         if (data.sections && Array.isArray(data.sections)) {
@@ -223,7 +231,8 @@ export default function HomePage({
       item.kind === "playlist-like" ||
       item.kind === "system-playlist"
     ) {
-      return `Playlist - ${item.track_count || item.tracks?.length || 0} tracks`;
+      const label = item.is_album ? "Album" : "Playlist";
+      return `${label} - ${item.track_count || item.tracks?.length || 0} tracks`;
     }
 
     return item.user?.username || item.username || "";
@@ -291,7 +300,31 @@ export default function HomePage({
                   onClick={(event) => onInfoClick?.(event, item)}
                 >
                   <div className="track-title">{item.title || "Untitled"}</div>
-                  <div className="track-artist">{getSubtitle(item)}</div>
+                  <div
+                    className="track-artist clickable"
+                    onClick={(event) => {
+                      if (item.kind !== "track") return;
+                      event.stopPropagation();
+                      onArtistClick?.(item.user);
+                    }}
+                  >
+                    {getSubtitle(item)}
+                  </div>
+                  {item.kind === "track" && typeof item.id === "number" && (
+                    <button
+                      type="button"
+                      className={`track-like-btn ${likedTracks?.[item.id] ? "liked" : ""}`}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void onToggleTrackLike?.(item.id as number, item);
+                      }}
+                      aria-label={
+                        likedTracks?.[item.id] ? "Remove like" : "Add like"
+                      }
+                    >
+                      {renderHeartIcon?.(Boolean(likedTracks?.[item.id]))}
+                    </button>
+                  )}
                 </div>
               </div>
             );

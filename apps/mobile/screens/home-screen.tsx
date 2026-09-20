@@ -3,6 +3,10 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { AppTheme } from "../components/mobile/app-theme";
 import { useAuth } from "../components/mobile/auth-context";
+import {
+  MobilePlayerTrack,
+  usePlayer,
+} from "../components/mobile/player-context";
 import { LoginGate } from "../components/mobile/login-gate";
 import {
   Card,
@@ -28,8 +32,30 @@ const FEATURE_CARDS = [
   },
 ];
 
+const FEATURED_TRACKS: MobilePlayerTrack[] = [
+  {
+    id: 501,
+    title: "Night Corridor",
+    artist: "Soundcloudy",
+    context: "Featured Home Mix",
+  },
+  {
+    id: 502,
+    title: "Static Hearts",
+    artist: "Soundcloudy",
+    context: "Featured Home Mix",
+  },
+  {
+    id: 503,
+    title: "Late Reply",
+    artist: "Soundcloudy",
+    context: "Featured Home Mix",
+  },
+];
+
 export function HomeScreen() {
   const auth = useAuth();
+  const player = usePlayer();
 
   if (!auth.authenticated) {
     return (
@@ -80,15 +106,77 @@ export function HomeScreen() {
             This becomes the native collapsed player and full player sheet from
             the mobile web app.
           </HelperText>
-          <View style={styles.previewRow}>
-            <View style={styles.artwork} />
-            <View style={styles.previewMeta}>
-              <Text style={styles.previewTitle}>No track loaded yet</Text>
-              <Text style={styles.previewArtist}>
-                Native player UI is the next slice to port
-              </Text>
+          {player.currentTrack ? (
+            <Pressable
+              style={styles.previewRow}
+              onPress={() => player.openSheet()}
+            >
+              <View style={styles.artwork}>
+                <Text style={styles.artworkLabel}>
+                  {player.currentTrack.title.slice(0, 1).toUpperCase()}
+                </Text>
+              </View>
+              <View style={styles.previewMeta}>
+                <Text style={styles.previewTitle} numberOfLines={1}>
+                  {player.currentTrack.title}
+                </Text>
+                <Text style={styles.previewArtist} numberOfLines={1}>
+                  {player.currentTrack.artist}
+                </Text>
+              </View>
+              <SecondaryButton
+                label={player.isPlaying ? "Pause" : "Play"}
+                onPress={() => player.togglePlayback()}
+              />
+            </Pressable>
+          ) : (
+            <View style={styles.previewRow}>
+              <View style={styles.artwork} />
+              <View style={styles.previewMeta}>
+                <Text style={styles.previewTitle}>No track loaded yet</Text>
+                <Text style={styles.previewArtist}>
+                  Tap a featured track below to start the native player.
+                </Text>
+              </View>
             </View>
+          )}
+        </Card>
+
+        <Card>
+          <View style={styles.rowHeader}>
+            <SectionTitle>Featured Tracks</SectionTitle>
+            <SecondaryButton
+              label="Open Player"
+              onPress={() => {
+                if (player.currentTrack) {
+                  player.openSheet();
+                } else {
+                  player.playTrack(FEATURED_TRACKS[0], FEATURED_TRACKS);
+                }
+              }}
+            />
           </View>
+          {FEATURED_TRACKS.map((track) => (
+            <Pressable
+              key={track.id}
+              style={styles.trackRow}
+              onPress={() => player.playTrack(track, FEATURED_TRACKS)}
+            >
+              <View style={styles.trackArtwork}>
+                <Text style={styles.trackArtworkText}>
+                  {track.title.slice(0, 1).toUpperCase()}
+                </Text>
+              </View>
+              <View style={styles.trackMeta}>
+                <Text style={styles.trackTitle} numberOfLines={1}>
+                  {track.title}
+                </Text>
+                <Text style={styles.trackArtist} numberOfLines={1}>
+                  {track.artist}
+                </Text>
+              </View>
+            </Pressable>
+          ))}
         </Card>
 
         {FEATURE_CARDS.map((card) => (
@@ -155,6 +243,13 @@ const styles = StyleSheet.create({
     height: 72,
     borderRadius: 18,
     backgroundColor: "#1f1d25",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  artworkLabel: {
+    color: AppTheme.text,
+    fontSize: 24,
+    fontWeight: "800",
   },
   previewMeta: {
     flex: 1,
@@ -168,6 +263,40 @@ const styles = StyleSheet.create({
   previewArtist: {
     color: "#bbb5c1",
     fontSize: 14,
+  },
+  trackRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    borderRadius: 20,
+    padding: 12,
+    backgroundColor: "#0c0c10",
+  },
+  trackArtwork: {
+    width: 52,
+    height: 52,
+    borderRadius: 16,
+    backgroundColor: "#1c1c24",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  trackArtworkText: {
+    color: AppTheme.text,
+    fontSize: 18,
+    fontWeight: "800",
+  },
+  trackMeta: {
+    flex: 1,
+    gap: 4,
+  },
+  trackTitle: {
+    color: AppTheme.text,
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  trackArtist: {
+    color: AppTheme.textSoft,
+    fontSize: 13,
   },
   featureCard: {
     borderRadius: 22,

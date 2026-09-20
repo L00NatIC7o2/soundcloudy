@@ -8,7 +8,9 @@ export default async function handler(
   try {
     console.log("Refreshing token...");
 
-    const auth = await refreshSoundCloudAuth(req, res);
+    const auth = await refreshSoundCloudAuth(req, res, {
+      clearOnFailure: false,
+    });
 
     if (!auth) {
       return res.status(401).json({ error: "Failed to refresh token" });
@@ -21,4 +23,3 @@ export default async function handler(
     res.status(401).json({ error: "Failed to refresh token" });
   }
 }
-

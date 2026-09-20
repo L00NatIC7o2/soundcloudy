@@ -1,14 +1,32 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import axios from "axios";
-import { requireSoundCloudAccessToken } from "../../../src/server/auth/soundcloud";
+import {
+  getRequestSoundCloudAuthContext,
+  refreshSoundCloudAuth,
+  type SoundCloudAuthContext,
+} from "../../../src/server/auth/soundcloud";
+
+const fetchCurrentUser = async (auth: SoundCloudAuthContext) => {
+  return await axios.get("https://api.soundcloud.com/me", {
+    headers: {
+      Authorization: auth.headerValue,
+    },
+    timeout: 10000,
+  });
+};
+
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
   const { id } = req.query;
-  const token = await requireSoundCloudAccessToken(req, res);
+  let auth = await getRequestSoundCloudAuthContext(req, res);
 
-  if (!token) {
+  if (!auth) {
+    auth = await refreshSoundCloudAuth(req, res);
+  }
+
+  if (!auth) {
     return res.status(401).json({ error: "Not authenticated" });
   }
 
@@ -17,15 +35,63 @@ export default async function handler(
   }
 
   try {
-    const response = await axios.get(
-      `https://api.soundcloud.com/playlists/${id}`,
-      {
+    let response;
+    try {
+      response = await axios.get(`https://api.soundcloud.com/playlists/${id}`, {
         headers: {
-          Authorization: `OAuth ${token}`,
+          Authorization: auth.headerValue,
         },
         timeout: 10000,
-      },
-    );
+      });
+    } catch (error: any) {
+      if (error.response?.status === 401) {
+        try {
+          await fetchCurrentUser(auth);
+          return res.status(200).json({
+            tracks: [],
+            inaccessible: true,
+          });
+        } catch (meError: any) {
+          if (meError.response?.status !== 401) {
+            throw meError;
+          }
+        }
+
+        const refreshedAuth = await refreshSoundCloudAuth(req, res, {
+          force: true,
+        });
+        if (!refreshedAuth) {
+          return res.status(401).json({ error: "Not authenticated", tracks: [] });
+        }
+        auth = refreshedAuth;
+        try {
+          response = await axios.get(`https://api.soundcloud.com/playlists/${id}`, {
+            headers: {
+              Authorization: refreshedAuth.headerValue,
+            },
+            timeout: 10000,
+          });
+        } catch (retryError: any) {
+          if (retryError.response?.status === 401) {
+            try {
+              await fetchCurrentUser(refreshedAuth);
+              return res.status(200).json({
+                tracks: [],
+                inaccessible: true,
+              });
+            } catch {
+              return res.status(401).json({
+                error: "Not authenticated",
+                tracks: [],
+              });
+            }
+          }
+          throw retryError;
+        }
+      } else {
+        throw error;
+      }
+    }
 
     res.json({ tracks: response.data.tracks || [] });
   } catch (error: any) {

@@ -29,24 +29,48 @@ export default async function handler(
     return res.status(400).json({ error: "Missing trackId" });
   }
 
-  try {
+  const sendLikeRequest = async (activeAuth: typeof auth) => {
+    if (!activeAuth) {
+      throw new Error("Missing auth context");
+    }
+
     if (like) {
-      await axios.post(
+      return axios.post(
         `https://api.soundcloud.com/likes/tracks/${trackId}`,
         {},
         {
-          headers: { Authorization: auth.headerValue },
+          headers: { Authorization: activeAuth.headerValue },
           timeout: 5000,
         },
       );
-    } else {
-      await axios.delete(`https://api.soundcloud.com/likes/tracks/${trackId}`, {
-        headers: { Authorization: auth.headerValue },
-        timeout: 5000,
-      });
     }
+
+    return axios.delete(`https://api.soundcloud.com/likes/tracks/${trackId}`, {
+      headers: { Authorization: activeAuth.headerValue },
+      timeout: 5000,
+    });
+  };
+
+  try {
+    await sendLikeRequest(auth);
     return res.json({ success: true });
   } catch (error: any) {
+    if (error?.response?.status === 401) {
+      const refreshedAuth = await refreshSoundCloudAuth(req, res, {
+        force: true,
+        clearOnFailure: false,
+      });
+
+      if (refreshedAuth) {
+        try {
+          await sendLikeRequest(refreshedAuth);
+          return res.json({ success: true });
+        } catch (retryError: any) {
+          error = retryError;
+        }
+      }
+    }
+
     console.error(
       "Like error:",
       error?.response?.status,

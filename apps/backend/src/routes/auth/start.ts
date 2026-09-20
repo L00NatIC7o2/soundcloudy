@@ -27,6 +27,7 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
 
   codes.set(connect_code, {
     ...existingEntry,
+    mode: "bridge",
     codeVerifier,
     status: "pending",
     createdAt: Date.now(),

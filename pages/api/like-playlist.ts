@@ -1,6 +1,9 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import axios from "axios";
-import { requireSoundCloudAccessToken } from "../../src/server/auth/soundcloud";
+import {
+  getRequestSoundCloudAuthContext,
+  refreshSoundCloudAuth,
+} from "../../src/server/auth/soundcloud";
 
 export default async function handler(
   req: NextApiRequest,
@@ -11,34 +14,70 @@ export default async function handler(
   }
 
   const { playlistId, like } = req.body;
-  const token = await requireSoundCloudAccessToken(req, res);
-
-  if (!token) {
-    return res.status(401).json({ error: "Not authenticated" });
-  }
+  let auth = await getRequestSoundCloudAuthContext(req, res);
 
   if (!playlistId) {
     return res.status(400).json({ error: "Missing playlistId" });
   }
 
+  if (!auth) {
+    auth = await refreshSoundCloudAuth(req, res);
+  }
+
+  if (!auth) {
+    return res.status(401).json({ error: "Not authenticated" });
+  }
+
   try {
-    if (like) {
-      await axios.post(
-        `https://api.soundcloud.com/likes/playlists/${playlistId}`,
-        {},
-        {
-          headers: { Authorization: `OAuth ${token}` },
-          timeout: 5000,
-        },
-      );
-    } else {
-      await axios.delete(
-        `https://api.soundcloud.com/likes/playlists/${playlistId}`,
-        {
-          headers: { Authorization: `OAuth ${token}` },
-          timeout: 5000,
-        },
-      );
+    try {
+      if (like) {
+        await axios.post(
+          `https://api.soundcloud.com/likes/playlists/${playlistId}`,
+          {},
+          {
+            headers: { Authorization: auth.headerValue },
+            timeout: 5000,
+          },
+        );
+      } else {
+        await axios.delete(
+          `https://api.soundcloud.com/likes/playlists/${playlistId}`,
+          {
+            headers: { Authorization: auth.headerValue },
+            timeout: 5000,
+          },
+        );
+      }
+    } catch (error: any) {
+      if ([401, 403].includes(error.response?.status)) {
+        const refreshedAuth = await refreshSoundCloudAuth(req, res, {
+          force: true,
+        });
+        if (!refreshedAuth) {
+          return res.status(401).json({ error: "Not authenticated" });
+        }
+        auth = refreshedAuth;
+        if (like) {
+          await axios.post(
+            `https://api.soundcloud.com/likes/playlists/${playlistId}`,
+            {},
+            {
+              headers: { Authorization: refreshedAuth.headerValue },
+              timeout: 5000,
+            },
+          );
+        } else {
+          await axios.delete(
+            `https://api.soundcloud.com/likes/playlists/${playlistId}`,
+            {
+              headers: { Authorization: refreshedAuth.headerValue },
+              timeout: 5000,
+            },
+          );
+        }
+      } else {
+        throw error;
+      }
     }
 
     res.json({ success: true });
