@@ -1,7 +1,10 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import puppeteer, { type Browser, type Page } from "puppeteer";
 import axios from "axios";
-import { requireSoundCloudAccessToken } from "../../../src/server/auth/soundcloud";
+import {
+  refreshSoundCloudAuth,
+  requireSoundCloudAccessToken,
+} from "../../../src/server/auth/soundcloud";
 const artistCache = new Map<
   string,
   { expiresAt: number; payload: Record<string, unknown> }
@@ -31,7 +34,7 @@ export default async function handler(
   res: NextApiResponse,
 ) {
   const { id } = req.query;
-  const token = await requireSoundCloudAccessToken(req, res);
+  let token = await requireSoundCloudAccessToken(req, res);
 
   if (!id || typeof id !== "string") {
     return res.status(400).json({ error: "Missing artist ID" });
@@ -49,15 +52,33 @@ export default async function handler(
     }
 
     // Fetch user info
-    const userResponse = await axios.get(
-      `https://api.soundcloud.com/users/${id}`,
-      {
+    const fetchUser = async (accessToken: string) =>
+      await axios.get(`https://api.soundcloud.com/users/${id}`, {
         headers: {
-          Authorization: `OAuth ${token}`,
+          Authorization: `OAuth ${accessToken}`,
         },
         timeout: 10000,
-      },
-    );
+      });
+
+    let userResponse;
+    try {
+      userResponse = await fetchUser(token);
+    } catch (error: any) {
+      if (error.response?.status !== 401) {
+        throw error;
+      }
+
+      const refreshedAuth = await refreshSoundCloudAuth(req, res, {
+        force: true,
+        clearOnFailure: false,
+      });
+      if (!refreshedAuth) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      token = refreshedAuth.rawToken;
+      userResponse = await fetchUser(token);
+    }
 
     const user = userResponse.data;
 
