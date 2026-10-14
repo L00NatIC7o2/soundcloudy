@@ -11,22 +11,14 @@ export default function Login() {
     if (connecting) return;
 
     const electronApi = (window as any)?.electronAPI;
-    const isLoopbackOrigin = ["localhost", "127.0.0.1", "::1"].includes(
-      window.location.hostname,
-    );
-    const useLocalOAuth =
-      typeof electronApi?.openExternal === "function" || isLoopbackOrigin;
-    const apiBase = useLocalOAuth
-      ? window.location.origin
-      : getClientApiBase(window.location.origin);
-    const localBridgeQuery = useLocalOAuth ? "?local=1" : "";
-    const localBridgeFlag = useLocalOAuth ? "&local=1" : "";
+    const isElectron = Boolean(electronApi?.openExternal);
+    const apiBase = getClientApiBase(window.location.origin);
 
-    if (electronApi?.openExternal) {
+    if (isElectron) {
       setError(null);
       setConnecting(true);
       try {
-        const bridgeResponse = await fetch(`/api/auth/bridge${localBridgeQuery}`, {
+        const bridgeResponse = await fetch(`/api/auth/bridge`, {
           method: "POST",
         });
         if (!bridgeResponse.ok) {
@@ -39,16 +31,14 @@ export default function Login() {
           throw new Error("Missing connect code");
         }
 
-        const loginUrl =
-          `${apiBase}/api/auth/start?connect_code=${encodeURIComponent(connectCode)}` +
-          localBridgeFlag;
+        const loginUrl = `${apiBase}/api/auth/start?connect_code=${encodeURIComponent(connectCode)}`;
         await electronApi.openExternal(loginUrl);
 
         let completed = false;
         for (let attempt = 0; attempt < 90; attempt++) {
           await new Promise((resolve) => setTimeout(resolve, 2000));
           const completionResponse = await fetch(
-            `/api/auth/complete?connect_code=${encodeURIComponent(connectCode)}${localBridgeFlag}`,
+            `/api/auth/complete?connect_code=${encodeURIComponent(connectCode)}`,
           );
 
           if (completionResponse.status === 202) {
