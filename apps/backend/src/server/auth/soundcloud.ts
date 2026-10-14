@@ -18,7 +18,7 @@ type RefreshResult = {
   accessToken: string;
   refreshToken: string;
   expiresIn: number;
-} | null;
+} | { rejected: true } | null;
 
 type StoredUserTokens = {
   userId: string;
@@ -514,7 +514,7 @@ export const refreshSoundCloudTokenValue = async (
             status,
             error: oauthError || null,
           });
-          return null;
+          return { rejected: true as const };
         }
 
         throw error;
@@ -669,6 +669,23 @@ export const refreshSoundCloudAuth = async (
     }
 
     const refreshed = await refreshSoundCloudTokenValue(refreshToken);
+
+    if (refreshed && "rejected" in refreshed) {
+      sessionId = req.cookies[SESSION_COOKIE];
+      const userId = sessionState?.session?.userId;
+      console.warn(
+        "refreshSoundCloudAuth - SoundCloud rejected the refresh credential; clearing the expired session",
+        { sessionId, userId },
+      );
+      clearSessionFromStores(sessionId, userId);
+      clearSoundCloudSessionCookie(res);
+      clearSoundCloudAuthCookies(res);
+      req.cookies[SESSION_COOKIE] = "";
+      req.cookies.soundcloud_token = "";
+      req.cookies.soundcloud_refresh_token = "";
+      if (sessionId) sessionRefreshFailures.delete(sessionId);
+      return null;
+    }
 
     if (!refreshed) {
       console.warn(
