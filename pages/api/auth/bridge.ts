@@ -40,6 +40,10 @@ function handleLocalBridge(req: NextApiRequest, res: NextApiResponse) {
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  if (req.query.local === "1") {
+    return handleLocalBridge(req, res);
+  }
+
   const remoteApiBase = getRemoteApiBase(req);
   if (!remoteApiBase) {
     return handleLocalBridge(req, res);
@@ -73,4 +77,3 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     });
   }
 }
-

@@ -42,6 +42,10 @@ function handleLocalComplete(req: NextApiRequest, res: NextApiResponse) {
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  if (req.query.local === "1") {
+    return handleLocalComplete(req, res);
+  }
+
   const remoteApiBase = getRemoteApiBase(req);
   if (!remoteApiBase) {
     return handleLocalComplete(req, res);
@@ -83,4 +87,3 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     });
   }
 }
-

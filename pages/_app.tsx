@@ -156,16 +156,25 @@ export default function MyApp({ Component, pageProps }: AppProps) {
     if (connecting) return;
     setConnecting(true);
     try {
-      const apiBase = getClientApiBase(window.location.origin);
-      const res = await fetch(`/api/auth/bridge`, { method: "POST" });
+      const electronApi = (window as any).electronAPI;
+      const isElectron = typeof electronApi?.openExternal === "function";
+      const apiBase = isElectron
+        ? window.location.origin
+        : getClientApiBase(window.location.origin);
+      const localBridgeQuery = isElectron ? "?local=1" : "";
+      const localBridgeFlag = isElectron ? "&local=1" : "";
+      const res = await fetch(`/api/auth/bridge${localBridgeQuery}`, {
+        method: "POST",
+      });
       const json = await res.json();
       const code = json.connect_code;
       if (!res.ok || !code) {
         throw new Error(json?.error || "Failed to start SoundCloud login");
       }
 
-      const startUrl = `${apiBase}/api/auth/start?connect_code=${encodeURIComponent(code)}`;
-      const electronApi = (window as any).electronAPI;
+      const startUrl =
+        `${apiBase}/api/auth/start?connect_code=${encodeURIComponent(code)}` +
+        localBridgeFlag;
       if (electronApi?.openExternal) {
         await electronApi.openExternal(startUrl);
       } else {
@@ -175,7 +184,7 @@ export default function MyApp({ Component, pageProps }: AppProps) {
       for (let i = 0; i < 60; i++) {
         await new Promise((r) => setTimeout(r, 2000));
         const c = await fetch(
-          `/api/auth/complete?connect_code=${encodeURIComponent(code)}`,
+          `/api/auth/complete?connect_code=${encodeURIComponent(code)}${localBridgeFlag}`,
         );
         if (c.status === 200) {
           const body = await c.json();
