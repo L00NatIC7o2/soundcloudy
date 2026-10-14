@@ -681,6 +681,25 @@ export const refreshSoundCloudAuth = async (
       return newerSessionAuth;
     }
 
+    if (forceRefresh && currentAccessToken) {
+      try {
+        await axios.get("https://api.soundcloud.com/me", {
+          headers: {
+            Authorization: `OAuth ${currentAccessToken}`,
+          },
+          timeout: 5000,
+        });
+        console.info(
+          "refreshSoundCloudAuth - /me accepted the access token; skipping refresh after resource 401",
+        );
+        return getSoundCloudAuthContext(currentAccessToken);
+      } catch (error: any) {
+        if (error.response?.status !== 401) {
+          throw error;
+        }
+      }
+    }
+
     // If this session recently failed a refresh, enter a short cooldown to
     // avoid hammering the refresh endpoint and causing race clears.
     let sessionId = req.cookies[SESSION_COOKIE];
