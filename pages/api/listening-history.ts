@@ -7,7 +7,6 @@ import {
   getRequestSoundCloudWebCredentials,
   requireSoundCloudAccessToken,
   refreshSoundCloudAuth,
-  refreshSoundCloudTokenValue,
   setRequestSoundCloudWebCredentials,
 } from "../../src/server/auth/soundcloud";
 
@@ -166,30 +165,6 @@ const normalizePlayHistoryItem = (item: any) => {
   };
 };
 
-const refreshAccessToken = async (refreshToken: string) => {
-  try {
-    const refreshed = await refreshSoundCloudTokenValue(refreshToken);
-
-    if (!refreshed) {
-      return {
-        token: null,
-        refreshToken,
-        expiresIn: 0,
-        invalidGrant: true,
-      };
-    }
-
-    return {
-      token: refreshed.accessToken,
-      refreshToken: refreshed.refreshToken,
-      expiresIn: refreshed.expiresIn,
-      invalidGrant: false,
-    };
-  } catch (error: any) {
-    console.error("Token refresh failed:", error);
-    return null;
-  }
-};
 const fetchPlayHistory = async (
   token: string,
   limit: number,
@@ -198,7 +173,7 @@ const fetchPlayHistory = async (
     appVersion: string;
     appLocale: string;
   },
-  refreshToken?: string,
+  refreshAuth: () => Promise<string | null>,
 ) => {
   const clientId = webCredentials.clientId;
   const appVersion = webCredentials.appVersion;
@@ -242,27 +217,24 @@ const fetchPlayHistory = async (
           timeout: 10000,
         });
       } catch (retryError: any) {
-        // If still 401/403 and we have a refresh token, try refreshing
+        // Refresh through the shared auth flow so rotated credentials are
+        // persisted to the session and response cookies.
         if (
           (retryError?.response?.status === 401 ||
-            retryError?.response?.status === 403) &&
-          refreshToken
+            retryError?.response?.status === 403)
         ) {
-          const refreshed = await refreshAccessToken(refreshToken);
-          if (refreshed?.invalidGrant) {
-            throw retryError;
-          }
-          if (refreshed?.token) {
+          const refreshedToken = await refreshAuth();
+          if (refreshedToken) {
             // Retry with new token
             const newHeaders = {
               ...headers,
-              Authorization: `OAuth ${refreshed.token}`,
+              Authorization: `OAuth ${refreshedToken}`,
               "X-Client-Id": getV2ClientId(),
             };
             response = await axios.get(PLAY_HISTORY_URL, {
               params: {
                 ...params,
-                oauth_token: refreshed.token,
+                oauth_token: refreshedToken,
               },
               headers: newHeaders,
               timeout: 10000,
@@ -557,11 +529,8 @@ const getListeningHistoryInternal = async (
   req: NextApiRequest,
   res: NextApiResponse,
   tokenOverride?: string,
-  refreshTokenOverride?: string,
 ) => {
   const token = tokenOverride || (await requireSoundCloudAccessToken(req, res));
-  const refreshToken =
-    refreshTokenOverride || req.cookies.soundcloud_refresh_token;
   const allowScrape = req.query.scrape === "1";
   const debug = req.query.debug === "1";
   const rawLimit = Array.isArray(req.query.limit)
@@ -584,7 +553,13 @@ const getListeningHistoryInternal = async (
       token,
       limit,
       requestWebCredentials,
-      refreshToken,
+      async () =>
+        (
+          await refreshSoundCloudAuth(req, res, {
+            force: true,
+            clearOnFailure: false,
+          })
+        )?.rawToken || null,
     );
     return {
       items: tracks,
