@@ -494,7 +494,60 @@ export const clearSoundCloudSession = (
 
 export const refreshSoundCloudTokenValue = async (
   refreshToken: string,
+  req?: NextApiRequest,
 ): Promise<RefreshResult> => {
+  const configuredApiBase = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "");
+  const requestHost = getHeaderValue(req?.headers.host);
+  const isLoopbackRequest = requestHost
+    ? ["localhost", "127.0.0.1", "::1"].includes(
+        new URL(`http://${requestHost}`).hostname,
+      )
+    : false;
+
+  if (configuredApiBase && isLoopbackRequest) {
+    const response = await fetch(`${configuredApiBase}/api/auth/refresh`, {
+      method: "POST",
+      headers: {
+        Cookie: `soundcloud_refresh_token=${refreshToken}`,
+      },
+      cache: "no-store",
+    });
+
+    if ([400, 401].includes(response.status)) {
+      console.warn("Hosted SoundCloud refresh backend rejected the credential", {
+        status: response.status,
+      });
+      return { rejected: true };
+    }
+
+    if (!response.ok) {
+      throw new Error(
+        `Hosted SoundCloud refresh backend failed with status ${response.status}`,
+      );
+    }
+
+    const body = await response.json();
+    const setCookie = response.headers.get("set-cookie") || "";
+    const rotatedRefreshToken = setCookie.match(
+      /(?:^|,\s*)soundcloud_refresh_token=([^;,\s]*)/,
+    )?.[1];
+
+    if (typeof body?.token !== "string" || !body.token) {
+      throw new Error("Hosted SoundCloud refresh response omitted the access token");
+    }
+    if (!rotatedRefreshToken) {
+      throw new Error(
+        "Hosted SoundCloud refresh response omitted the rotated refresh cookie",
+      );
+    }
+
+    return {
+      accessToken: body.token,
+      refreshToken: rotatedRefreshToken,
+      expiresIn: 3600,
+    };
+  }
+
   const clientId = process.env.SOUNDCLOUD_CLIENT_ID;
   const clientSecret = process.env.SOUNDCLOUD_CLIENT_SECRET;
 
@@ -753,7 +806,7 @@ export const refreshSoundCloudAuth = async (
       return getSoundCloudAuthContext(currentAccessToken || undefined);
     }
 
-    const refreshed = await refreshSoundCloudTokenValue(refreshToken);
+    const refreshed = await refreshSoundCloudTokenValue(refreshToken, req);
 
     const latestSessionAuth = getNewerSessionAuth();
     if (latestSessionAuth) {
