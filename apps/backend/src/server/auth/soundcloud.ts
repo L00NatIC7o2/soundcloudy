@@ -40,23 +40,46 @@ type StoredAppSession = {
 declare global {
   var __SC_USER_TOKENS: Map<string, StoredUserTokens> | undefined;
   var __SC_APP_SESSIONS: Map<string, StoredAppSession> | undefined;
+  var __SC_TOKEN_REFRESH_LOCKS: Map<string, Promise<RefreshResult>> | undefined;
+  var __SC_AUTH_REFRESH_LOCKS:
+    | Map<string, Promise<SoundCloudAuthContext | null>>
+    | undefined;
+  var __SC_SESSION_REFRESH_FAILURES:
+    | Map<string, { count: number; lastFailedAt: number }>
+    | undefined;
 }
 
 const SESSION_COOKIE = "soundcloudy_session";
 const REFRESH_GRACE_MS = 30_000;
 const SESSION_MAX_AGE = 31536000;
 const DEFAULT_WEB_APP_LOCALE = process.env.SOUNDCLOUD_APP_LOCALE || "en";
-const refreshLocks = new Map<string, Promise<RefreshResult>>();
-// Dedupe in-flight auth refreshes per session/user to avoid races
-const authRefreshLocks = new Map<
-  string,
-  Promise<SoundCloudAuthContext | null>
->();
-// Track consecutive refresh failures per session to avoid clearing on transient failures
-const sessionRefreshFailures = new Map<
-  string,
-  { count: number; lastFailedAt: number }
->();
+const getTokenRefreshLocks = () => {
+  if (!globalThis.__SC_TOKEN_REFRESH_LOCKS) {
+    globalThis.__SC_TOKEN_REFRESH_LOCKS = new Map<
+      string,
+      Promise<RefreshResult>
+    >();
+  }
+  return globalThis.__SC_TOKEN_REFRESH_LOCKS;
+};
+const getAuthRefreshLocks = () => {
+  if (!globalThis.__SC_AUTH_REFRESH_LOCKS) {
+    globalThis.__SC_AUTH_REFRESH_LOCKS = new Map<
+      string,
+      Promise<SoundCloudAuthContext | null>
+    >();
+  }
+  return globalThis.__SC_AUTH_REFRESH_LOCKS;
+};
+const getSessionRefreshFailures = () => {
+  if (!globalThis.__SC_SESSION_REFRESH_FAILURES) {
+    globalThis.__SC_SESSION_REFRESH_FAILURES = new Map<
+      string,
+      { count: number; lastFailedAt: number }
+    >();
+  }
+  return globalThis.__SC_SESSION_REFRESH_FAILURES;
+};
 const REFRESH_FAILURE_CLEAR_THRESHOLD = 5;
 // When a session experiences a transient failure, enter a short cooldown to
 // avoid repeated aggressive refresh attempts that can race or cause clears.
@@ -64,7 +87,7 @@ const REFRESH_FAILURE_COOLDOWN_MS = 30_000; // 30 seconds
 
 export const getSessionRefreshFailureInfo = (sessionId?: string) => {
   if (!sessionId) return null;
-  const entry = sessionRefreshFailures.get(sessionId);
+  const entry = getSessionRefreshFailures().get(sessionId);
   if (!entry) return null;
   return { count: entry.count, lastFailedAt: entry.lastFailedAt };
 };
@@ -486,6 +509,7 @@ export const refreshSoundCloudTokenValue = async (
     refresh_token: refreshToken,
   });
 
+  const refreshLocks = getTokenRefreshLocks();
   let refreshPromise = refreshLocks.get(refreshToken);
 
   if (!refreshPromise) {
@@ -616,10 +640,52 @@ export const refreshSoundCloudAuth = async (
       !!refreshToken,
     );
 
+    const getNewerSessionAuth = () => {
+      const userId = sessionState?.session?.userId;
+      const latestTokens = userId ? getTokenStore().get(userId) : undefined;
+      if (
+        !latestTokens ||
+        (latestTokens.accessToken === currentAccessToken &&
+          latestTokens.refreshToken === refreshToken)
+      ) {
+        return null;
+      }
+
+      setSoundCloudAuthCookies(
+        res,
+        latestTokens.accessToken,
+        latestTokens.refreshToken,
+        Math.max(
+          60,
+          Math.ceil((latestTokens.expiresAt - Date.now()) / 1000),
+        ),
+      );
+      if (sessionState?.session) {
+        setSoundCloudSessionCookie(res, sessionState.session.sessionId);
+        syncRequestCookies(
+          req,
+          latestTokens.accessToken,
+          latestTokens.refreshToken,
+          sessionState.session.sessionId,
+        );
+      }
+      console.log(
+        "refreshSoundCloudAuth - using newer session tokens instead of stale refresh result",
+        { sessionId: sessionState?.session?.sessionId, userId },
+      );
+      return getSoundCloudAuthContext(latestTokens.accessToken);
+    };
+
+    const newerSessionAuth = getNewerSessionAuth();
+    if (newerSessionAuth) {
+      return newerSessionAuth;
+    }
+
     // If this session recently failed a refresh, enter a short cooldown to
     // avoid hammering the refresh endpoint and causing race clears.
     let sessionId = req.cookies[SESSION_COOKIE];
     if (sessionId) {
+      const sessionRefreshFailures = getSessionRefreshFailures();
       const prev = sessionRefreshFailures.get(sessionId);
       if (prev && prev.count > 0) {
         const since = Date.now() - (prev.lastFailedAt || 0);
@@ -670,6 +736,11 @@ export const refreshSoundCloudAuth = async (
 
     const refreshed = await refreshSoundCloudTokenValue(refreshToken);
 
+    const latestSessionAuth = getNewerSessionAuth();
+    if (latestSessionAuth) {
+      return latestSessionAuth;
+    }
+
     if (refreshed && "rejected" in refreshed) {
       sessionId = req.cookies[SESSION_COOKIE];
       const userId = sessionState?.session?.userId;
@@ -683,7 +754,7 @@ export const refreshSoundCloudAuth = async (
       req.cookies[SESSION_COOKIE] = "";
       req.cookies.soundcloud_token = "";
       req.cookies.soundcloud_refresh_token = "";
-      if (sessionId) sessionRefreshFailures.delete(sessionId);
+      if (sessionId) getSessionRefreshFailures().delete(sessionId);
       return null;
     }
 
@@ -700,6 +771,7 @@ export const refreshSoundCloudAuth = async (
 
       // Track consecutive failures and avoid clearing for transient issues
       if (sessionId) {
+        const sessionRefreshFailures = getSessionRefreshFailures();
         const prev = sessionRefreshFailures.get(sessionId) || {
           count: 0,
           lastFailedAt: 0,
@@ -710,7 +782,7 @@ export const refreshSoundCloudAuth = async (
       }
 
       const failureCount = sessionId
-        ? sessionRefreshFailures.get(sessionId)?.count || 0
+        ? getSessionRefreshFailures().get(sessionId)?.count || 0
         : 0;
       if (!clearOnFailure && failureCount < REFRESH_FAILURE_CLEAR_THRESHOLD) {
         console.log(
@@ -738,7 +810,7 @@ export const refreshSoundCloudAuth = async (
         );
       }
 
-      if (sessionId) sessionRefreshFailures.delete(sessionId);
+      if (sessionId) getSessionRefreshFailures().delete(sessionId);
       return null;
     }
 
@@ -770,7 +842,7 @@ export const refreshSoundCloudAuth = async (
         refreshed.refreshToken,
         knownSession.sessionId,
       );
-      sessionRefreshFailures.delete(knownSession.sessionId);
+      getSessionRefreshFailures().delete(knownSession.sessionId);
       return getSoundCloudAuthContext(refreshed.accessToken);
     }
 
@@ -833,7 +905,7 @@ export const refreshSoundCloudAuth = async (
 
     // Success — reset any failure counter for this session
     sessionId = req.cookies[SESSION_COOKIE];
-    if (sessionId) sessionRefreshFailures.delete(sessionId);
+    if (sessionId) getSessionRefreshFailures().delete(sessionId);
 
     return getSoundCloudAuthContext(refreshed.accessToken);
   };
@@ -846,6 +918,7 @@ export const refreshSoundCloudAuth = async (
     null;
 
   if (dedupeKey) {
+    const authRefreshLocks = getAuthRefreshLocks();
     const existing = authRefreshLocks.get(dedupeKey);
     if (existing) {
       console.log(
