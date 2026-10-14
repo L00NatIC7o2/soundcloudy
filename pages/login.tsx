@@ -10,14 +10,23 @@ export default function Login() {
   const handleLogin = async () => {
     if (connecting) return;
 
-    const isElectron = Boolean((window as any)?.electronAPI?.openExternal);
-    const apiBase = getClientApiBase(window.location.origin);
+    const electronApi = (window as any)?.electronAPI;
+    const isLoopbackOrigin = ["localhost", "127.0.0.1", "::1"].includes(
+      window.location.hostname,
+    );
+    const useLocalOAuth =
+      typeof electronApi?.openExternal === "function" || isLoopbackOrigin;
+    const apiBase = useLocalOAuth
+      ? window.location.origin
+      : getClientApiBase(window.location.origin);
+    const localBridgeQuery = useLocalOAuth ? "?local=1" : "";
+    const localBridgeFlag = useLocalOAuth ? "&local=1" : "";
 
-    if (isElectron) {
+    if (electronApi?.openExternal) {
       setError(null);
       setConnecting(true);
       try {
-        const bridgeResponse = await fetch(`/api/auth/bridge`, {
+        const bridgeResponse = await fetch(`/api/auth/bridge${localBridgeQuery}`, {
           method: "POST",
         });
         if (!bridgeResponse.ok) {
@@ -30,14 +39,16 @@ export default function Login() {
           throw new Error("Missing connect code");
         }
 
-        const loginUrl = `${apiBase}/api/auth/start?connect_code=${encodeURIComponent(connectCode)}`;
-        await (window as any).electronAPI.openExternal(loginUrl);
+        const loginUrl =
+          `${apiBase}/api/auth/start?connect_code=${encodeURIComponent(connectCode)}` +
+          localBridgeFlag;
+        await electronApi.openExternal(loginUrl);
 
         let completed = false;
         for (let attempt = 0; attempt < 90; attempt++) {
           await new Promise((resolve) => setTimeout(resolve, 2000));
           const completionResponse = await fetch(
-            `/api/auth/complete?connect_code=${encodeURIComponent(connectCode)}`,
+            `/api/auth/complete?connect_code=${encodeURIComponent(connectCode)}${localBridgeFlag}`,
           );
 
           if (completionResponse.status === 202) {
