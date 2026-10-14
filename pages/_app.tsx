@@ -157,12 +157,16 @@ export default function MyApp({ Component, pageProps }: AppProps) {
     setConnecting(true);
     try {
       const electronApi = (window as any).electronAPI;
-      const isElectron = typeof electronApi?.openExternal === "function";
-      const apiBase = isElectron
+      const isLoopbackOrigin = ["localhost", "127.0.0.1", "::1"].includes(
+        window.location.hostname,
+      );
+      const useLocalOAuth =
+        typeof electronApi?.openExternal === "function" || isLoopbackOrigin;
+      const apiBase = useLocalOAuth
         ? window.location.origin
         : getClientApiBase(window.location.origin);
-      const localBridgeQuery = isElectron ? "?local=1" : "";
-      const localBridgeFlag = isElectron ? "&local=1" : "";
+      const localBridgeQuery = useLocalOAuth ? "?local=1" : "";
+      const localBridgeFlag = useLocalOAuth ? "&local=1" : "";
       const res = await fetch(`/api/auth/bridge${localBridgeQuery}`, {
         method: "POST",
       });
