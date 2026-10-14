@@ -284,12 +284,6 @@ const getSessionStateFromRequest = async (
         session.sessionId,
       );
       setSoundCloudSessionCookie(res, session.sessionId);
-      setSoundCloudAuthCookies(
-        res,
-        tokens.accessToken,
-        tokens.refreshToken,
-        Math.max(60, Math.ceil((tokens.expiresAt - Date.now()) / 1000)),
-      );
       return {
         session,
         tokens,
@@ -841,7 +835,29 @@ export const refreshSoundCloudAuth = async (
         "refreshSoundCloudAuth - awaiting in-flight refresh for key",
         dedupeKey,
       );
-      return existing;
+      const auth = await existing;
+      if (auth) {
+        const latestSessionState = await getSessionStateFromRequest(req, res);
+        const latestTokens = latestSessionState?.tokens;
+        if (latestTokens) {
+          setSoundCloudAuthCookies(
+            res,
+            latestTokens.accessToken,
+            latestTokens.refreshToken,
+            Math.max(
+              60,
+              Math.ceil((latestTokens.expiresAt - Date.now()) / 1000),
+            ),
+          );
+          syncRequestCookies(
+            req,
+            latestTokens.accessToken,
+            latestTokens.refreshToken,
+            latestSessionState.session?.sessionId,
+          );
+        }
+      }
+      return auth;
     }
 
     const p = doRefresh();
