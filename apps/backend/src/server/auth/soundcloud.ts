@@ -527,9 +527,15 @@ export const refreshSoundCloudTokenValue = async (
     }
 
     const body = await response.json();
-    const setCookie = response.headers.get("set-cookie") || "";
-    const rotatedRefreshToken = setCookie.match(
-      /(?:^|,\s*)soundcloud_refresh_token=([^;,\s]*)/,
+    const setCookieHeaders =
+      typeof response.headers.getSetCookie === "function"
+        ? response.headers.getSetCookie()
+        : [response.headers.get("set-cookie") || ""];
+    const refreshCookie = setCookieHeaders.find((cookie) =>
+      cookie.startsWith("soundcloud_refresh_token="),
+    );
+    const rotatedRefreshToken = refreshCookie?.match(
+      /^soundcloud_refresh_token=([^;,\s]*)/,
     )?.[1];
 
     if (typeof body?.token !== "string" || !body.token) {
@@ -540,6 +546,15 @@ export const refreshSoundCloudTokenValue = async (
         "Hosted SoundCloud refresh response omitted the rotated refresh cookie",
       );
     }
+    if (rotatedRefreshToken === refreshToken) {
+      throw new Error(
+        "Hosted SoundCloud refresh response did not rotate the single-use refresh token",
+      );
+    }
+
+    console.info("Hosted SoundCloud refresh relay received rotated credentials", {
+      refreshTokenRotated: true,
+    });
 
     return {
       accessToken: body.token,
@@ -710,6 +725,22 @@ export const refreshSoundCloudAuth = async (
       "refreshSoundCloudAuth - refreshToken present:",
       !!refreshToken,
     );
+    console.info("refreshSoundCloudAuth - refresh token source", {
+      source: sessionState?.tokens?.refreshToken
+        ? "session_store"
+        : req.cookies.soundcloud_refresh_token
+          ? "request_cookie"
+          : getHeaderRefreshToken(req)
+            ? "request_header"
+            : "missing",
+      requestCookieMatchesSessionStore:
+        sessionState?.tokens?.refreshToken &&
+        req.cookies.soundcloud_refresh_token
+          ? sessionState.tokens.refreshToken ===
+            req.cookies.soundcloud_refresh_token
+          : null,
+      sessionTokenUpdatedAt: sessionState?.tokens?.updatedAt ?? null,
+    });
 
     const getNewerSessionAuth = () => {
       const userId = sessionState?.session?.userId;
@@ -919,6 +950,11 @@ export const refreshSoundCloudAuth = async (
         knownTokens?.username,
         knownTokens?.webCredentials,
       );
+      console.info("refreshSoundCloudAuth - rotated token stored in session", {
+        userId: knownSession.userId,
+        refreshTokenRotated:
+          refreshed.refreshToken !== knownTokens?.refreshToken,
+      });
       setSoundCloudSessionCookie(res, knownSession.sessionId);
       setSoundCloudAuthCookies(
         res,
