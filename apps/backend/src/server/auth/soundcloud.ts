@@ -707,9 +707,15 @@ export const getRequestSoundCloudAuthContext = async (
 export const refreshSoundCloudAuth = async (
   req: NextApiRequest,
   res: NextApiResponse,
-  options?: { force?: boolean; clearOnFailure?: boolean },
+  options?: {
+    force?: boolean;
+    refreshAfterAccessTokenRejection?: boolean;
+    clearOnFailure?: boolean;
+  },
 ): Promise<SoundCloudAuthContext | null> => {
   const forceRefresh = options?.force === true;
+  const refreshAfterAccessTokenRejection =
+    options?.refreshAfterAccessTokenRejection === true;
   const clearOnFailure = options?.clearOnFailure === true;
   const sessionState = await getSessionStateFromRequest(req, res);
   const currentAccessToken =
@@ -807,6 +813,13 @@ export const refreshSoundCloudAuth = async (
         if (error.response?.status !== 401) {
           throw error;
         }
+      }
+
+      if (!refreshAfterAccessTokenRejection) {
+        console.info(
+          "refreshSoundCloudAuth - resource rejected the access token; skipping refresh outside an auth check",
+        );
+        return null;
       }
     }
 

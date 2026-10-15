@@ -70,7 +70,10 @@ export default async function handler(
       }
     }
 
-    auth = await refreshSoundCloudAuth(req, res, { force: true });
+    auth = await refreshSoundCloudAuth(req, res, {
+      force: true,
+      refreshAfterAccessTokenRejection: true,
+    });
 
     if (!auth) {
       const transientUser = await getTransientStoredUser(req, res);

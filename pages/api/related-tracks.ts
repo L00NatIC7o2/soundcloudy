@@ -87,7 +87,9 @@ export default async function handler(
         } catch (error: any) {
           if ([401, 403].includes(error.response?.status)) {
             try {
-              const refreshedAuth = await refreshSoundCloudAuth(req, res);
+              const refreshedAuth = await refreshSoundCloudAuth(req, res, {
+                force: true,
+              });
               if (refreshedAuth) {
                 activeAuth = refreshedAuth;
                 const tracks = await fetchRelatedTracks(t.id, activeAuth, 10);
@@ -133,7 +135,9 @@ export default async function handler(
   } catch (error: any) {
     if ([401, 403].includes(error.response?.status)) {
       try {
-        const refreshedAuth = await refreshSoundCloudAuth(req, res);
+        const refreshedAuth = await refreshSoundCloudAuth(req, res, {
+          force: true,
+        });
         if (refreshedAuth) {
           const tracks = await fetchRelatedTracks(
             resolvedTrackId,

@@ -183,7 +183,9 @@ export default async function handler(
   } catch (error: any) {
     if (!overrideToken && [401, 403].includes(error.response?.status)) {
       try {
-        const refreshedAuth = await refreshSoundCloudAuth(req, res);
+        const refreshedAuth = await refreshSoundCloudAuth(req, res, {
+          force: true,
+        });
         if (refreshedAuth) {
           return await resolveStream(trackId, refreshedAuth, req, res);
         }
@@ -212,6 +214,5 @@ export default async function handler(
     });
   }
 }
-
 
 

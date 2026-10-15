@@ -54,6 +54,7 @@ export default async function handler(
     // session state.
     auth = await refreshSoundCloudAuth(req, res, {
       force: true,
+      refreshAfterAccessTokenRejection: true,
       clearOnFailure: false,
     });
 

@@ -225,7 +225,7 @@ export default async function handler(
   }
 
   const refreshAuth = async () => {
-    auth = await refreshSoundCloudAuth(req, res);
+    auth = await refreshSoundCloudAuth(req, res, { force: true });
     return auth;
   };
 
@@ -245,6 +245,5 @@ export default async function handler(
     });
   }
 }
-
 
 
