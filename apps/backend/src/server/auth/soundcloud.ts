@@ -567,17 +567,35 @@ export const refreshSoundCloudTokenValue = async (
 
   if (!refreshPromise) {
     refreshPromise = axios
-      .post("https://api.soundcloud.com/oauth2/token", params.toString(), {
+      .post("https://secure.soundcloud.com/oauth/token", params.toString(), {
         headers: {
           "Content-Type": "application/x-www-form-urlencoded",
         },
         timeout: 10000,
       })
-      .then((response) => ({
-        accessToken: response.data?.access_token,
-        refreshToken: response.data?.refresh_token || refreshToken,
-        expiresIn: response.data?.expires_in || 3600,
-      }))
+      .then((response) => {
+        const accessToken = response.data?.access_token;
+        const rotatedRefreshToken = response.data?.refresh_token;
+        if (typeof accessToken !== "string" || !accessToken) {
+          throw new Error(
+            "SoundCloud token refresh response omitted the access token",
+          );
+        }
+        if (
+          typeof rotatedRefreshToken !== "string" ||
+          !rotatedRefreshToken
+        ) {
+          throw new Error(
+            "SoundCloud token refresh response omitted the rotated refresh token",
+          );
+        }
+
+        return {
+          accessToken,
+          refreshToken: rotatedRefreshToken,
+          expiresIn: response.data?.expires_in || 3600,
+        };
+      })
       .catch((error: any) => {
         const status = error.response?.status;
         const oauthError = error.response?.data?.error;

@@ -38,7 +38,7 @@ export default async function handler(
   }
 
   try {
-    const tokenRes = await fetch("https://api.soundcloud.com/oauth2/token", {
+    const tokenRes = await fetch("https://secure.soundcloud.com/oauth/token", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
