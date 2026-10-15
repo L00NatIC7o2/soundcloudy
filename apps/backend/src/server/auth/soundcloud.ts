@@ -534,9 +534,13 @@ export const refreshSoundCloudTokenValue = async (
     const refreshCookie = setCookieHeaders.find((cookie) =>
       cookie.startsWith("soundcloud_refresh_token="),
     );
-    const rotatedRefreshToken = refreshCookie?.match(
+    const cookieRefreshToken = refreshCookie?.match(
       /^soundcloud_refresh_token=([^;,\s]*)/,
     )?.[1];
+    const rotatedRefreshToken =
+      typeof body?.refresh_token === "string" && body.refresh_token
+        ? body.refresh_token
+        : cookieRefreshToken;
 
     if (typeof body?.token !== "string" || !body.token) {
       throw new Error("Hosted SoundCloud refresh response omitted the access token");
@@ -554,6 +558,10 @@ export const refreshSoundCloudTokenValue = async (
 
     console.info("Hosted SoundCloud refresh relay received rotated credentials", {
       refreshTokenRotated: true,
+      source:
+        typeof body?.refresh_token === "string" && body.refresh_token
+          ? "response_body"
+          : "set_cookie",
     });
 
     return {
