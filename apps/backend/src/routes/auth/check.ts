@@ -2,6 +2,7 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import axios from "axios";
 import {
   getRequestSoundCloudAuthContext,
+  getSoundCloudCredentialFingerprint,
   refreshSoundCloudAuth,
   getStoredSoundCloudSession,
   getSessionRefreshFailureInfo,
@@ -24,6 +25,12 @@ export default async function handler(
     if (!auth) {
       return res.status(401).json({ error: "Not authenticated" });
     }
+
+    console.info("Validating SoundCloud OAuth access token", {
+      credentialType: "oauth_access_token",
+      endpoint: "https://api.soundcloud.com/me",
+      fingerprint: getSoundCloudCredentialFingerprint(auth.rawToken),
+    });
 
     try {
       await axios.get("https://api.soundcloud.com/me", {

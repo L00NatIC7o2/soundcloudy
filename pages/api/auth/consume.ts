@@ -1,6 +1,9 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { getConnectStore } from "../../../apps/backend/src/server/auth/connectStore";
-import { establishSoundCloudSession } from "../../../apps/backend/src/server/auth/soundcloud";
+import {
+  establishSoundCloudSession,
+  getSoundCloudCredentialFingerprint,
+} from "../../../apps/backend/src/server/auth/soundcloud";
 import { primeSoundCloudWebCredentials } from "../listening-history";
 
 export default async function handler(
@@ -22,6 +25,12 @@ export default async function handler(
     if (!accessToken) {
       return res.status(400).json({ error: "Missing access_token" });
     }
+
+    console.info("Importing SoundCloud OAuth credentials into local session", {
+      accessTokenFingerprint: getSoundCloudCredentialFingerprint(accessToken),
+      refreshTokenFingerprint: getSoundCloudCredentialFingerprint(refreshToken),
+      source: "request_body",
+    });
 
     await establishSoundCloudSession(
       req,
@@ -64,6 +73,14 @@ export default async function handler(
   if (!access_token || typeof access_token !== "string") {
     return res.status(401).json({ error: "Invalid SoundCloud session" });
   }
+
+  console.info("Importing SoundCloud OAuth credentials into local session", {
+    accessTokenFingerprint: getSoundCloudCredentialFingerprint(access_token),
+    refreshTokenFingerprint: getSoundCloudCredentialFingerprint(
+      typeof refresh_token === "string" ? refresh_token : null,
+    ),
+    source: "connect_store",
+  });
 
   await establishSoundCloudSession(
     req,
