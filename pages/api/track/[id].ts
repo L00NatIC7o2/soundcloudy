@@ -65,7 +65,7 @@ const requestWithFallback = async <T>(
         if (
           !didRefresh &&
           refreshAuth &&
-          (error?.response?.status === 401 || error?.response?.status === 403)
+          error?.response?.status === 401
         ) {
           try {
             const refreshedAuth = await refreshAuth();
@@ -245,5 +245,4 @@ export default async function handler(
     });
   }
 }
-
 
