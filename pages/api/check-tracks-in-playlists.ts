@@ -116,6 +116,9 @@ export default async function handler(
           }
         }
       } catch (error) {
+        if ((error as any)?.response?.status === 429) {
+          throw error;
+        }
         console.warn(`Could not check playlist ${playlist.id}`);
       }
     }
@@ -132,6 +135,17 @@ export default async function handler(
       error.response?.status,
       error.message,
     );
+
+    if (error.response?.status === 429) {
+      const retryAfter = error.response.headers?.["retry-after"];
+      if (retryAfter) {
+        res.setHeader("Retry-After", retryAfter);
+      }
+      return res.status(429).json({
+        error: "SoundCloud is rate limiting requests. Please try again shortly.",
+        memberships: {},
+      });
+    }
 
     if (error.response?.status === 401) {
       try {
@@ -177,6 +191,9 @@ export default async function handler(
               }
             }
           } catch (playlistError) {
+            if ((playlistError as any)?.response?.status === 429) {
+              throw playlistError;
+            }
             console.warn(`Could not check playlist ${playlist.id}`);
           }
         }
@@ -199,6 +216,17 @@ export default async function handler(
             transientAuthError: true,
           });
         }
+        if (retryError.response?.status === 429) {
+          const retryAfter = retryError.response.headers?.["retry-after"];
+          if (retryAfter) {
+            res.setHeader("Retry-After", retryAfter);
+          }
+          return res.status(429).json({
+            error:
+              "SoundCloud is rate limiting requests. Please try again shortly.",
+            memberships: {},
+          });
+        }
       }
     }
 
@@ -208,4 +236,3 @@ export default async function handler(
     });
   }
 }
-

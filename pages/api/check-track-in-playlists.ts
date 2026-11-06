@@ -95,6 +95,9 @@ export default async function handler(
           playlistsWithTrack: isInPlaylist ? [{ id: targetPlaylistId }] : [],
         });
       } catch (error) {
+        if ((error as any)?.response?.status === 429) {
+          throw error;
+        }
         console.warn(`Could not check playlist ${playlistId}`);
         return res.json({ isInAnyPlaylist: false, playlistsWithTrack: [] });
       }
@@ -132,6 +135,9 @@ export default async function handler(
           });
         }
       } catch (error) {
+        if ((error as any)?.response?.status === 429) {
+          throw error;
+        }
         // Skip playlists we can't access
         console.warn(`Could not check playlist ${playlist.id}`);
       }
@@ -200,6 +206,9 @@ export default async function handler(
                 });
               }
             } catch (playlistError) {
+              if ((playlistError as any)?.response?.status === 429) {
+                throw playlistError;
+              }
               console.warn(`Could not check playlist ${playlist.id}`);
             }
           }
@@ -229,6 +238,13 @@ export default async function handler(
         isInAnyPlaylist: false,
         playlistsWithTrack: [],
       });
+    }
+
+    if (error.response?.status === 429) {
+      const retryAfter = error.response.headers?.["retry-after"];
+      if (retryAfter) {
+        res.setHeader("Retry-After", retryAfter);
+      }
     }
 
     res.status(error.response?.status || 500).json({

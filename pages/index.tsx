@@ -64,6 +64,7 @@ export default function Home() {
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [authChecking, setAuthChecking] = useState(true);
+  const [startupRateLimited, setStartupRateLimited] = useState(false);
   const [viewingLikes, setViewingLikes] = useState(false);
   const [viewingProfile, setViewingProfile] = useState(false);
   const [userProfile, setUserProfile] = useState<any>(null);
@@ -639,36 +640,6 @@ export default function Home() {
     },
     [CACHE_DURATION],
   );
-
-  const preloadOwnedPlaylistMemberships = useCallback(async () => {
-    try {
-      const response = await fetch("/api/owned-playlist-track-memberships");
-      if (!response.ok) {
-        throw new Error(`Failed to preload memberships: ${response.status}`);
-      }
-      const data = await response.json();
-      const memberships = data.memberships || {};
-
-      setRowTrackPlaylistsMap((prev) => {
-        const next = { ...prev };
-        for (const [trackId, playlistIds] of Object.entries(memberships)) {
-          next[Number(trackId)] = Array.isArray(playlistIds)
-            ? (playlistIds as number[])
-            : [];
-        }
-        return next;
-      });
-
-      Object.keys(memberships).forEach((trackId) => {
-        const numericTrackId = Number(trackId);
-        if (Number.isFinite(numericTrackId) && numericTrackId > 0) {
-          requestedTrackPlaylistMembershipRef.current.add(numericTrackId);
-        }
-      });
-    } catch (error) {
-      console.error("Failed to preload owned playlist memberships:", error);
-    }
-  }, []);
 
   // Fetch last played track
   const fetchLastPlayedTrack = async () => {
@@ -1529,11 +1500,6 @@ export default function Home() {
         setArtistResults(data.artists || []);
         setAlbumResults(data.albums || []);
         setPlaylistResults(data.playlists || []);
-        preloadTrackPlaylistMembership(
-          (data.collection || [])
-            .map((track: any) => Number(track?.id))
-            .filter((id: number) => Number.isFinite(id) && id > 0),
-        );
         scrollToTop();
       } else {
         const newTracks = data.collection || [];
@@ -2123,17 +2089,6 @@ export default function Home() {
     }
   };
 
-  const checkTrackLikeStatus = async (trackId: number) => {
-    try {
-      const response = await fetch(`/api/check-like?trackId=${trackId}`);
-      const data = await response.json();
-      return Boolean(data?.isLiked);
-    } catch (error) {
-      console.error("Failed to check track like:", error);
-      return false;
-    }
-  };
-
   const checkPlaylistLikeStatus = async (playlistId: number) => {
     try {
       const response = await fetch(
@@ -2379,32 +2334,46 @@ export default function Home() {
           likedTracks[id] === undefined &&
           !requestedTrackLikesRef.current.has(id),
       )
-      .slice(0, 20);
+      .slice(0, 50);
 
     if (missing.length === 0) return;
 
-    let cancelled = false;
     missing.forEach((id) => requestedTrackLikesRef.current.add(id));
     (async () => {
-      const results = await Promise.all(
-        missing.map(async (id) => ({
-          id,
-          isLiked: await checkTrackLikeStatus(id),
-        })),
-      );
-      if (cancelled) return;
-      setLikedTracks((prev) => {
-        const next = { ...prev };
-        for (const { id, isLiked } of results) {
-          if (next[id] === undefined) next[id] = isLiked;
+      let completed = false;
+      try {
+        const response = await fetch(
+          `/api/check-likes?trackIds=${missing.join(",")}`,
+          { credentials: "include" },
+        );
+        if (!response.ok) {
+          console.warn("Batch track-like check failed:", response.status);
+          return;
         }
-        return next;
-      });
-    })();
 
-    return () => {
-      cancelled = true;
-    };
+        const data = await response.json();
+        const results = Object.entries(data.likes || {}).map(
+          ([id, isLiked]) => ({
+            id: Number(id),
+            isLiked: Boolean(isLiked),
+          }),
+        );
+        setLikedTracks((prev) => {
+          const next = { ...prev };
+          for (const { id, isLiked } of results) {
+            if (next[id] === undefined) next[id] = isLiked;
+          }
+          return next;
+        });
+        completed = true;
+      } catch (error) {
+        console.error("Failed to check track likes:", error);
+      } finally {
+        if (!completed) {
+          missing.forEach((id) => requestedTrackLikesRef.current.delete(id));
+        }
+      }
+    })();
   }, [
     tracks,
     playlistTracks,
@@ -2468,74 +2437,39 @@ export default function Home() {
   };
 
   const fetchTrackPlaylistsMembership = async (trackId: number | string) => {
-    if (!trackId) return [];
+    const numericTrackId = Number(trackId);
+    if (
+      !Number.isSafeInteger(numericTrackId) ||
+      numericTrackId <= 0 ||
+      requestedTrackPlaylistMembershipRef.current.has(numericTrackId)
+    ) {
+      return rowTrackPlaylistsMap[numericTrackId] || [];
+    }
+
+    requestedTrackPlaylistMembershipRef.current.add(numericTrackId);
     try {
       const response = await fetch(
-        `/api/check-track-in-playlists?trackId=${trackId}`,
+        `/api/check-track-in-playlists?trackId=${numericTrackId}`,
       );
+      if (!response.ok) {
+        throw new Error(`Playlist membership check failed: ${response.status}`);
+      }
       const data = await response.json();
       const ids = data.playlistsWithTrack?.map((p: any) => p.id) || [];
       setRowTrackPlaylistsMap((prev) => ({
         ...prev,
-        [Number(trackId)]: ids,
+        [numericTrackId]: ids,
       }));
       setVerifiedRowTrackPlaylistsMap((prev) => ({
         ...prev,
-        [Number(trackId)]: true,
+        [numericTrackId]: true,
       }));
       return ids;
     } catch (error) {
+      requestedTrackPlaylistMembershipRef.current.delete(numericTrackId);
       console.error("Failed to fetch row track playlists:", error);
       return [];
     }
-  };
-
-  const fetchTracksPlaylistsMembership = async (trackIds: number[]) => {
-    if (!trackIds.length) return;
-    try {
-      const response = await fetch(
-        `/api/check-tracks-in-playlists?trackIds=${trackIds.join(",")}`,
-      );
-      const data = await response.json();
-      const memberships = data.memberships || {};
-      setRowTrackPlaylistsMap((prev) => {
-        const next = { ...prev };
-        for (const [trackId, playlistIds] of Object.entries(memberships)) {
-          next[Number(trackId)] = Array.isArray(playlistIds)
-            ? (playlistIds as number[])
-            : [];
-        }
-        return next;
-      });
-    } catch (error) {
-      console.error("Failed to batch fetch row track playlists:", error);
-    }
-  };
-
-  const preloadTrackPlaylistMembership = (trackIds: number[]) => {
-    const normalizedIds = Array.from(
-      new Set(
-        trackIds.filter(
-          (id) =>
-            Number.isFinite(id) &&
-            id > 0 &&
-            rowTrackPlaylistsMap[id] === undefined &&
-            !requestedTrackPlaylistMembershipRef.current.has(id),
-        ),
-      ),
-    );
-
-    if (!normalizedIds.length) return;
-
-    normalizedIds.forEach((id) =>
-      requestedTrackPlaylistMembershipRef.current.add(id),
-    );
-
-    void (async () => {
-      for (let i = 0; i < normalizedIds.length; i += 20) {
-        await fetchTracksPlaylistsMembership(normalizedIds.slice(i, i + 20));
-      }
-    })();
   };
 
   const removeFromSelectedPlaylist = async (track: any) => {
@@ -2739,15 +2673,22 @@ export default function Home() {
     const checkAuth = async () => {
       try {
         const res = await fetch("/api/auth/check", { credentials: "include" });
+        if (res.status === 429) {
+          console.warn(
+            "SoundCloud rate limited startup checks; deferring data loads",
+          );
+          setStartupRateLimited(true);
+          setIsAuthenticated(true);
+          return;
+        }
         if (!res.ok) {
           router.push("/login");
           setIsAuthenticated(false);
         } else {
           setIsAuthenticated(true);
           fetchPlaylists();
-          preloadOwnedPlaylistMemberships();
-          // Seed likes and liked-playlists cache so UI reflects server state immediately
-          seedLikes(true);
+          // Seed likes and liked-playlists cache without loading every likes page.
+          seedLikes();
           seedLikedPlaylists();
         }
       } catch (error) {
@@ -2759,13 +2700,24 @@ export default function Home() {
       }
     };
     checkAuth();
-  }, [router, fetchPlaylists, preloadOwnedPlaylistMemberships]);
+  }, [router, fetchPlaylists]);
 
   useEffect(() => {
-    if (!isAuthenticated || listeningHistory.length > 0 || historyLoading)
+    if (
+      !isAuthenticated ||
+      startupRateLimited ||
+      listeningHistory.length > 0 ||
+      historyLoading
+    )
       return;
     void fetchListeningHistoryBackground(historyLimit);
-  }, [isAuthenticated, listeningHistory.length, historyLoading, historyLimit]);
+  }, [
+    isAuthenticated,
+    startupRateLimited,
+    listeningHistory.length,
+    historyLoading,
+    historyLimit,
+  ]);
 
   useEffect(() => {
     if (!viewingProfile || !isAuthenticated) return;
@@ -3343,23 +3295,6 @@ export default function Home() {
     const artist = String(track?.user?.username || "").toLowerCase();
     return title.includes(term) || artist.includes(term);
   });
-
-  const visibleRowTrackIds = Array.from(
-    new Set(
-      [
-        ...visiblePlaylistTracks,
-        ...visibleProfileTracks,
-        ...filteredProfileReposts,
-        ...(searchView === "tracks" ? tracks : tracks.slice(0, 15)),
-      ]
-        .map((track: any) => Number(resolveTrackItem(track)?.id))
-        .filter((id) => Number.isFinite(id) && id > 0),
-    ),
-  );
-
-  useEffect(() => {
-    preloadTrackPlaylistMembership(visibleRowTrackIds);
-  }, [visibleRowTrackIds.join(","), rowTrackPlaylistsMap]);
 
   const renderTrackRows = (
     trackItems: any[],

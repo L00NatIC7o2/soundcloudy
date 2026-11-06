@@ -91,6 +91,17 @@ export default async function handler(
     console.log("Token refreshed successfully - expires in: 3599");
     res.json({ authenticated: true });
   } catch (error: any) {
+    if (error.response?.status === 429) {
+      const retryAfter = error.response.headers?.["retry-after"];
+      if (retryAfter) {
+        res.setHeader("Retry-After", retryAfter);
+      }
+      return res.status(429).json({
+        error: "SoundCloud is rate limiting requests. Please try again shortly.",
+        transient: true,
+      });
+    }
+
     if (error.response?.status === 401) {
       return res
         .status(401)

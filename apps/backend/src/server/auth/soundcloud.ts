@@ -1099,7 +1099,10 @@ export const refreshSoundCloudAuth = async (
 
     const p = doRefresh();
     authRefreshLocks.set(dedupeKey, p);
-    p.finally(() => authRefreshLocks.delete(dedupeKey));
+    p.then(
+      () => authRefreshLocks.delete(dedupeKey),
+      () => authRefreshLocks.delete(dedupeKey),
+    );
     return p;
   }
 
