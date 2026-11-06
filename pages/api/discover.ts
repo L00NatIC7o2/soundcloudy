@@ -130,92 +130,99 @@ export default async function handler(
     }
 
     // 4. Puppeteer Sniffer (For personalized mixed-selections)
-    try {
-      console.log("Launching browser to sniff api-v2...");
-      const browser = await puppeteer.launch({
-        headless: true,
-        args: ["--no-sandbox"],
-      });
-
+    if (process.env.SOUNDCLOUD_DISCOVER_SNIFFER_ENABLED === "false") {
+      console.log("Skipping Discover browser sniffer because it is disabled");
+    } else {
       try {
-        const page = await browser.newPage();
-        const sniffedSections: any[] = [];
-        const sniffedSectionTitles = new Set<string>();
-        const responseTasks: Promise<void>[] = [];
-        await page.setCookie({
-          name: "oauth_token",
-          value: token,
-          domain: ".soundcloud.com",
-          path: "/",
-          secure: true,
+        console.log("Launching browser to sniff api-v2...");
+        const browser = await puppeteer.launch({
+          headless: true,
+          args: ["--no-sandbox"],
         });
 
-        // Listen for the internal mixed-selections API
-        page.on("response", async (response) => {
-          const task = (async () => {
-            const url = response.url();
-            if (!url.includes("api-v2.soundcloud.com/mixed-selections")) {
-              return;
-            }
-            if (response.request().method() === "OPTIONS") {
-              return;
-            }
-            const contentType = response.headers()["content-type"] || "";
-            if (!/json/i.test(contentType)) {
-              return;
-            }
+        try {
+          const page = await browser.newPage();
+          const sniffedSections: any[] = [];
+          const sniffedSectionTitles = new Set<string>();
+          const responseTasks: Promise<void>[] = [];
+          await page.setCookie({
+            name: "oauth_token",
+            value: token,
+            domain: ".soundcloud.com",
+            path: "/",
+            secure: true,
+          });
 
-            try {
-              const bodyText = await response.text();
-              if (!bodyText?.trim()) {
+          // Listen for the internal mixed-selections API
+          page.on("response", async (response) => {
+            const task = (async () => {
+              const url = response.url();
+              if (!url.includes("api-v2.soundcloud.com/mixed-selections")) {
                 return;
               }
-              const data = JSON.parse(bodyText);
-              data.collection?.forEach((s: any) => {
-                const title = s.title || "For You";
-                const items = Array.isArray(s.items?.collection)
-                  ? s.items.collection
-                  : [];
-                if (!items.length) return;
-                if (sniffedSectionTitles.has(title)) return;
-                sniffedSectionTitles.add(title);
-                sniffedSections.push({
-                  title,
-                  items,
+              if (response.request().method() === "OPTIONS") {
+                return;
+              }
+              const contentType = response.headers()["content-type"] || "";
+              if (!/json/i.test(contentType)) {
+                return;
+              }
+
+              try {
+                const bodyText = await response.text();
+                if (!bodyText?.trim()) {
+                  return;
+                }
+                const data = JSON.parse(bodyText);
+                data.collection?.forEach((s: any) => {
+                  const title = s.title || "For You";
+                  const items = Array.isArray(s.items?.collection)
+                    ? s.items.collection
+                    : [];
+                  if (!items.length) return;
+                  if (sniffedSectionTitles.has(title)) return;
+                  sniffedSectionTitles.add(title);
+                  sniffedSections.push({
+                    title,
+                    items,
+                  });
                 });
-              });
-            } catch (error) {
-              console.error("Mixed selections parse failed:", error);
-            }
-          })();
+              } catch (error) {
+                console.error("Mixed selections parse failed:", error);
+              }
+            })();
 
-          responseTasks.push(task);
-        });
+            responseTasks.push(task);
+          });
 
-        await page.goto("https://soundcloud.com/discover", {
-          waitUntil: "networkidle2",
-          timeout: 30000,
-        });
-        await page.waitForNetworkIdle({ idleTime: 800, timeout: 8000 }).catch(
-          () => {},
-        );
-        await new Promise((resolve) => setTimeout(resolve, 2000));
-        await Promise.allSettled(responseTasks);
-
-        if (sniffedSections.length) {
-          console.log(
-            "Discover mixed sections found:",
-            sniffedSections.map((section) => section.title),
+          await page.goto("https://soundcloud.com/discover", {
+            waitUntil: "networkidle2",
+            timeout: 30000,
+          });
+          await page.waitForNetworkIdle({ idleTime: 800, timeout: 8000 }).catch(
+            () => {},
           );
-          sections.push(...sniffedSections);
-        } else {
-          console.log("No mixed sections captured from discover page");
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+          await Promise.allSettled(responseTasks);
+
+          if (sniffedSections.length) {
+            console.log(
+              "Discover mixed sections found:",
+              sniffedSections.map((section) => section.title),
+            );
+            sections.push(...sniffedSections);
+          } else {
+            console.log("No mixed sections captured from discover page");
+          }
+        } finally {
+          await browser.close();
         }
-      } finally {
-        await browser.close();
+      } catch (error: any) {
+        console.error(
+          "Discover Puppeteer fallback failed:",
+          error?.message || error,
+        );
       }
-    } catch (error: any) {
-      console.error("Discover Puppeteer fallback failed:", error?.message || error);
     }
 
     // 5. Save to Local Cache
@@ -235,4 +242,3 @@ export default async function handler(
     return res.status(500).json({ error: error.message });
   }
 }
-
