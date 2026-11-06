@@ -7,6 +7,34 @@ import {
   type SoundCloudAuthContext,
 } from "../../src/server/auth/soundcloud";
 
+const readStreamErrorMessage = async (
+  stream: NodeJS.ReadableStream,
+): Promise<string | null> => {
+  const chunks: Buffer[] = [];
+  let bytesRead = 0;
+  const maxBytes = 8192;
+
+  for await (const chunk of stream as AsyncIterable<Buffer | string>) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    if (bytesRead < maxBytes) {
+      const remaining = maxBytes - bytesRead;
+      chunks.push(buffer.subarray(0, remaining));
+      bytesRead += Math.min(buffer.length, remaining);
+    }
+  }
+
+  try {
+    const body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    return typeof body?.message === "string"
+      ? body.message
+      : typeof body?.error === "string"
+        ? body.error
+        : null;
+  } catch {
+    return null;
+  }
+};
+
 const resolveStream = async (
   trackId: string,
   auth: SoundCloudAuthContext,
@@ -126,8 +154,19 @@ const resolveStream = async (
         ...(rangeHeader ? { Range: rangeHeader } : {}),
         Authorization: auth.headerValue,
       },
-      validateStatus: (status) => status >= 200 && status < 400,
+      validateStatus: (status) => status >= 200 && status < 500,
     });
+
+    if (proxyResponse.status >= 400) {
+      const errorMessage = await readStreamErrorMessage(proxyResponse.data);
+      return res.status(proxyResponse.status).json({
+        error:
+          errorMessage ||
+          (proxyResponse.status === 403
+            ? "SoundCloud does not allow this track to be streamed."
+            : "SoundCloud could not provide this stream."),
+      });
+    }
 
     const contentType = proxyResponse.headers["content-type"];
     const contentLength = proxyResponse.headers["content-length"];
@@ -181,7 +220,7 @@ export default async function handler(
   try {
     return await resolveStream(trackId, auth, req, res);
   } catch (error: any) {
-    if (!overrideToken && [401, 403].includes(error.response?.status)) {
+    if (!overrideToken && error.response?.status === 401) {
       try {
         const refreshedAuth = await refreshSoundCloudAuth(req, res, {
           force: true,
@@ -214,5 +253,4 @@ export default async function handler(
     });
   }
 }
-
 
