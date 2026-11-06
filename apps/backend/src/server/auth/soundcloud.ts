@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import axios from "axios";
+import { createHash } from "crypto";
 
 export type SoundCloudAuthContext = {
   rawToken: string;
@@ -53,6 +54,12 @@ const SESSION_COOKIE = "soundcloudy_session";
 const REFRESH_GRACE_MS = 30_000;
 const SESSION_MAX_AGE = 31536000;
 const DEFAULT_WEB_APP_LOCALE = process.env.SOUNDCLOUD_APP_LOCALE || "en";
+
+export const getSoundCloudCredentialFingerprint = (token?: string | null) =>
+  token
+    ? createHash("sha256").update(token).digest("hex").slice(0, 12)
+    : null;
+
 const getTokenRefreshLocks = () => {
   if (!globalThis.__SC_TOKEN_REFRESH_LOCKS) {
     globalThis.__SC_TOKEN_REFRESH_LOCKS = new Map<
@@ -505,6 +512,12 @@ export const refreshSoundCloudTokenValue = async (
     : false;
 
   if (configuredApiBase && isLoopbackRequest) {
+    console.info("Relaying SoundCloud OAuth refresh credential", {
+      credentialType: "oauth_refresh_token",
+      grantType: "refresh_token",
+      endpoint: "https://secure.soundcloud.com/oauth/token",
+      fingerprint: getSoundCloudCredentialFingerprint(refreshToken),
+    });
     const response = await fetch(`${configuredApiBase}/api/auth/refresh`, {
       method: "POST",
       headers: {

@@ -1,12 +1,21 @@
 import type { NextApiRequest, NextApiResponse } from "next";
-import { refreshSoundCloudAuth } from "../../server/auth/soundcloud";
+import {
+  getSoundCloudCredentialFingerprint,
+  refreshSoundCloudAuth,
+} from "../../server/auth/soundcloud";
 
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
   try {
-    console.log("Refreshing token...");
+    console.log("Refreshing SoundCloud OAuth token", {
+      credentialType: "oauth_refresh_token",
+      grantType: "refresh_token",
+      fingerprint: getSoundCloudCredentialFingerprint(
+        req.cookies.soundcloud_refresh_token,
+      ),
+    });
 
     const auth = await refreshSoundCloudAuth(req, res, {
       clearOnFailure: false,
