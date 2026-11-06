@@ -1,28 +1,17 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import puppeteer from "puppeteer"; // Back to standard puppeteer
 import axios from "axios";
-import fs from "fs";
-import path from "path";
-import os from "os";
 import {
   getRequestSoundCloudWebCredentials,
+  getStoredSoundCloudSession,
   requireSoundCloudAccessToken,
 } from "../../src/server/auth/soundcloud";
+import {
+  getPersonalDataCache,
+  setPersonalDataCache,
+} from "../../apps/backend/src/server/cache/personalData";
 
-const DISCOVER_CACHE_VERSION = 2;
 const DISCOVER_CACHE_TTL_MS = 15 * 60 * 1000;
-
-// 1. Setup local storage path (Works on Windows/Linux/Mac)
-const getStoragePath = () => {
-  const root =
-    process.env.APPDATA ||
-    (os.platform() === "darwin"
-      ? path.join(os.homedir(), "Library", "Preferences")
-      : os.homedir());
-  const dir = path.join(root, "soundcloudy");
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  return path.join(dir, "discover-cache.json");
-};
 
 export default async function handler(
   req: NextApiRequest,
@@ -32,21 +21,14 @@ export default async function handler(
   if (!token)
     return res.status(401).json({ error: "Not authenticated", sections: [] });
 
-  const cachePath = getStoragePath();
-
-  // 2. Check Local File Cache
-  if (fs.existsSync(cachePath)) {
-    const cached = JSON.parse(fs.readFileSync(cachePath, "utf-8"));
-    const cacheVersion = Number(cached?.version || 0);
-    const isFresh = Date.now() - cached.timestamp < DISCOVER_CACHE_TTL_MS;
-    const canUseDiskCache =
-      process.env.NODE_ENV === "production" &&
-      cacheVersion === DISCOVER_CACHE_VERSION &&
-      isFresh;
-    if (canUseDiskCache) {
-      console.log("Returning data from local disk cache");
-      return res.status(200).json(cached.data);
-    }
+  const sessionState = await getStoredSoundCloudSession(req, res);
+  const userId = sessionState?.session?.userId || sessionState?.tokens?.userId;
+  const cachedDiscover = userId
+    ? getPersonalDataCache<{ sections: any[] }>(userId, "discover")
+    : undefined;
+  if (cachedDiscover) {
+    console.log("Returning personalized Discover data from cache");
+    return res.status(200).json(cachedDiscover);
   }
 
   const sections: any[] = [];
@@ -225,16 +207,16 @@ export default async function handler(
       }
     }
 
-    // 5. Save to Local Cache
+    // Cache the personalized response per user.
     const result = { sections };
-    fs.writeFileSync(
-      cachePath,
-      JSON.stringify({
-        version: DISCOVER_CACHE_VERSION,
-        data: result,
-        timestamp: Date.now(),
-      }),
-    );
+    if (userId) {
+      setPersonalDataCache(
+        userId,
+        "discover",
+        result,
+        DISCOVER_CACHE_TTL_MS,
+      );
+    }
 
     return res.status(200).json(result);
   } catch (error: any) {
