@@ -1,6 +1,9 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { getConnectStore } from "../../../apps/backend/src/server/auth/connectStore";
-import { establishSoundCloudSession } from "../../../apps/backend/src/server/auth/soundcloud";
+import {
+  establishSoundCloudSession,
+  getSoundCloudCredentialFingerprint,
+} from "../../../apps/backend/src/server/auth/soundcloud";
 import { getAuthCallbackUrl } from "../../../apps/backend/src/server/http/origin";
 
 export default async function handler(
@@ -60,6 +63,16 @@ export default async function handler(
       });
       return;
     }
+
+    console.info("SoundCloud OAuth authorization-code exchange succeeded", {
+      accessTokenFingerprint: getSoundCloudCredentialFingerprint(
+        tokenJson.access_token,
+      ),
+      refreshTokenFingerprint: getSoundCloudCredentialFingerprint(
+        tokenJson.refresh_token,
+      ),
+      expiresIn: tokenJson.expires_in ?? null,
+    });
 
     if (stateKey && store.has(stateKey) && storedEntry?.mode === "bridge") {
       store.set(stateKey, {
