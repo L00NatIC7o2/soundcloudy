@@ -2,8 +2,10 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import axios from "axios";
 import {
   getRequestSoundCloudAuthContext,
+  getStoredSoundCloudSession,
   refreshSoundCloudAuth,
 } from "../../src/server/auth/soundcloud";
+import { invalidatePersonalDataCache } from "../../apps/backend/src/server/cache/personalData";
 
 export default async function handler(
   req: NextApiRequest,
@@ -24,6 +26,10 @@ export default async function handler(
     console.warn("/api/like called without token cookie");
     return res.status(401).json({ error: "Not authenticated" });
   }
+
+  const sessionState = await getStoredSoundCloudSession(req, res);
+  const currentUserId =
+    sessionState?.session?.userId || sessionState?.tokens?.userId;
 
   if (!trackId) {
     return res.status(400).json({ error: "Missing trackId" });
@@ -53,6 +59,7 @@ export default async function handler(
 
   try {
     await sendLikeRequest(auth);
+    if (currentUserId) invalidatePersonalDataCache(currentUserId);
     return res.json({ success: true });
   } catch (error: any) {
     if (error?.response?.status === 401) {
@@ -64,6 +71,7 @@ export default async function handler(
       if (refreshedAuth) {
         try {
           await sendLikeRequest(refreshedAuth);
+          if (currentUserId) invalidatePersonalDataCache(currentUserId);
           return res.json({ success: true });
         } catch (retryError: any) {
           error = retryError;

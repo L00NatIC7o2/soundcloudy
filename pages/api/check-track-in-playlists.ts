@@ -6,6 +6,10 @@ import {
   refreshSoundCloudAuth,
   type SoundCloudAuthContext,
 } from "../../src/server/auth/soundcloud";
+import {
+  getPersonalDataCache,
+  setPersonalDataCache,
+} from "../../apps/backend/src/server/cache/personalData";
 
 interface SoundCloudCollectionResponse<T = any> {
   collection?: T[];
@@ -74,6 +78,17 @@ export default async function handler(
     });
   }
 
+  const numericTrackId = Number(trackId);
+  const numericPlaylistId = playlistId ? Number(playlistId) : null;
+  const cacheKey = `track-membership:${numericTrackId}:${numericPlaylistId || "all"}`;
+  const cachedMembership = getPersonalDataCache<{
+    isInAnyPlaylist: boolean;
+    playlistsWithTrack: any[];
+  }>(currentUserId, cacheKey);
+  if (cachedMembership) {
+    return res.json(cachedMembership);
+  }
+
   try {
     const trackIdNum = parseInt(trackId as string);
 
@@ -90,10 +105,12 @@ export default async function handler(
           return track?.id === trackIdNum;
         });
 
-        return res.json({
+        const result = {
           isInAnyPlaylist: isInPlaylist,
           playlistsWithTrack: isInPlaylist ? [{ id: targetPlaylistId }] : [],
-        });
+        };
+        setPersonalDataCache(currentUserId, cacheKey, result, 2 * 60 * 1000);
+        return res.json(result);
       } catch (error) {
         if ((error as any)?.response?.status === 429) {
           throw error;
@@ -143,10 +160,12 @@ export default async function handler(
       }
     }
 
-    res.json({
+    const result = {
       isInAnyPlaylist: playlistsWithTrack.length > 0,
       playlistsWithTrack,
-    });
+    };
+    setPersonalDataCache(currentUserId, cacheKey, result, 2 * 60 * 1000);
+    res.json(result);
   } catch (error: any) {
     if ([401, 403].includes(error.response?.status)) {
       try {

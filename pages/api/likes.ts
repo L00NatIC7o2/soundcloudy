@@ -6,6 +6,12 @@ import {
   refreshSoundCloudAuth,
   type SoundCloudAuthContext,
 } from "../../src/server/auth/soundcloud";
+import {
+  getPersonalDataCache,
+  setPersonalDataCache,
+} from "../../apps/backend/src/server/cache/personalData";
+
+const PERSONAL_CACHE_TTL_MS = 2 * 60 * 1000;
 
 const fetchLikesResponse = async (
   endpoint: string,
@@ -48,8 +54,23 @@ export default async function handler(
     console.warn("Likes route missing userId, falling back to /me likes");
   }
 
+  const limitNum = Math.min(parseInt(limit as string) || 50, 50);
+  const cachePage =
+    typeof nextHref === "string" && nextHref.length > 0
+      ? nextHref
+      : `first:${limitNum}`;
+  const cachedLikes = currentUserId
+    ? getPersonalDataCache<{
+        likes: any[];
+        hasMore: boolean;
+        nextHref: string | null;
+      }>(currentUserId, `likes:${cachePage}`)
+    : undefined;
+  if (cachedLikes) {
+    return res.json(cachedLikes);
+  }
+
   try {
-    const limitNum = Math.min(parseInt(limit as string) || 50, 50);
     const endpoint =
       typeof nextHref === "string" && nextHref.length > 0
         ? nextHref
@@ -154,7 +175,16 @@ export default async function handler(
         ? response.data.next_href
         : null;
 
-    res.json({ likes, hasMore: Boolean(next), nextHref: next });
+    const result = { likes, hasMore: Boolean(next), nextHref: next };
+    if (currentUserId) {
+      setPersonalDataCache(
+        currentUserId,
+        `likes:${cachePage}`,
+        result,
+        PERSONAL_CACHE_TTL_MS,
+      );
+    }
+    res.json(result);
   } catch (error: any) {
     console.error(
       "Likes error:",

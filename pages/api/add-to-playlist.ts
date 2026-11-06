@@ -2,9 +2,11 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import axios from "axios";
 import {
   getRequestSoundCloudAuthContext,
+  getStoredSoundCloudSession,
   refreshSoundCloudAuth,
   type SoundCloudAuthContext,
 } from "../../src/server/auth/soundcloud";
+import { invalidatePersonalDataCache } from "../../apps/backend/src/server/cache/personalData";
 
 const fetchPlaylist = async (
   playlistId: string | number,
@@ -49,6 +51,10 @@ export default async function handler(
     console.warn("add-to-playlist: missing auth token");
     return res.status(401).json({ error: "Not authenticated" });
   }
+
+  const sessionState = await getStoredSoundCloudSession(req, res);
+  const currentUserId =
+    sessionState?.session?.userId || sessionState?.tokens?.userId;
 
   try {
     // Step 1: Get existing playlist to preserve existing tracks
@@ -102,6 +108,7 @@ export default async function handler(
     await updatePlaylist(playlistId, payload, auth);
 
     console.log("add-to-playlist success");
+    if (currentUserId) invalidatePersonalDataCache(currentUserId);
     res.json({ success: true });
   } catch (error: any) {
     console.error(
@@ -118,4 +125,3 @@ export default async function handler(
     res.status(status).json({ error: message });
   }
 }
-

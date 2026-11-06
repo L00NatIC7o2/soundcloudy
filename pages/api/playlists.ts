@@ -5,6 +5,12 @@ import {
   getStoredSoundCloudSession,
   refreshSoundCloudAuth,
 } from "../../src/server/auth/soundcloud";
+import {
+  getPersonalDataCache,
+  setPersonalDataCache,
+} from "../../apps/backend/src/server/cache/personalData";
+
+const PERSONAL_CACHE_TTL_MS = 5 * 60 * 1000;
 
 export default async function handler(
   req: NextApiRequest,
@@ -32,6 +38,14 @@ export default async function handler(
 
   if (!currentUserId) {
     return res.status(401).json({ error: "Not authenticated", playlists: [] });
+  }
+
+  const cachedPlaylists = getPersonalDataCache<any[]>(
+    currentUserId,
+    "owned-playlists",
+  );
+  if (cachedPlaylists) {
+    return res.json({ playlists: cachedPlaylists });
   }
 
   try {
@@ -90,6 +104,12 @@ export default async function handler(
 
     const playlists = (response.data.collection || response.data || []).filter(
       (playlist: any) => Number(playlist?.user?.id) === currentUserId,
+    );
+    setPersonalDataCache(
+      currentUserId,
+      "owned-playlists",
+      playlists,
+      PERSONAL_CACHE_TTL_MS,
     );
     res.json({ playlists });
   } catch (error: any) {

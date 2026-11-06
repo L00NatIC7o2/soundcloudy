@@ -5,6 +5,12 @@ import {
   getStoredSoundCloudSession,
   refreshSoundCloudAuth,
 } from "../../src/server/auth/soundcloud";
+import {
+  getPersonalDataCache,
+  setPersonalDataCache,
+} from "../../apps/backend/src/server/cache/personalData";
+
+const PERSONAL_CACHE_TTL_MS = 3 * 60 * 1000;
 
 const normalizeLikedPlaylistItems = (data: any) => {
   const rawItems = Array.isArray(data)
@@ -54,6 +60,14 @@ export default async function handler(
     console.warn(
       "Likes playlists route missing userId, falling back to /me likes",
     );
+  } else {
+    const cachedPlaylists = getPersonalDataCache<any[]>(
+      currentUserId,
+      "liked-playlists",
+    );
+    if (cachedPlaylists) {
+      return res.json({ playlists: cachedPlaylists });
+    }
   }
 
   try {
@@ -113,7 +127,16 @@ export default async function handler(
       }
     }
 
-    res.json({ playlists: normalizeLikedPlaylistItems(response.data) });
+    const playlists = normalizeLikedPlaylistItems(response.data);
+    if (currentUserId) {
+      setPersonalDataCache(
+        currentUserId,
+        "liked-playlists",
+        playlists,
+        PERSONAL_CACHE_TTL_MS,
+      );
+    }
+    res.json({ playlists });
   } catch (error: any) {
     console.error(
       "Likes playlists error:",

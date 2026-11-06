@@ -2,9 +2,11 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import axios from "axios";
 import {
   getRequestSoundCloudAuthContext,
+  getStoredSoundCloudSession,
   refreshSoundCloudAuth,
   type SoundCloudAuthContext,
 } from "../../src/server/auth/soundcloud";
+import { invalidatePersonalDataCache } from "../../apps/backend/src/server/cache/personalData";
 
 const fetchPlaylist = async (
   playlistId: string | number,
@@ -58,6 +60,10 @@ export default async function handler(
     return res.status(401).json({ error: "Not authenticated" });
   }
 
+  const sessionState = await getStoredSoundCloudSession(req, res);
+  const currentUserId =
+    sessionState?.session?.userId || sessionState?.tokens?.userId;
+
   try {
     let playlistResponse;
     try {
@@ -86,6 +92,7 @@ export default async function handler(
 
     await updatePlaylist(playlistId, filteredTracks, auth);
 
+    if (currentUserId) invalidatePersonalDataCache(currentUserId);
     res.json({ success: true });
   } catch (error: any) {
     res.status(error.response?.status || 500).json({
@@ -93,4 +100,3 @@ export default async function handler(
     });
   }
 }
-

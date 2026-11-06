@@ -2,9 +2,16 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import axios from "axios";
 import {
   getRequestSoundCloudAuthContext,
+  getStoredSoundCloudSession,
   refreshSoundCloudAuth,
   type SoundCloudAuthContext,
 } from "../../../src/server/auth/soundcloud";
+import {
+  getPersonalDataCache,
+  setPersonalDataCache,
+} from "../../../apps/backend/src/server/cache/personalData";
+
+const PERSONAL_CACHE_TTL_MS = 5 * 60 * 1000;
 
 const fetchCurrentUser = async (auth: SoundCloudAuthContext) => {
   return await axios.get("https://api.soundcloud.com/me", {
@@ -32,6 +39,17 @@ export default async function handler(
 
   if (!id || typeof id !== "string") {
     return res.status(400).json({ error: "Missing playlist ID" });
+  }
+
+  const sessionState = await getStoredSoundCloudSession(req, res);
+  const currentUserId =
+    sessionState?.session?.userId || sessionState?.tokens?.userId;
+  const cacheKey = `playlist:${id}`;
+  const cachedPlaylist = currentUserId
+    ? getPersonalDataCache<{ tracks: any[] }>(currentUserId, cacheKey)
+    : undefined;
+  if (cachedPlaylist) {
+    return res.json(cachedPlaylist);
   }
 
   try {
@@ -93,7 +111,16 @@ export default async function handler(
       }
     }
 
-    res.json({ tracks: response.data.tracks || [] });
+    const result = { tracks: response.data.tracks || [] };
+    if (currentUserId) {
+      setPersonalDataCache(
+        currentUserId,
+        cacheKey,
+        result,
+        PERSONAL_CACHE_TTL_MS,
+      );
+    }
+    res.json(result);
   } catch (error: any) {
     console.error(
       "Playlist error:",

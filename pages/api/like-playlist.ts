@@ -2,8 +2,10 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import axios from "axios";
 import {
   getRequestSoundCloudAuthContext,
+  getStoredSoundCloudSession,
   refreshSoundCloudAuth,
 } from "../../src/server/auth/soundcloud";
+import { invalidatePersonalDataCache } from "../../apps/backend/src/server/cache/personalData";
 
 export default async function handler(
   req: NextApiRequest,
@@ -27,6 +29,10 @@ export default async function handler(
   if (!auth) {
     return res.status(401).json({ error: "Not authenticated" });
   }
+
+  const sessionState = await getStoredSoundCloudSession(req, res);
+  const currentUserId =
+    sessionState?.session?.userId || sessionState?.tokens?.userId;
 
   try {
     try {
@@ -80,6 +86,7 @@ export default async function handler(
       }
     }
 
+    if (currentUserId) invalidatePersonalDataCache(currentUserId);
     res.json({ success: true });
   } catch (error: any) {
     console.error(
@@ -106,4 +113,3 @@ export default async function handler(
     });
   }
 }
-
