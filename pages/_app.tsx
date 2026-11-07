@@ -1,6 +1,7 @@
 import type { AppProps } from "next/app";
 import Head from "next/head";
 import { useEffect, useMemo, useState } from "react";
+import "@fontsource-variable/ibm-plex-sans";
 import "../src/styles/main.css";
 import { getClientApiBase, getClientAppBase } from "../src/lib/runtimeConfig";
 

@@ -23,6 +23,11 @@ type DiscoverSection = {
   items: SectionItem[];
 };
 
+const DISCOVER_CLIENT_TTL_MS = 5 * 60 * 1000;
+const DISCOVER_EMPTY_TTL_MS = 20 * 1000;
+const discoverClientCache = new Map<string, { sections: DiscoverSection[]; expiresAt: number }>();
+const discoverRequests = new Map<string, Promise<DiscoverSection[]>>();
+
 const normalizeItem = (item: any): SectionItem | null => {
   if (!item || typeof item !== "object") return null;
 
@@ -132,7 +137,62 @@ const normalizeSection = (section: any): DiscoverSection | null => {
   };
 };
 
+const requestDiscoverSections = async (): Promise<DiscoverSection[]> => {
+  let data: any = null;
+  const electronAPI = (window as any).electronAPI;
+  if (typeof electronAPI?.fetchDiscoverSelections === "function") {
+    try {
+      const electronData = await electronAPI.fetchDiscoverSelections();
+      if (Array.isArray(electronData?.sections) && electronData.sections.length) {
+        data = electronData;
+      } else if (electronData?.error) {
+        console.warn("Electron Discover session request failed:", electronData.error);
+      }
+    } catch (error) {
+      console.warn("Electron Discover request failed:", error);
+    }
+  }
+
+  if (!data) {
+    const response = await fetch("/api/discover", { cache: "no-store" });
+    data = await response.json();
+    if (!response.ok) throw new Error(data?.error || "Could not load Discover.");
+  }
+
+  return Array.isArray(data?.sections)
+    ? data.sections
+        .map((section: any) => normalizeSection(section))
+        .filter((section: DiscoverSection | null): section is DiscoverSection => Boolean(section))
+    : [];
+};
+
+const getDiscoverSections = (userKey: string) => {
+  const existing = discoverRequests.get(userKey);
+  if (existing) return existing;
+
+  const request = requestDiscoverSections()
+    .then((sections) => {
+      discoverClientCache.delete(userKey);
+      discoverClientCache.set(userKey, {
+        sections,
+        expiresAt: Date.now() + (sections.length ? DISCOVER_CLIENT_TTL_MS : DISCOVER_EMPTY_TTL_MS),
+      });
+      while (discoverClientCache.size > 8) {
+        const oldestKey = discoverClientCache.keys().next().value;
+        if (oldestKey === undefined) break;
+        discoverClientCache.delete(oldestKey);
+      }
+      return sections;
+    })
+    .finally(() => {
+      if (discoverRequests.get(userKey) === request) discoverRequests.delete(userKey);
+    });
+  discoverRequests.set(userKey, request);
+  return request;
+};
+
 export default function HomePage({
+  userId,
   onTrackClick,
   onTrackContextMenu,
   onCardPlayClick,
@@ -149,6 +209,7 @@ export default function HomePage({
   onNext,
   onTrackEnd,
 }: {
+  userId?: string | number | null;
   onTrackClick: (
     track: any,
     source: "playlist" | "search" | "search-related",
@@ -237,54 +298,35 @@ export default function HomePage({
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
+    const userKey = userId === undefined || userId === null ? null : String(userId);
+    const cached = userKey ? discoverClientCache.get(userKey) : undefined;
+    if (cached) setDiscoverSections(cached.sections);
+    setLoading(!cached);
 
-    const loadDiscover = async () => {
-      try {
-        let data: any = null;
-        const electronAPI = (window as any).electronAPI;
-        if (typeof electronAPI?.fetchDiscoverSelections === "function") {
-          try {
-            const electronData = await electronAPI.fetchDiscoverSelections();
-            if (Array.isArray(electronData?.sections) && electronData.sections.length) {
-              data = electronData;
-            } else if (electronData?.error) {
-              console.warn("Electron Discover session request failed:", electronData.error);
-            }
-          } catch (error) {
-            console.warn("Electron Discover request failed:", error);
-          }
-        }
+    if (cached && cached.expiresAt > Date.now()) {
+      setLoading(false);
+      return () => {
+        cancelled = true;
+      };
+    }
 
-        if (!data) {
-          const response = await fetch("/api/discover", { cache: "no-store" });
-          data = await response.json();
-        }
-
-        if (data.sections && Array.isArray(data.sections)) {
-          const normalizedSections = data.sections
-            .map((section: any) => normalizeSection(section))
-            .filter(
-              (section: DiscoverSection | null): section is DiscoverSection =>
-                Boolean(section),
-            );
-          if (!cancelled) setDiscoverSections(normalizedSections);
-        } else {
-          if (!cancelled) setDiscoverSections([]);
-        }
-      } catch (error) {
+    const load = userKey ? getDiscoverSections(userKey) : requestDiscoverSections();
+    void load
+      .then((sections) => {
+        if (!cancelled) setDiscoverSections(sections);
+      })
+      .catch((error) => {
         console.error("Error fetching discover data:", error);
-        if (!cancelled) setDiscoverSections([]);
-      } finally {
+        if (!cancelled && !cached) setDiscoverSections([]);
+      })
+      .finally(() => {
         if (!cancelled) setLoading(false);
-      }
-    };
+      });
 
-    void loadDiscover();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [userId]);
 
   const handleItemClick = (item: SectionItem, trackList: SectionItem[]) => {
     if (item.kind === "track") {

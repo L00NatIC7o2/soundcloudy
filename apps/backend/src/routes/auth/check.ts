@@ -12,6 +12,10 @@ export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
+  const getSessionUserId = async () => {
+    const state = await getStoredSoundCloudSession(req, res);
+    return state?.session?.userId || state?.tokens?.userId || null;
+  };
   try {
     let auth = await getRequestSoundCloudAuthContext(req, res);
 
@@ -33,13 +37,13 @@ export default async function handler(
     });
 
     try {
-      await axios.get("https://api.soundcloud.com/me", {
+      const meResponse = await axios.get("https://api.soundcloud.com/me", {
         headers: { Authorization: auth.headerValue },
         timeout: 5000,
       });
 
       console.log("Auth check passed - token still valid");
-      res.json({ authenticated: true });
+      res.json({ authenticated: true, userId: meResponse.data?.id || await getSessionUserId() });
       return;
     } catch (error: any) {
       if (error.response?.status !== 401) {
@@ -90,13 +94,13 @@ export default async function handler(
         .json({ error: "Token expired - please log in again" });
     }
 
-    await axios.get("https://api.soundcloud.com/me", {
+    const meResponse = await axios.get("https://api.soundcloud.com/me", {
       headers: { Authorization: auth.headerValue },
       timeout: 5000,
     });
 
     console.log("Token refreshed successfully - expires in: 3599");
-    res.json({ authenticated: true });
+    res.json({ authenticated: true, userId: meResponse.data?.id || await getSessionUserId() });
   } catch (error: any) {
     if (error.response?.status === 429) {
       const retryAfter = error.response.headers?.["retry-after"];
@@ -106,6 +110,7 @@ export default async function handler(
       return res.status(429).json({
         error: "SoundCloud is rate limiting requests. Please try again shortly.",
         transient: true,
+        userId: await getSessionUserId(),
       });
     }
 

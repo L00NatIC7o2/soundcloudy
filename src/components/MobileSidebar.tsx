@@ -6,6 +6,7 @@ interface MobileSidebarProps {
   onOpenLikes: () => void;
   onOpenLibrary: () => void;
   onOpenNewReleases: () => void;
+  onOpenSettings: () => void;
   onOpenPlaylist: (playlist: any) => void;
   onLogout: () => void;
   getPlaylistCover: (playlist: any) => string;
@@ -19,6 +20,7 @@ export default function MobileSidebar({
   onOpenLikes,
   onOpenLibrary,
   onOpenNewReleases,
+  onOpenSettings,
   onOpenPlaylist,
   onLogout,
   getPlaylistCover,
@@ -83,6 +85,20 @@ export default function MobileSidebar({
                 decoding="async"
               />
               <span className="mobile-sidebar-nav-label">New</span>
+            </button>
+            <button
+              type="button"
+              className="mobile-sidebar-nav-item"
+              onClick={onOpenSettings}
+            >
+              <img
+                src="https://img.icons8.com/parakeet-line/48/settings.png"
+                alt=""
+                className="mobile-sidebar-nav-icon"
+                loading="lazy"
+                decoding="async"
+              />
+              <span className="mobile-sidebar-nav-label">Settings</span>
             </button>
           </nav>
         </section>

@@ -10,6 +10,7 @@ import {
 } from "react";
 import { useRouter } from "next/router";
 import Player from "../src/components/Player";
+import SettingsView, { type AppTheme } from "../src/components/SettingsView";
 import PlaylistMenu from "../src/components/PlaylistMenu";
 import MobilePlaylistSheet from "../src/components/MobilePlaylistSheet";
 import MobileSidebar from "../src/components/MobileSidebar";
@@ -63,11 +64,15 @@ export default function Home() {
   const [currentTrack, setCurrentTrack] = useState<any>(null);
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [authenticatedUserId, setAuthenticatedUserId] = useState<string | number | null>(null);
   const [authChecking, setAuthChecking] = useState(true);
   const [startupRateLimited, setStartupRateLimited] = useState(false);
   const [viewingLikes, setViewingLikes] = useState(false);
   const [viewingProfile, setViewingProfile] = useState(false);
   const [userProfile, setUserProfile] = useState<any>(null);
+  const [editingProfileTrack, setEditingProfileTrack] = useState<{ id: string; title: string } | null>(null);
+  const [savingProfileTrackId, setSavingProfileTrackId] = useState<string | null>(null);
+  const [profileEditMessage, setProfileEditMessage] = useState("");
   const [profilePlaylists, setProfilePlaylists] = useState<any[]>([]);
   const [profileAlbums, setProfileAlbums] = useState<any[]>([]);
   const [profileReposts, setProfileReposts] = useState<any[]>([]);
@@ -94,6 +99,70 @@ export default function Home() {
     "open" | "opening" | "minimizing" | "minimized" | "closing"
   >("open");
   const [viewingHomepage, setViewingHomepage] = useState(true);
+  const [viewingSettings, setViewingSettings] = useState(false);
+  const [autoplayNext, setAutoplayNext] = useState(true);
+  const [crossfadeEnabled, setCrossfadeEnabled] = useState(false);
+  const [crossfadeDuration, setCrossfadeDuration] = useState(5);
+  const [appTheme, setAppTheme] = useState<AppTheme>("default");
+  const [equalizer, setEqualizer] = useState({
+    enabled: false,
+    low: 0,
+    lowMid: 0,
+    mid: 0,
+    highMid: 0,
+    high: 0,
+  });
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
+  const [audioSpectrum, setAudioSpectrum] = useState<number[]>([]);
+  useEffect(() => {
+    try {
+      const stored = JSON.parse(
+        window.localStorage.getItem("soundcloudy_settings") || "{}",
+      );
+      if (typeof stored.autoplayNext === "boolean") {
+        setAutoplayNext(stored.autoplayNext);
+      }
+      if (typeof stored.crossfadeEnabled === "boolean") {
+        setCrossfadeEnabled(stored.crossfadeEnabled);
+      }
+      if (Number.isFinite(stored.crossfadeDuration)) {
+        setCrossfadeDuration(Math.max(1, Math.min(12, stored.crossfadeDuration)));
+      }
+      if (["default", "midnight", "light"].includes(stored.theme)) {
+        setAppTheme(stored.theme);
+      }
+      if (stored.equalizer && typeof stored.equalizer === "object") {
+        setEqualizer((current) => ({
+          enabled: Boolean(stored.equalizer.enabled),
+          low: Number.isFinite(stored.equalizer.low ?? stored.equalizer.bass)
+            ? Math.max(-12, Math.min(12, stored.equalizer.low ?? stored.equalizer.bass))
+            : current.low,
+          lowMid: Number.isFinite(stored.equalizer.lowMid)
+            ? Math.max(-12, Math.min(12, stored.equalizer.lowMid))
+            : current.lowMid,
+          mid: Number.isFinite(stored.equalizer.mid)
+            ? Math.max(-12, Math.min(12, stored.equalizer.mid))
+            : current.mid,
+          highMid: Number.isFinite(stored.equalizer.highMid)
+            ? Math.max(-12, Math.min(12, stored.equalizer.highMid))
+            : current.highMid,
+          high: Number.isFinite(stored.equalizer.high ?? stored.equalizer.treble)
+            ? Math.max(-12, Math.min(12, stored.equalizer.high ?? stored.equalizer.treble))
+            : current.high,
+        }));
+      }
+    } catch {
+      // Use defaults if local settings are missing or malformed.
+    }
+    setSettingsLoaded(true);
+  }, []);
+  useEffect(() => {
+    if (!settingsLoaded) return;
+    window.localStorage.setItem(
+      "soundcloudy_settings",
+      JSON.stringify({ autoplayNext, crossfadeEnabled, crossfadeDuration, theme: appTheme, equalizer }),
+    );
+  }, [settingsLoaded, autoplayNext, crossfadeEnabled, crossfadeDuration, appTheme, equalizer]);
   const [viewingLibrary, setViewingLibrary] = useState(false);
   const [libraryPlaylists, setLibraryPlaylists] = useState<any[]>([]);
   const [libraryLoading, setLibraryLoading] = useState(false);
@@ -180,6 +249,10 @@ export default function Home() {
     useState<string>("");
   const [appBackgroundTransitioning, setAppBackgroundTransitioning] =
     useState(false);
+  const [crossfadeBackground, setCrossfadeBackground] = useState<{
+    artwork: string;
+    durationSeconds: number;
+  } | null>(null);
   const [isWindowMaximized, setIsWindowMaximized] = useState(false);
   const [playerState, setPlayerState] = useState<{
     trackId: number | null;
@@ -199,9 +272,11 @@ export default function Home() {
   const historyScrollTriggerRef = useRef<HTMLDivElement>(null);
   const pendingScrollRef = useRef<number | null>(null);
   const scrollRafRef = useRef<number | null>(null);
-  const playlistCacheRef = useRef<{ data: any[]; timestamp: number } | null>(
-    null,
-  );
+  const playlistCacheRef = useRef<{
+    userId: string | number | null;
+    data: any[];
+    timestamp: number;
+  } | null>(null);
   const playlistCoverFetchRef = useRef<Set<number>>(new Set());
   const requestedTrackLikesRef = useRef<Set<number>>(new Set());
   const requestedTrackPlaylistMembershipRef = useRef<Set<number>>(new Set());
@@ -397,6 +472,20 @@ export default function Home() {
       currentTrack?.user?.avatar_url?.replace?.("-large", "-t500x500") ||
       "";
 
+    if (
+      nextBackground &&
+      crossfadeBackground?.artwork === nextBackground
+    ) {
+      if (appBackgroundTimerRef.current !== null) {
+        window.clearTimeout(appBackgroundTimerRef.current);
+        appBackgroundTimerRef.current = null;
+      }
+      setAppBackgroundPrevious("");
+      setAppBackgroundCurrent(nextBackground);
+      setAppBackgroundTransitioning(false);
+      return;
+    }
+
     if (!nextBackground || nextBackground === appBackgroundCurrent) {
       return;
     }
@@ -420,7 +509,7 @@ export default function Home() {
         appBackgroundTimerRef.current = null;
       }, 1200);
     }
-  }, [currentTrack?.id, appBackgroundCurrent, currentTrack]);
+  }, [currentTrack?.id, appBackgroundCurrent, currentTrack, crossfadeBackground]);
 
   useEffect(() => {
     if (!viewingTrack || !currentTrack?.id) return;
@@ -613,7 +702,11 @@ export default function Home() {
   const fetchPlaylists = useCallback(
     async (forceRefresh = false) => {
       // Check cache first
-      if (!forceRefresh && playlistCacheRef.current) {
+      if (
+        !forceRefresh &&
+        playlistCacheRef.current &&
+        playlistCacheRef.current.userId === authenticatedUserId
+      ) {
         const now = Date.now();
         if (now - playlistCacheRef.current.timestamp < CACHE_DURATION) {
           setPlaylists(playlistCacheRef.current.data);
@@ -631,6 +724,7 @@ export default function Home() {
 
         // Update cache
         playlistCacheRef.current = {
+          userId: authenticatedUserId,
           data: sorted,
           timestamp: Date.now(),
         };
@@ -638,7 +732,7 @@ export default function Home() {
         console.error("Failed to fetch playlists:", error);
       }
     },
-    [CACHE_DURATION],
+    [CACHE_DURATION, authenticatedUserId],
   );
 
   // Fetch last played track
@@ -859,6 +953,7 @@ export default function Home() {
       return;
     }
     if (navigate) {
+      setViewingSettings(false);
       setSelectedPlaylist(resolvedPlaylist);
       setViewingHomepage(false);
       setViewingLibrary(false);
@@ -932,6 +1027,7 @@ export default function Home() {
 
   // Handle likes click
   const handleLikesClick = async (skipHistory = false) => {
+    setViewingSettings(false);
     setViewingLikes(true);
     setViewingHomepage(false);
     setViewingLibrary(false);
@@ -975,6 +1071,7 @@ export default function Home() {
   };
 
   const handleLibraryClick = async (skipHistory = false) => {
+    setViewingSettings(false);
     setViewingLibrary(true);
     setViewingHomepage(false);
     setSelectedPlaylist(null);
@@ -1075,6 +1172,7 @@ export default function Home() {
 
   // Handle profile click
   const handleProfileClick = async (skipHistory = false) => {
+    setViewingSettings(false);
     setViewingProfile(true);
     setViewingHomepage(false);
     setViewingLibrary(false);
@@ -1153,6 +1251,8 @@ export default function Home() {
   };
 
   const openHomepage = () => {
+    forceScrollToTop();
+    setViewingSettings(false);
     setViewingHomepage(true);
     setSelectedPlaylist(null);
     setViewingLikes(false);
@@ -1164,22 +1264,44 @@ export default function Home() {
     pushTabState("homepage");
   };
 
+  const openSettingsView = () => {
+    setViewingSettings(true);
+    setViewingHomepage(false);
+    setSelectedPlaylist(null);
+    setViewingLikes(false);
+    setViewingProfile(false);
+    setViewingArtist(false);
+    setViewingLibrary(false);
+    setSelectedArtist(null);
+    setUserProfile(null);
+    forceScrollToTop();
+    pushTabState("settings");
+  };
+
   const openProfileView = () => {
+    forceScrollToTop();
+    setViewingSettings(false);
     setViewingHomepage(false);
     void handleProfileClick();
   };
 
   const openLikesView = () => {
+    forceScrollToTop();
+    setViewingSettings(false);
     setViewingHomepage(false);
     void handleLikesClick();
   };
 
   const openLibraryView = () => {
+    forceScrollToTop();
+    setViewingSettings(false);
     setViewingHomepage(false);
     void handleLibraryClick();
   };
 
   const openNewReleasesView = () => {
+    forceScrollToTop();
+    setViewingSettings(false);
     setViewingHomepage(false);
     setSelectedPlaylist(null);
     setViewingLikes(false);
@@ -1361,6 +1483,7 @@ export default function Home() {
     skipHistory = false,
     skipScroll = false,
   ) => {
+    setViewingSettings(false);
     setViewingArtist(true);
     setViewingHomepage(false);
     setViewingLibrary(false);
@@ -2346,6 +2469,31 @@ export default function Home() {
     }
   };
 
+  const playSelectedPlaylist = (shuffle = false) => {
+    if (!selectedPlaylist || playlistTracks.length === 0) return;
+    const nextQueue = playlistTracks.map((track: any) => ({
+      ...track,
+      playlistTitle: selectedPlaylist.title || null,
+      playlistId: selectedPlaylist.id || null,
+    }));
+    if (shuffle) {
+      for (let index = nextQueue.length - 1; index > 0; index -= 1) {
+        const swapIndex = Math.floor(Math.random() * (index + 1));
+        [nextQueue[index], nextQueue[swapIndex]] = [
+          nextQueue[swapIndex],
+          nextQueue[index],
+        ];
+      }
+    }
+    setQueue(nextQueue);
+    setQueueSource("playlist");
+    setCurrentQueueIndex(0);
+    setCurrentPlaylistId(selectedPlaylist.id || null);
+    setCurrentPlaylistTitle(selectedPlaylist.title || null);
+    setIsShuffle(shuffle);
+    setCurrentTrack(nextQueue[0]);
+  };
+
   useEffect(() => {
     const trackIds = [
       ...(tracks || []),
@@ -2586,6 +2734,13 @@ export default function Home() {
     // fallback: do nothing
   };
 
+  const handleCrossfadeNext = useCallback((trackId: string) => {
+    const nextIndex = queue.findIndex((track: any) => String(track?.id) === trackId);
+    if (nextIndex < 0) return;
+    setCurrentQueueIndex(nextIndex);
+    setCurrentTrack(queue[nextIndex]);
+  }, [queue]);
+
   // Handle previous track
   const handlePrevious = () => {
     if (currentQueueIndex > 0) {
@@ -2701,6 +2856,8 @@ export default function Home() {
     const checkAuth = async () => {
       try {
         const res = await fetch("/api/auth/check", { credentials: "include" });
+        const authData = await res.json().catch(() => ({}));
+        setAuthenticatedUserId(authData?.userId ?? null);
         if (res.status === 429) {
           console.warn(
             "SoundCloud rate limited startup checks; deferring data loads",
@@ -2712,6 +2869,7 @@ export default function Home() {
         if (!res.ok) {
           router.push("/login");
           setIsAuthenticated(false);
+          setAuthenticatedUserId(null);
         } else {
           setIsAuthenticated(true);
           fetchPlaylists();
@@ -2723,6 +2881,7 @@ export default function Home() {
         console.error("Auth check failed:", error);
         router.push("/login");
         setIsAuthenticated(false);
+        setAuthenticatedUserId(null);
       } finally {
         setAuthChecking(false);
       }
@@ -2830,6 +2989,8 @@ export default function Home() {
       await fetch("/api/auth/logout", { method: "POST" });
     } finally {
       setIsAuthenticated(false);
+      setAuthenticatedUserId(null);
+      playlistCacheRef.current = null;
       router.push("/login");
     }
   };
@@ -2993,7 +3154,20 @@ export default function Home() {
       pendingScrollRef.current =
         typeof state.scrollY === "number" ? state.scrollY : 0;
       switch (state.tab) {
+        case "settings":
+          setViewingSettings(true);
+          setViewingHomepage(false);
+          setSelectedPlaylist(null);
+          setViewingLikes(false);
+          setViewingProfile(false);
+          setViewingArtist(false);
+          setViewingLibrary(false);
+          setSelectedArtist(null);
+          setUserProfile(null);
+          forceScrollToTop();
+          break;
         case "homepage":
+          setViewingSettings(false);
           setViewingHomepage(true);
           setSelectedPlaylist(null);
           setViewingLikes(false);
@@ -3003,18 +3177,22 @@ export default function Home() {
           setUserProfile(null);
           break;
         case "profile":
+          setViewingSettings(false);
           setViewingHomepage(false);
           handleProfileClick(true);
           break;
         case "library":
+          setViewingSettings(false);
           setViewingHomepage(false);
           handleLibraryClick(true);
           break;
         case "likes":
+          setViewingSettings(false);
           setViewingHomepage(false);
           handleLikesClick(true);
           break;
         case "playlist":
+          setViewingSettings(false);
           setViewingHomepage(false);
           if (state.playlistId) {
             const playlist = playlists.find((p) => p.id === state.playlistId);
@@ -3022,6 +3200,7 @@ export default function Home() {
           }
           break;
         case "artist":
+          setViewingSettings(false);
           setViewingHomepage(false);
           if (state.artistId) {
             handleArtistClick({ id: state.artistId }, true, true);
@@ -3265,6 +3444,62 @@ export default function Home() {
   };
 
   const displayTitle = viewingLikes ? "Liked Songs" : selectedPlaylist?.title;
+  const selectedPlaylistQueueActive = Boolean(
+    selectedPlaylist &&
+      (Number(currentPlaylistId) === Number(selectedPlaylist.id) ||
+        Number(currentTrack?.playlistId) === Number(selectedPlaylist.id)),
+  );
+  const selectedPlaylistIsPlaying =
+    selectedPlaylistQueueActive && playerState.isPlaying;
+  const selectedPlaylistShuffleActive = selectedPlaylistQueueActive && isShuffle;
+  const handlePlaylistHeaderShuffleClick = () => {
+    if (!selectedPlaylist) return;
+    if (!selectedPlaylistQueueActive || !currentTrack) {
+      playSelectedPlaylist(true);
+      return;
+    }
+
+    const playlistOrder = playlistTracks.map((track: any) => ({
+      ...track,
+      playlistTitle: selectedPlaylist.title || null,
+      playlistId: selectedPlaylist.id || null,
+    }));
+    const currentIndex = playlistOrder.findIndex(
+      (track: any) => String(track.id) === String(currentTrack?.id),
+    );
+    const turnShuffleOn = !selectedPlaylistShuffleActive;
+    const current = currentIndex >= 0
+      ? playlistOrder[currentIndex]
+      : {
+          ...currentTrack,
+          playlistTitle: selectedPlaylist.title || null,
+          playlistId: selectedPlaylist.id || null,
+        };
+    let remaining = turnShuffleOn
+      ? playlistOrder.filter(
+          (_track: any, index: number) => index !== currentIndex,
+        )
+      : currentIndex >= 0
+        ? playlistOrder.slice(currentIndex + 1)
+        : playlistOrder;
+
+    if (turnShuffleOn) {
+      for (let index = remaining.length - 1; index > 0; index -= 1) {
+        const swapIndex = Math.floor(Math.random() * (index + 1));
+        [remaining[index], remaining[swapIndex]] = [
+          remaining[swapIndex],
+          remaining[index],
+        ];
+      }
+    }
+
+    setQueue([current, ...remaining]);
+    setQueueSource("playlist");
+    setCurrentPlaylistId(selectedPlaylist.id || null);
+    setCurrentPlaylistTitle(selectedPlaylist.title || null);
+    setCurrentQueueIndex(0);
+    setIsShuffle(turnShuffleOn);
+  };
   const displayCover = viewingLikes
     ? getLikedSongsCover()
     : selectedPlaylist
@@ -3366,7 +3601,62 @@ export default function Home() {
                 decoding="async"
               />
               <div className="track-row-info">
-                <div className="track-row-title">{resolvedTrack.title}</div>
+                {viewingProfile && rowKeyPrefix === "profile-track" && editingProfileTrack?.id === String(resolvedTrack.id) ? (
+                  <form
+                    className="profile-track-edit"
+                    onClick={(event) => event.stopPropagation()}
+                    onSubmit={async (event) => {
+                      event.preventDefault();
+                      if (!editingProfileTrack.title.trim()) return;
+                      const trackId = String(resolvedTrack.id);
+                      setSavingProfileTrackId(trackId);
+                      setProfileEditMessage("");
+                      try {
+                        const response = await fetch(`/api/track/${encodeURIComponent(trackId)}/update`, {
+                          method: "PATCH",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ title: editingProfileTrack.title }),
+                        });
+                        const result = await response.json();
+                        if (!response.ok) throw new Error(result.error || "Could not update the track title.");
+                        const updatedTrack = result.track;
+                        setPlaylistTracks((items) => items.map((item) => String(item.id) === trackId ? { ...item, ...updatedTrack } : item));
+                        if (String(currentTrack?.id) === trackId) setCurrentTrack((item: any) => ({ ...item, ...updatedTrack }));
+                        setEditingProfileTrack(null);
+                        setProfileEditMessage("Track title updated on SoundCloud.");
+                      } catch (error: any) {
+                        setProfileEditMessage(error?.message || "Could not update the track title.");
+                      } finally {
+                        setSavingProfileTrackId(null);
+                      }
+                    }}
+                  >
+                    <input
+                      autoFocus
+                      maxLength={200}
+                      value={editingProfileTrack.title}
+                      aria-label="Track title"
+                      onChange={(event) => setEditingProfileTrack({ ...editingProfileTrack, title: event.target.value })}
+                    />
+                    <button type="submit" disabled={savingProfileTrackId === String(resolvedTrack.id)}>
+                      {savingProfileTrackId === String(resolvedTrack.id) ? "Saving…" : "Save"}
+                    </button>
+                    <button type="button" onClick={() => setEditingProfileTrack(null)}>Cancel</button>
+                  </form>
+                ) : (
+                  <div className="track-row-title">{resolvedTrack.title}</div>
+                )}
+                {viewingProfile && rowKeyPrefix === "profile-track" && !editingProfileTrack && (
+                  <button
+                    type="button"
+                    className="profile-track-edit-trigger"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setProfileEditMessage("");
+                      setEditingProfileTrack({ id: String(resolvedTrack.id), title: resolvedTrack.title || "" });
+                    }}
+                  >Edit title</button>
+                )}
                 <div
                   className="track-row-artist"
                   onClick={(e) => {
@@ -3566,7 +3856,18 @@ export default function Home() {
     <div
       className={`app-shell app-shell-reactive ${appBackgroundTransitioning ? "app-shell-transitioning" : ""} ${playerState.isPlaying ? "app-shell-playing" : ""}`}
       style={appShellStyle}
+      data-theme={appTheme}
     >
+      <div
+        aria-hidden="true"
+        className={`app-crossfade-background ${crossfadeBackground ? "active" : ""}`}
+        style={{
+          backgroundImage: crossfadeBackground
+            ? `linear-gradient(rgba(0, 0, 0, 0.64), rgba(0, 0, 0, 0.64)), url("${crossfadeBackground.artwork}")`
+            : "none",
+          transitionDuration: `${crossfadeBackground?.durationSeconds || 0.2}s`,
+        }}
+      />
       <aside
         className={`sidebar ${sidebarExpanded ? "expanded" : "collapsed"} ${isMobileViewport ? "sidebar-mobile-paged" : ""}`}
         onTouchStart={
@@ -3662,6 +3963,17 @@ export default function Home() {
                 {sidebarExpanded && (
                   <span className="nav-label">Newly Released</span>
                 )}
+              </button>
+
+              <button className="nav-item" onClick={openSettingsView}>
+                <img
+                  src="https://img.icons8.com/parakeet-line/48/settings.png"
+                  alt="Settings"
+                  className="nav-icon-img"
+                  loading="lazy"
+                  decoding="async"
+                />
+                {sidebarExpanded && <span className="nav-label">Settings</span>}
               </button>
             </nav>
 
@@ -3808,6 +4120,7 @@ export default function Home() {
             onOpenLikes={openLikesView}
             onOpenLibrary={openLibraryView}
             onOpenNewReleases={openNewReleasesView}
+            onOpenSettings={openSettingsView}
             onOpenPlaylist={(playlist) => {
               setViewingHomepage(false);
               handlePlaylistClick(playlist);
@@ -4128,8 +4441,23 @@ export default function Home() {
       </div>
 
       <main className="main-area" ref={mainAreaRef}>
-        {viewingHomepage ? (
+        {viewingSettings ? (
+          <SettingsView
+            autoplayNext={autoplayNext}
+            onAutoplayNextChange={setAutoplayNext}
+            crossfadeEnabled={crossfadeEnabled}
+            onCrossfadeEnabledChange={setCrossfadeEnabled}
+            crossfadeDuration={crossfadeDuration}
+            onCrossfadeDurationChange={setCrossfadeDuration}
+            theme={appTheme}
+            onThemeChange={setAppTheme}
+            equalizer={equalizer}
+            onEqualizerChange={setEqualizer}
+            spectrum={audioSpectrum}
+          />
+        ) : viewingHomepage ? (
           <HomePage
+            userId={authenticatedUserId}
             onTrackClick={handleTrackClick}
             onTrackContextMenu={handleContextMenu}
             onCardPlayClick={handleCardPlayClick}
@@ -4144,7 +4472,9 @@ export default function Home() {
             currentTrack={currentTrack}
             onPrevious={handlePrevious}
             onNext={handleNext}
-            onTrackEnd={handleNext}
+            onTrackEnd={() => {
+              if (autoplayNext) handleNext();
+            }}
           />
         ) : selectedPlaylist ||
           viewingLikes ||
@@ -4518,6 +4848,105 @@ export default function Home() {
                     />
                     <div className="playlist-header-main">
                       <h2 className="playlist-header-title">{displayTitle}</h2>
+                      {selectedPlaylist?.user && (
+                        <button
+                          type="button"
+                          className="playlist-header-artist"
+                          onClick={() => handleArtistClick(selectedPlaylist.user)}
+                        >
+                          <img
+                            src={
+                              selectedPlaylist.user.avatar_url?.replace(
+                                "-large",
+                                "-t200x200",
+                              ) || "/placeholder.png"
+                            }
+                            alt=""
+                          />
+                          <span>{selectedPlaylist.user.username || "Unknown artist"}</span>
+                        </button>
+                      )}
+                      {selectedPlaylist && (
+                        <div className="playlist-header-actions">
+                          <button
+                            type="button"
+                            className="player-btn player-btn-play playlist-banner-control"
+                            onClick={() => {
+                              if (selectedPlaylistQueueActive) {
+                                window.dispatchEvent(new CustomEvent("player-toggle"));
+                              } else {
+                                playSelectedPlaylist(false);
+                              }
+                            }}
+                            disabled={playlistTracks.length === 0}
+                            aria-label={`${selectedPlaylistIsPlaying ? "Pause" : "Play"} ${displayTitle}`}
+                            title={selectedPlaylistIsPlaying ? "Pause" : "Play"}
+                          >
+                            {selectedPlaylistIsPlaying ? (
+                              <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                                <rect x="6" y="4" width="4" height="16" />
+                                <rect x="14" y="4" width="4" height="16" />
+                              </svg>
+                            ) : (
+                              <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                                <polygon points="5 3 19 12 5 21 5 3" />
+                              </svg>
+                            )}
+                          </button>
+                          <button
+                            type="button"
+                            className={`player-shuffle playlist-banner-control ${
+                              selectedPlaylistShuffleActive ? "active" : ""
+                            }`}
+                            onClick={handlePlaylistHeaderShuffleClick}
+                            disabled={playlistTracks.length === 0}
+                            aria-label={`Shuffle ${displayTitle}`}
+                            title="Shuffle"
+                          >
+                            <svg
+                              width="20"
+                              height="20"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              aria-hidden="true"
+                            >
+                              <polyline points="16 3 21 3 21 8" />
+                              <line x1="4" y1="20" x2="21" y2="3" />
+                              <polyline points="21 16 21 21 16 21" />
+                              <line x1="15" y1="15" x2="21" y2="21" />
+                              <line x1="4" y1="4" x2="9" y2="9" />
+                            </svg>
+                          </button>
+                          <button
+                            type="button"
+                            className={`player-like ${
+                              likedPlaylists[Number(selectedPlaylist.id)] ? "liked" : ""
+                            } playlist-banner-like playlist-banner-control`}
+                            onClick={() => togglePlaylistLike(Number(selectedPlaylist.id))}
+                            aria-pressed={Boolean(
+                              likedPlaylists[Number(selectedPlaylist.id)],
+                            )}
+                            aria-label={
+                              likedPlaylists[Number(selectedPlaylist.id)]
+                                ? "Unlike playlist"
+                                : "Like playlist"
+                            }
+                            title={
+                              likedPlaylists[Number(selectedPlaylist.id)]
+                                ? "Unlike playlist"
+                                : "Like playlist"
+                            }
+                          >
+                            <img
+                              src="https://img.icons8.com/parakeet-line/48/like.png"
+                              alt=""
+                              className="player-like-icon"
+                            />
+                          </button>
+                        </div>
+                      )}
                     </div>
                     <div className="playlist-track-search playlist-track-search-banner">
                       <input
@@ -4748,6 +5177,11 @@ export default function Home() {
                         />
                       </div>
                     </div>
+                    {viewingProfile && profileEditMessage && (
+                      <p className="profile-edit-message" role="status">
+                        {profileEditMessage}
+                      </p>
+                    )}
                     {filteredProfileTracks.length === 0 ? (
                       <div className="playlist-loading">No tracks found.</div>
                     ) : (
@@ -5691,7 +6125,9 @@ export default function Home() {
         currentTrack={currentTrack}
         onPrevious={handlePrevious}
         onNext={handleNext}
-        onTrackEnd={handleNext}
+        onTrackEnd={() => {
+          if (autoplayNext) handleNext();
+        }}
         onArtistClick={handleArtistClick}
         onPlaylistClick={handlePlayerPlaylistClick}
         onTrackOpen={handleTrackPageOpen}
@@ -5705,6 +6141,16 @@ export default function Home() {
         onQueueSelect={handleTrackClick}
         isShuffle={isShuffle}
         onShuffleChange={setIsShuffle}
+        equalizer={equalizer}
+        crossfadeEnabled={crossfadeEnabled && autoplayNext}
+        crossfadeDuration={crossfadeDuration}
+        onCrossfadeNext={handleCrossfadeNext}
+        onCrossfadeVisualChange={(artwork, durationSeconds = 0.2) => {
+          setCrossfadeBackground(
+            artwork ? { artwork, durationSeconds } : null,
+          );
+        }}
+        onAudioSpectrum={viewingSettings ? setAudioSpectrum : undefined}
       />
     </div>
   );
