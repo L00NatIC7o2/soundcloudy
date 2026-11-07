@@ -65,9 +65,9 @@
   },
   "build": {
     "appId": "com.soundcloudy.app",
-    "productName": "Soundcloudy",
+    "productName": "Soundcloudy v2",
     "directories": {
-      "output": "E:\\soundcloudy-build"
+      "output": "D:\\soundcloudy-build-v2"
     },
     "files": [
       "apps/desktop/electron/**/*",
