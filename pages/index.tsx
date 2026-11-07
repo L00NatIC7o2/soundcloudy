@@ -831,7 +831,11 @@ export default function Home() {
 
           // Continue with the resolved playlist
           playlist = {
+            ...playlist,
             ...resolvedData,
+            kind: resolvedData.kind || playlist.kind,
+            urn: resolvedData.urn || playlist.urn,
+            permalink_url: resolvedData.permalink_url || playlist.permalink_url,
             needsResolution: false,
           };
         } else {
@@ -864,15 +868,34 @@ export default function Home() {
       setPlaylistTracks([]);
     }
     try {
-      const response = await fetch(`/api/playlist/${resolvedPlaylist.id}`);
+      const isSystemPlaylist =
+        resolvedPlaylist.kind === "system-playlist" ||
+        resolvedPlaylist.urn?.startsWith("soundcloud:system-playlists:");
+      const query = isSystemPlaylist
+        ? `?kind=system-playlist&urn=${encodeURIComponent(
+            resolvedPlaylist.urn || resolvedPlaylist.id,
+          )}`
+        : "";
+      const response = await fetch(
+        `/api/playlist/${encodeURIComponent(String(resolvedPlaylist.id))}${query}`,
+      );
       const data = await response.json();
       const fallbackTracks = Array.isArray(resolvedPlaylist?.tracks)
         ? resolvedPlaylist.tracks
         : [];
-      const tracks =
+      const candidateTracks =
         Array.isArray(data.tracks) && data.tracks.length > 0
           ? data.tracks
           : fallbackTracks;
+      const seenTrackIds = new Set<string>();
+      const tracks = candidateTracks.filter((track: any) => {
+        const id = track?.urn || track?.id;
+        if (id === undefined || id === null) return true;
+        const key = String(id);
+        if (seenTrackIds.has(key)) return false;
+        seenTrackIds.add(key);
+        return true;
+      });
       if (navigate) {
         setPlaylistTracks(tracks);
       }

@@ -1184,7 +1184,10 @@ const Player = memo(function Player({
           await new Promise<void>((resolve, reject) => {
             hls.once(Hls.Events.MANIFEST_PARSED, () => resolve());
             hls.once(Hls.Events.ERROR, (_event, data) => {
-              if (data.fatal) reject(new Error(data.details || "HLS stream failed to load"));
+              if (data.fatal) {
+                const reason = typeof data.reason === "string" ? `: ${data.reason}` : "";
+                reject(new Error(`${data.details || "HLS stream failed to load"}${reason}`));
+              }
             });
           });
         } else if (
@@ -2439,7 +2442,7 @@ const Player = memo(function Player({
                 <div className="player-queue-section-label">Listening History</div>
                 {historyItems.map((track, index) => (
                   <button
-                    key={`history-${track.id || index}`}
+                    key={`history-${track.id ?? "unknown"}-${track.played_at || track.playedAt || index}-${index}`}
                     type="button"
                     className="player-queue-item player-queue-item-history"
                     onClick={() => handleQueueItemSelect(track, "history")}

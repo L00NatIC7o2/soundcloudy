@@ -9,60 +9,13 @@ import {
   getPersonalDataCache,
   setPersonalDataCache,
 } from "../../apps/backend/src/server/cache/personalData";
+import { getSoundCloudWebClientId } from "../../src/server/soundcloud/webClientId";
 
 const DISCOVER_CACHE_TTL_MS = 15 * 60 * 1000;
 const FALLBACK_CLIENT_ID = "BecG5WJDDxYMffAfWcjJleNqrGyJyZhI";
 const FALLBACK_APP_VERSION = "1770366292";
-const CLIENT_ID_TTL_MS = 60 * 60 * 1000;
 const SOUNDcloud_USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:128.0) Gecko/20100101 Firefox/128.0";
-let cachedClientId: { value: string; expiresAt: number } | null = null;
-let clientIdRequest: Promise<string> | null = null;
-
-const discoverCurrentClientId = async () => {
-  if (cachedClientId && cachedClientId.expiresAt > Date.now()) {
-    return cachedClientId.value;
-  }
-  if (clientIdRequest) return clientIdRequest;
-
-  clientIdRequest = (async () => {
-    const homepage = await axios.get<string>("https://soundcloud.com", {
-      headers: { "User-Agent": SOUNDcloud_USER_AGENT },
-      responseType: "text",
-      timeout: 15000,
-    });
-    const assetUrls = [
-      ...homepage.data.matchAll(
-        /src=["'](https:\/\/a-v2\.sndcdn\.com\/assets\/[^"']+\.js)["']/g,
-      ),
-    ].map((match) => match[1]);
-
-    for (const assetUrl of assetUrls) {
-      try {
-        const asset = await axios.get<string>(assetUrl, {
-          headers: { "User-Agent": SOUNDcloud_USER_AGENT },
-          responseType: "text",
-          timeout: 12000,
-        });
-        const match = asset.data.match(/client_id\s*:\s*["']([^"']+)["']/);
-        if (match?.[1]) {
-          cachedClientId = {
-            value: match[1],
-            expiresAt: Date.now() + CLIENT_ID_TTL_MS,
-          };
-          return match[1];
-        }
-      } catch {
-        // Continue past any stale or unavailable asset bundle.
-      }
-    }
-    throw new Error("Could not find SoundCloud's current web client ID");
-  })().finally(() => {
-    clientIdRequest = null;
-  });
-
-  return clientIdRequest;
-};
 
 const fetchPersonalizedV2 = async (
   endpoint: string,
@@ -170,7 +123,7 @@ export default async function handler(
     FALLBACK_CLIENT_ID;
   let clientId = fallbackClientId;
   try {
-    clientId = await discoverCurrentClientId();
+    clientId = await getSoundCloudWebClientId(fallbackClientId);
   } catch (error: any) {
     console.warn("Could not refresh SoundCloud web client ID:", error.message);
   }

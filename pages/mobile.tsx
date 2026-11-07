@@ -275,7 +275,10 @@ export default function MobilePage() {
         await new Promise<void>((resolve, reject) => {
           hls.once(Hls.Events.MANIFEST_PARSED, () => resolve());
           hls.once(Hls.Events.ERROR, (_event, data) => {
-            if (data.fatal) reject(new Error(data.details || "HLS stream failed to load"));
+            if (data.fatal) {
+              const reason = typeof data.reason === "string" ? `: ${data.reason}` : "";
+              reject(new Error(`${data.details || "HLS stream failed to load"}${reason}`));
+            }
           });
         });
       } else if (audioRef.current.canPlayType("application/vnd.apple.mpegurl")) {

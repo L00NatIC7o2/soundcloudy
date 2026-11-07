@@ -22,8 +22,21 @@ type DiscoverSection = {
 const normalizeItem = (item: any): SectionItem | null => {
   if (!item || typeof item !== "object") return null;
 
-  if (item.kind && (item.title || item.user?.username || item.username)) {
-    return item;
+  const permalinkUrl = String(item.permalink_url || item.permalink || "");
+  const permalinkLooksLikeTrack =
+    /^https?:\/\/soundcloud\.com\//i.test(permalinkUrl) &&
+    !/\/sets\//i.test(permalinkUrl);
+  const hasTrackPayload =
+    Boolean(item.media?.transcodings?.length) ||
+    Boolean(item.track_authorization) ||
+    (typeof item.duration === "number" &&
+      !Number.isFinite(item.track_count) &&
+      !Array.isArray(item.tracks)) ||
+    (item.kind === "playlist" &&
+      typeof item.duration === "number" &&
+      permalinkLooksLikeTrack);
+  if (item.kind === "track" || hasTrackPayload) {
+    return { ...item, kind: "track" };
   }
 
   if (item.track) {
@@ -51,6 +64,7 @@ const normalizeItem = (item: any): SectionItem | null => {
     return normalizeItem({
       ...item.album,
       kind: item.album.kind || "playlist",
+      is_album: true,
     });
   }
 
@@ -73,6 +87,10 @@ const normalizeItem = (item: any): SectionItem | null => {
     return normalizeItem(item.collection[0]);
   }
 
+  if (item.kind && (item.title || item.user?.username || item.username)) {
+    return item;
+  }
+
   return null;
 };
 
@@ -87,9 +105,21 @@ const normalizeSection = (section: any): DiscoverSection | null => {
         ? section.collection
         : [];
 
-  const items = sourceItems
+  const normalizedItems = sourceItems
     .map((item: any) => normalizeItem(item))
     .filter((item: SectionItem | null): item is SectionItem => Boolean(item));
+  const isRecentlyPlayed = /recently played/i.test(section.title || section.name || "");
+  const seenItems = new Set<string>();
+  const items = normalizedItems.filter((item) => {
+    const id = isRecentlyPlayed ? item.id ?? item.urn : item.urn || item.id;
+    if (id === undefined || id === null) return true;
+    const key = isRecentlyPlayed
+      ? String(id)
+      : `${item.kind || "item"}:${String(id)}`;
+    if (seenItems.has(key)) return false;
+    seenItems.add(key);
+    return true;
+  });
 
   if (!items.length) return null;
 

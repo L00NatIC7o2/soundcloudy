@@ -26,7 +26,7 @@ export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
-  const { id } = req.query;
+  const { id, kind, urn } = req.query;
   let auth = await getRequestSoundCloudAuthContext(req, res);
 
   if (!auth) {
@@ -41,10 +41,23 @@ export default async function handler(
     return res.status(400).json({ error: "Missing playlist ID" });
   }
 
+  const resourceKind = Array.isArray(kind) ? kind[0] : kind;
+  const systemPlaylistUrn = Array.isArray(urn) ? urn[0] : urn;
+  const isSystemPlaylist =
+    resourceKind === "system-playlist" ||
+    id.startsWith("soundcloud:system-playlists:") ||
+    Boolean(systemPlaylistUrn?.startsWith("soundcloud:system-playlists:"));
+  const providedUrn = systemPlaylistUrn || id;
+  const resourceId = isSystemPlaylist
+    ? providedUrn
+    : providedUrn.startsWith("soundcloud:playlists:")
+      ? providedUrn
+      : `soundcloud:playlists:${providedUrn}`;
+
   const sessionState = await getStoredSoundCloudSession(req, res);
   const currentUserId =
     sessionState?.session?.userId || sessionState?.tokens?.userId;
-  const cacheKey = `playlist:${id}`;
+  const cacheKey = `${isSystemPlaylist ? "system-playlist" : "playlist"}:${resourceId}`;
   const cachedPlaylist = currentUserId
     ? getPersonalDataCache<{ tracks: any[] }>(currentUserId, cacheKey)
     : undefined;
@@ -54,11 +67,15 @@ export default async function handler(
 
   try {
     let response;
+    const playlistUrl = isSystemPlaylist
+      ? `https://api.soundcloud.com/system-playlists/${encodeURIComponent(resourceId)}`
+      : `https://api.soundcloud.com/playlists/${encodeURIComponent(resourceId)}`;
     try {
-      response = await axios.get(`https://api.soundcloud.com/playlists/${id}`, {
+      response = await axios.get(playlistUrl, {
         headers: {
           Authorization: auth.headerValue,
         },
+        params: isSystemPlaylist ? { access: "playable,preview" } : undefined,
         timeout: 10000,
       });
     } catch (error: any) {
@@ -83,10 +100,11 @@ export default async function handler(
         }
         auth = refreshedAuth;
         try {
-          response = await axios.get(`https://api.soundcloud.com/playlists/${id}`, {
+          response = await axios.get(playlistUrl, {
             headers: {
               Authorization: refreshedAuth.headerValue,
             },
+            params: isSystemPlaylist ? { access: "playable,preview" } : undefined,
             timeout: 10000,
           });
         } catch (retryError: any) {
@@ -111,7 +129,13 @@ export default async function handler(
       }
     }
 
-    const result = { tracks: response.data.tracks || [] };
+    const result = {
+      tracks: Array.isArray(response.data?.tracks)
+        ? response.data.tracks
+        : Array.isArray(response.data?.collection)
+          ? response.data.collection
+          : [],
+    };
     if (currentUserId) {
       setPersonalDataCache(
         currentUserId,
@@ -127,11 +151,14 @@ export default async function handler(
       error.response?.status,
       error.response?.data,
       error.message,
+      { resourceType: isSystemPlaylist ? "system-playlist" : "playlist", resourceId },
     );
 
     res.status(error.response?.status || 500).json({
       error: "Failed to fetch playlist",
       tracks: [],
+      resourceType: isSystemPlaylist ? "system-playlist" : "playlist",
+      resourceUrn: resourceId,
     });
   }
 }

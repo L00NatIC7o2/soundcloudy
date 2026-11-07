@@ -6,6 +6,7 @@ import {
   refreshSoundCloudAuth,
   type SoundCloudAuthContext,
 } from "../../src/server/auth/soundcloud";
+import { getSoundCloudWebClientId } from "../../src/server/soundcloud/webClientId";
 
 type Transcoding = {
   url?: string;
@@ -21,65 +22,15 @@ type V2Track = {
   track_authorization?: string;
 };
 
-const CLIENT_ID_TTL_MS = 60 * 60 * 1000;
 const STREAM_URL_TTL_MS = 45 * 1000;
-let cachedClientId: { value: string; expiresAt: number } | null = null;
-let clientIdRequest: Promise<string> | null = null;
 const streamUrlCache = new Map<string, { url: string; expiresAt: number }>();
 const streamUrlRequests = new Map<string, Promise<string>>();
-
-const discoverWebClientId = async (): Promise<string> => {
-  if (cachedClientId && cachedClientId.expiresAt > Date.now()) {
-    return cachedClientId.value;
-  }
-  if (clientIdRequest) return clientIdRequest;
-
-  clientIdRequest = (async () => {
-    const userAgent =
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:128.0) Gecko/20100101 Firefox/128.0";
-    const homepage = await axios.get<string>("https://soundcloud.com", {
-      headers: { "User-Agent": userAgent },
-      timeout: 15000,
-      responseType: "text",
-    });
-    const assetUrls = [
-      ...homepage.data.matchAll(
-        /src=["'](https:\/\/a-v2\.sndcdn\.com\/assets\/[^"']+\.js)["']/g,
-      ),
-    ].map((match) => match[1]);
-
-    for (const assetUrl of assetUrls) {
-      try {
-        const asset = await axios.get<string>(assetUrl, {
-          headers: { "User-Agent": userAgent },
-          timeout: 12000,
-          responseType: "text",
-        });
-        const match = asset.data.match(/client_id\s*:\s*["']([^"']+)["']/);
-        if (match?.[1]) {
-          cachedClientId = {
-            value: match[1],
-            expiresAt: Date.now() + CLIENT_ID_TTL_MS,
-          };
-          return match[1];
-        }
-      } catch {
-        // A single stale asset should not prevent checking the remaining assets.
-      }
-    }
-    throw new Error("Could not find SoundCloud's current web client ID");
-  })().finally(() => {
-    clientIdRequest = null;
-  });
-
-  return clientIdRequest;
-};
 
 const resolveV2Stream = async (
   trackId: string,
   auth: SoundCloudAuthContext,
 ): Promise<string> => {
-  const clientId = await discoverWebClientId();
+  const clientId = await getSoundCloudWebClientId();
   const userAgent =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:128.0) Gecko/20100101 Firefox/128.0";
   const trackUrl = `https://api-v2.soundcloud.com/tracks/${encodeURIComponent(trackId)}`;
@@ -129,20 +80,46 @@ const resolveV2Stream = async (
     throw error;
   }
 
-  const transcodings = (track.media?.transcodings || []).filter(
-    (item) => item.url && !item.snipped,
+  const transcodings = (track.media?.transcodings || []).filter((item) => item.url);
+  const protocol = (item: Transcoding) => item.format?.protocol?.toLowerCase();
+  const playableTranscodings = transcodings.filter((item) =>
+    ["hls", "progressive"].includes(protocol(item) || ""),
   );
-  const selected =
-    transcodings.find(
+  // Prefer full length streams, but some tracks only expose a snipped
+  // transcoding. Keep that as a last resort so those tracks can still play.
+  const fullLengthTranscodings = playableTranscodings.filter((item) => !item.snipped);
+  const selectTranscoding = (items: Transcoding[]) =>
+    items.find(
       (item) =>
-        item.format?.protocol === "hls" &&
-        /aac/i.test(`${item.preset || ""} ${item.format.mime_type || ""}`),
+        protocol(item) === "hls" &&
+        /aac/i.test(`${item.preset || ""} ${item.format?.mime_type || ""}`),
     ) ||
-    transcodings.find((item) => item.format?.protocol === "hls") ||
-    transcodings.find((item) => item.format?.protocol === "progressive");
+    items.find((item) => protocol(item) === "hls") ||
+    items.find((item) => protocol(item) === "progressive");
+  const selected = selectTranscoding(fullLengthTranscodings) ||
+    selectTranscoding(playableTranscodings);
 
   if (!selected?.url) {
-    const error: any = new Error("No playable SoundCloud v2 transcoding is available");
+    const encryptedProtocols = [...new Set(
+      transcodings
+        .map(protocol)
+        .filter((value): value is string => Boolean(value && /(?:cbc|ctr|encrypted)-.*hls/.test(value))),
+    )];
+    if (encryptedProtocols.length) {
+      const error: any = new Error(
+        "This track is only available through SoundCloud's DRM-protected stream, which this player cannot play.",
+      );
+      error.status = 403;
+      error.code = "DRM_PROTECTED";
+      error.protocols = encryptedProtocols;
+      throw error;
+    }
+    const availableProtocols = [...new Set(transcodings.map((item) => protocol(item) || "unknown"))];
+    const error: any = new Error(
+      availableProtocols.length
+        ? `SoundCloud returned no supported stream format (${availableProtocols.join(", ")})`
+        : "SoundCloud returned no stream transcodings for this track",
+    );
     error.status = 404;
     throw error;
   }
@@ -186,10 +163,41 @@ const resolveV2Stream = async (
     error.response = lastResolveError?.response;
     throw error;
   }
-  const finalUrl =
+  const resolvedUrl =
     resolved.request?.res?.responseUrl || resolved.config.url || transcodingUrl.toString();
+
+  if (/json/i.test(String(resolved.headers["content-type"] || ""))) {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    for await (const chunk of resolved.data as AsyncIterable<Buffer | string>) {
+      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      size += buffer.length;
+      if (size > 128 * 1024) {
+        resolved.data.destroy?.();
+        throw new Error("SoundCloud transcoding response was unexpectedly large");
+      }
+      chunks.push(buffer);
+    }
+
+    let body: any;
+    try {
+      body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    } catch {
+      throw new Error("SoundCloud returned invalid JSON while resolving the transcoding");
+    }
+    const mediaUrl = typeof body?.url === "string"
+      ? new URL(body.url, resolvedUrl).toString()
+      : typeof body?.location === "string"
+        ? new URL(body.location, resolvedUrl).toString()
+        : null;
+    if (!mediaUrl || !isAllowedSoundCloudMediaUrl(mediaUrl)) {
+      throw new Error("SoundCloud transcoding response did not contain a supported media URL");
+    }
+    return mediaUrl;
+  }
+
   resolved.data.destroy?.();
-  return finalUrl;
+  return resolvedUrl;
 };
 
 const getStreamUrl = async (trackId: string, auth: SoundCloudAuthContext) => {
@@ -289,8 +297,15 @@ const proxyMediaRequest = async (
     return res.status(502).json({ error: "SoundCloud redirected to an unsupported media host" });
   }
   if (upstream.status >= 400) {
+    const upstreamStatus = upstream.status;
+    const upstreamContentType = upstream.headers["content-type"] || null;
     upstream.data.destroy?.();
-    return res.status(upstream.status).json({ error: "SoundCloud media request failed" });
+    return res.status(upstreamStatus).json({
+      error: "SoundCloud media request failed",
+      stage: "upstream-media-response",
+      upstreamStatus,
+      contentType: upstreamContentType,
+    });
   }
 
   const contentType = String(upstream.headers["content-type"] || "");
@@ -312,7 +327,24 @@ const proxyMediaRequest = async (
       }
       chunks.push(buffer);
     }
-    const body = rewriteHlsManifest(Buffer.concat(chunks).toString("utf8"), resolvedUrl);
+    const rawManifest = Buffer.concat(chunks)
+      .toString("utf8")
+      .replace(/^\uFEFF/, "")
+      .trimStart();
+    if (!rawManifest.startsWith("#EXTM3U")) {
+      const preview = rawManifest.slice(0, 180).replace(/https?:\/\/[^\s"']+/g, "[upstream-url]");
+      console.error("SoundCloud HLS endpoint returned a non-manifest response:", {
+        host: new URL(resolvedUrl).hostname,
+        contentType,
+        preview,
+      });
+      return res.status(502).json({
+        error: "SoundCloud returned a non-HLS response for this track",
+        contentType: contentType || null,
+        preview,
+      });
+    }
+    const body = rewriteHlsManifest(rawManifest, resolvedUrl);
     res.setHeader("Content-Type", "application/vnd.apple.mpegurl; charset=utf-8");
     res.setHeader("Cache-Control", "no-store");
     return res.status(200).send(body);
@@ -352,7 +384,13 @@ export default async function handler(
       const status = error.response?.status || 502;
       console.error("SoundCloud media proxy request failed:", status, error.message);
       if (res.headersSent) return res.end();
-      return res.status(status).json({ error: "Unable to proxy SoundCloud media" });
+      return res.status(status).json({
+        error: "Unable to proxy SoundCloud media",
+        stage: "proxy-upstream-request",
+        upstreamStatus: error.response?.status || null,
+        upstreamMessage:
+          error.response?.data?.message || error.response?.data?.error || null,
+      });
     }
   }
 
@@ -388,6 +426,9 @@ export default async function handler(
     if (res.headersSent) return res.end();
     return res.status(status).json({
       error: providerMessage || "Failed to get stream",
+      ...(error.code === "DRM_PROTECTED"
+        ? { code: error.code, protocols: error.protocols }
+        : {}),
       stage: error.response?.config?.url?.includes("api-v2.soundcloud.com/tracks/")
         ? "v2 track lookup"
         : "transcoding resolution",
