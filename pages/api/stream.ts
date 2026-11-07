@@ -2,255 +2,163 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import axios from "axios";
 import {
   getRequestSoundCloudAuthContext,
+  getRequestSoundCloudWebCredentials,
   getSoundCloudAuthContext,
   refreshSoundCloudAuth,
   type SoundCloudAuthContext,
 } from "../../src/server/auth/soundcloud";
 
-const readStreamErrorMessage = async (
-  stream: NodeJS.ReadableStream,
-): Promise<string | null> => {
-  const chunks: Buffer[] = [];
-  let bytesRead = 0;
-  const maxBytes = 8192;
-
-  for await (const chunk of stream as AsyncIterable<Buffer | string>) {
-    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-    if (bytesRead < maxBytes) {
-      const remaining = maxBytes - bytesRead;
-      chunks.push(buffer.subarray(0, remaining));
-      bytesRead += Math.min(buffer.length, remaining);
-    }
-  }
-
-  try {
-    const body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
-    return typeof body?.message === "string"
-      ? body.message
-      : typeof body?.error === "string"
-        ? body.error
-        : null;
-  } catch {
-    return null;
-  }
+type Transcoding = {
+  url?: string;
+  preset?: string;
+  duration?: number;
+  snipped?: boolean;
+  format?: { protocol?: string; mime_type?: string };
 };
 
-const resolveStream = async (
+const DEFAULT_CLIENT_ID = "BecG5WJDDxYMffAfWcjJleNqrGyJyZhI";
+
+const resolveV2Stream = async (
   trackId: string,
-  auth: SoundCloudAuthContext,
-  req: NextApiRequest,
-  res: NextApiResponse,
+  auth: SoundCloudAuthContext | null,
+  clientId: string,
 ) => {
-  const { proxy } = req.query;
-
-  const trackResponse = await axios.get(
-    `https://api.soundcloud.com/tracks/${trackId}`,
-    {
-      headers: {
-        Authorization: auth.headerValue,
-      },
-      timeout: 10000,
-    },
-  );
-
-  const track = trackResponse.data;
-
-  if (track.access && track.access !== "playable") {
-    return res.status(403).json({
-      error: `Track access is ${track.access} (not playable)`,
-    });
-  }
-
-  if (!track.streamable) {
-    return res.status(403).json({
-      error: "Track is not streamable",
-    });
-  }
-
-  let finalStreamUrl = null;
+  const trackUrl = `https://api-v2.soundcloud.com/tracks/${encodeURIComponent(trackId)}`;
+  let track: any;
 
   try {
-    const streamsResponse = await axios.get(
-      `https://api.soundcloud.com/tracks/${trackId}/streams`,
-      {
-        headers: {
-          Authorization: auth.headerValue,
-        },
-        timeout: 10000,
-      },
-    );
-
-    const streams = streamsResponse.data || {};
-
-    if (
-      streams.http_mp3_128_url &&
-      !String(streams.http_mp3_128_url).includes("preview")
-    ) {
-      finalStreamUrl = streams.http_mp3_128_url;
-      console.log("Using http_mp3_128_url from /streams");
-    } else if (
-      streams.progressive &&
-      !String(streams.progressive).includes("preview")
-    ) {
-      finalStreamUrl = streams.progressive;
-      console.log("Using progressive stream from /streams");
-    } else if (streams.hls_mp3_128_url) {
-      finalStreamUrl = streams.hls_mp3_128_url;
-      console.log("Using hls_mp3_128_url from /streams");
-    }
+    const response = await axios.get(trackUrl, {
+      params: { client_id: clientId },
+      headers: auth ? { Authorization: auth.headerValue } : undefined,
+      timeout: 10000,
+    });
+    track = response.data;
   } catch (error: any) {
-    console.warn("/streams endpoint failed:", error.message);
-  }
-
-  if (!finalStreamUrl && track.stream_url) {
-    try {
-      const streamResponse = await axios.get(track.stream_url, {
-        headers: {
-          Authorization: auth.headerValue,
-        },
-        maxRedirects: 5,
-        validateStatus: (status) => status >= 200 && status < 400,
-      });
-
-      finalStreamUrl =
-        streamResponse.request.res.responseUrl || streamResponse.config.url;
-    } catch (error: any) {
-      console.warn("stream_url failed:", error.message);
-    }
-  }
-
-  if (!finalStreamUrl) {
-    try {
-      const streamResponse = await axios.get(
-        `https://api.soundcloud.com/tracks/${trackId}/stream`,
-        {
-          headers: {
-            Authorization: auth.headerValue,
-          },
-          maxRedirects: 5,
-          validateStatus: (status) => status >= 200 && status < 400,
-        },
-      );
-
-      finalStreamUrl =
-        streamResponse.request.res.responseUrl || streamResponse.config.url;
-    } catch (error: any) {
-      console.warn("Stream endpoint failed:", error.message);
-    }
-  }
-
-  if (!finalStreamUrl) {
-    console.error("No stream URL found");
-    return res.status(404).json({
-      error: "No stream URL available",
+    // Some tracks are only visible with the listener's OAuth credentials.
+    if (!auth || ![401, 403].includes(error.response?.status)) throw error;
+    const response = await axios.get(trackUrl, {
+      params: { client_id: clientId, oauth_token: auth.queryValue },
+      timeout: 10000,
     });
+    track = response.data;
   }
 
-  if (proxy === "1") {
-    const rangeHeader = req.headers.range;
-    const proxyResponse = await axios.get(finalStreamUrl, {
-      responseType: "stream",
-      headers: {
-        ...(rangeHeader ? { Range: rangeHeader } : {}),
-        Authorization: auth.headerValue,
-      },
-      validateStatus: (status) => status >= 200 && status < 500,
-    });
-
-    if (proxyResponse.status >= 400) {
-      const errorMessage = await readStreamErrorMessage(proxyResponse.data);
-      return res.status(proxyResponse.status).json({
-        error:
-          errorMessage ||
-          (proxyResponse.status === 403
-            ? "SoundCloud does not allow this track to be streamed."
-            : "SoundCloud could not provide this stream."),
-      });
-    }
-
-    const contentType = proxyResponse.headers["content-type"];
-    const contentLength = proxyResponse.headers["content-length"];
-    const acceptRanges = proxyResponse.headers["accept-ranges"];
-    const contentRange = proxyResponse.headers["content-range"];
-
-    if (contentType) res.setHeader("Content-Type", contentType);
-    if (contentLength) res.setHeader("Content-Length", contentLength);
-    if (acceptRanges) res.setHeader("Accept-Ranges", acceptRanges);
-    if (contentRange) res.setHeader("Content-Range", contentRange);
-
-    res.status(proxyResponse.status);
-    proxyResponse.data.pipe(res);
-    return;
+  if (track.access && track.access !== "playable") {
+    const error: any = new Error(`Track access is ${track.access} (not playable)`);
+    error.status = 403;
+    throw error;
   }
 
-  return res.status(200).json({ streamUrl: finalStreamUrl });
+  const transcodings: Transcoding[] = Array.isArray(track.media?.transcodings)
+    ? track.media.transcodings
+    : [];
+  const playable = transcodings.filter((item) => item.url && !item.snipped);
+  // Progressive MP3 works with the browser audio element and supports byte ranges.
+  // HLS is used when progressive audio is not offered for this track.
+  const selected =
+    playable.find(
+      (item) =>
+        item.format?.protocol === "progressive" &&
+        item.format?.mime_type?.startsWith("audio/"),
+    ) ||
+    playable.find((item) => item.format?.protocol === "progressive") ||
+    playable.find((item) => item.format?.protocol === "hls");
+
+  if (!selected?.url) {
+    const error: any = new Error("No playable SoundCloud v2 transcoding is available");
+    error.status = 404;
+    throw error;
+  }
+
+  const transcodingUrl = new URL(selected.url);
+  transcodingUrl.searchParams.set("client_id", clientId);
+  if (auth) transcodingUrl.searchParams.set("oauth_token", auth.queryValue);
+
+  const response = await axios.get(transcodingUrl.toString(), {
+    responseType: "stream",
+    headers: auth ? { Authorization: auth.headerValue } : undefined,
+    maxRedirects: 5,
+    timeout: 15000,
+    validateStatus: (status) => status >= 200 && status < 400,
+  });
+
+  const resolvedUrl =
+    response.request?.res?.responseUrl || response.config.url || transcodingUrl.toString();
+  response.data.destroy?.();
+  return resolvedUrl;
 };
 
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
-  res.setHeader(
-    "Cache-Control",
-    "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
-  );
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
   res.setHeader("Surrogate-Control", "no-store");
-  res.setHeader("ETag", "");
-  res.setHeader("Last-Modified", "0");
 
-  const { trackId } = req.query;
-  const overrideToken = process.env.SOUNDCLOUD_OAUTH_TOKEN;
-
+  const { trackId, proxy } = req.query;
   if (!trackId || typeof trackId !== "string") {
     return res.status(400).json({ error: "Missing trackId" });
   }
 
-  let auth = overrideToken ? getSoundCloudAuthContext(overrideToken) : await getRequestSoundCloudAuthContext(req, res);
+  const overrideToken = process.env.SOUNDCLOUD_OAUTH_TOKEN;
+  let auth = overrideToken
+    ? getSoundCloudAuthContext(overrideToken)
+    : await getRequestSoundCloudAuthContext(req, res);
+  const webCredentials = await getRequestSoundCloudWebCredentials(req, res);
+  const clientId = webCredentials?.clientId || process.env.SOUNDCLOUD_CLIENT_ID || DEFAULT_CLIENT_ID;
 
-  if (!auth && !overrideToken) {
-    auth = await refreshSoundCloudAuth(req, res);
-  }
-
-  if (!auth) {
-    return res.status(401).json({ error: "Not authenticated" });
-  }
+  if (!auth && !overrideToken) auth = await refreshSoundCloudAuth(req, res);
+  if (!auth) return res.status(401).json({ error: "Not authenticated" });
 
   try {
-    return await resolveStream(trackId, auth, req, res);
-  } catch (error: any) {
-    if (!overrideToken && error.response?.status === 401) {
-      try {
-        const refreshedAuth = await refreshSoundCloudAuth(req, res, {
-          force: true,
-        });
-        if (refreshedAuth) {
-          return await resolveStream(trackId, refreshedAuth, req, res);
-        }
-      } catch (refreshError: any) {
-        console.error(
-          "Stream refresh failed:",
-          refreshError.response?.data || refreshError.message,
-        );
-      }
+    let streamUrl: string;
+    try {
+      streamUrl = await resolveV2Stream(trackId, auth, clientId);
+    } catch (error: any) {
+      if (overrideToken || error.response?.status !== 401) throw error;
+      const refreshedAuth = await refreshSoundCloudAuth(req, res, { force: true });
+      if (!refreshedAuth) throw error;
+      auth = refreshedAuth;
+      streamUrl = await resolveV2Stream(trackId, auth, clientId);
     }
 
-    console.error(
-      "Stream error:",
-      error.response?.status,
-      error.response?.data || error.message,
-    );
+    if (proxy !== "1") return res.status(200).json({ streamUrl });
 
-    if (error.response?.status === 401) {
-      return res.status(401).json({
-        error: "Token expired",
+    const upstream = await axios.get(streamUrl, {
+      responseType: "stream",
+      headers: req.headers.range ? { Range: req.headers.range } : undefined,
+      timeout: 20000,
+      validateStatus: (status) => status >= 200 && status < 500,
+    });
+
+    if (upstream.status >= 400) {
+      upstream.data.destroy?.();
+      return res.status(upstream.status).json({
+        error: upstream.status === 403
+          ? "SoundCloud does not allow this track to be streamed."
+          : "SoundCloud could not provide this stream.",
       });
     }
 
-    res.status(error.response?.status || 500).json({
-      error: error.response?.data?.message || "Failed to get stream",
+    for (const header of ["content-type", "content-length", "accept-ranges", "content-range"]) {
+      const value = upstream.headers[header];
+      if (value) res.setHeader(header, value);
+    }
+    res.status(upstream.status);
+    upstream.data.on("error", (error: Error) => {
+      console.error("SoundCloud stream proxy error:", error.message);
+      if (!res.headersSent) res.status(502);
+      res.end();
+    });
+    upstream.data.pipe(res);
+  } catch (error: any) {
+    const status = error.status || error.response?.status || 500;
+    console.error("SoundCloud v2 stream error:", status, error.message);
+    if (res.headersSent) return res.end();
+    return res.status(status).json({
+      error: error.response?.data?.message || error.message || "Failed to get stream",
     });
   }
 }
-
