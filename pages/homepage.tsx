@@ -9,7 +9,11 @@ type SectionItem = {
   avatar_url?: string;
   permalink_url?: string;
   tracks?: Array<{ artwork_url?: string }>;
-  user?: { username?: string; avatar_url?: string };
+  user?: {
+    username?: string;
+    avatar_url?: string;
+    followers_count?: number;
+  };
   track_count?: number;
   [key: string]: any;
 };
@@ -21,6 +25,12 @@ type DiscoverSection = {
 
 const normalizeItem = (item: any): SectionItem | null => {
   if (!item || typeof item !== "object") return null;
+
+  // Discover can include artist profiles alongside songs and playlists. A
+  // profile may also carry track-like fields, so keep its resource type.
+  if (item.kind === "user" || item.kind === "artist") {
+    return item;
+  }
 
   // Mixed selections and history entries can wrap a track in a playlist-like
   // recommendation object. Prefer the actual embedded resource before using
@@ -205,6 +215,12 @@ export default function HomePage({
 
   const getCardCover = (item: SectionItem, sectionTitle: string) => {
     if (!item) return "/placeholder.png";
+    if (item.kind === "user" || item.kind === "artist") {
+      const avatarUrl = item.avatar_url || item.user?.avatar_url || item.artwork_url;
+      return avatarUrl
+        ? avatarUrl.replace("-large", "-t500x500")
+        : "/placeholder.png";
+    }
     const useFirstTrackArtwork =
       /^(more of what you like|trending by genre)\b/i.test(sectionTitle) &&
       ["playlist", "playlist-like", "system-playlist"].includes(item.kind || "");
@@ -273,6 +289,8 @@ export default function HomePage({
   const handleItemClick = (item: SectionItem, trackList: SectionItem[]) => {
     if (item.kind === "track") {
       onTrackClick(item, "search", trackList);
+    } else if (item.kind === "user" || item.kind === "artist") {
+      onArtistClick?.(item);
     } else if (
       item.kind === "playlist" ||
       item.kind === "playlist-like" ||
@@ -315,59 +333,74 @@ export default function HomePage({
         <div className="horizontal-scroll">
           {section.items.map((item, index) => {
             const key = item.id || `${section.title}-${index}`;
+            const isArtistCard = item.kind === "user" || item.kind === "artist";
 
             return (
               <div
                 key={key}
-                className="track-card home-track-card"
+                className={`track-card home-track-card ${
+                  isArtistCard ? "home-profile-card" : ""
+                }`}
                 onClick={() => handleItemClick(item, section.items)}
                 onContextMenu={(event) =>
                   onTrackContextMenu?.(event, item, "search", section.items)
                 }
               >
-                <button
-                  type="button"
-                  className={`card-play-btn ${
-                    isItemPlaying?.(item) ? "pause" : "play"
-                  }`}
+                {!isArtistCard && (
+                  <button
+                    type="button"
+                    className={`card-play-btn ${
+                      isItemPlaying?.(item) ? "pause" : "play"
+                    }`}
                     style={getCardCoverStyle(item, section.title)}
-                  onClick={(event) =>
-                    onCardPlayClick?.(event, item, "search", section.items)
-                  }
-                  aria-label={isItemPlaying?.(item) ? "Pause" : "Play"}
-                >
-                  {isItemPlaying?.(item) ? (
-                    <svg
-                      width="40"
-                      height="40"
-                      viewBox="0 0 24 24"
-                      fill="currentColor"
-                    >
-                      <rect x="6" y="4" width="4" height="16" />
-                      <rect x="14" y="4" width="4" height="16" />
-                    </svg>
-                  ) : (
-                    <svg
-                      width="40"
-                      height="40"
-                      viewBox="0 0 24 24"
-                      fill="currentColor"
-                    >
-                      <polygon points="5 3 19 12 5 21 5 3" />
-                    </svg>
-                  )}
-                </button>
+                    onClick={(event) =>
+                      onCardPlayClick?.(event, item, "search", section.items)
+                    }
+                    aria-label={isItemPlaying?.(item) ? "Pause" : "Play"}
+                  >
+                    {isItemPlaying?.(item) ? (
+                      <svg
+                        width="40"
+                        height="40"
+                        viewBox="0 0 24 24"
+                        fill="currentColor"
+                      >
+                        <rect x="6" y="4" width="4" height="16" />
+                        <rect x="14" y="4" width="4" height="16" />
+                      </svg>
+                    ) : (
+                      <svg
+                        width="40"
+                        height="40"
+                        viewBox="0 0 24 24"
+                        fill="currentColor"
+                      >
+                        <polygon points="5 3 19 12 5 21 5 3" />
+                      </svg>
+                    )}
+                  </button>
+                )}
                 <img
                   src={getCardCover(item, section.title)}
-                  alt={item.title || section.title}
-                  className="track-cover home-track-cover"
+                  alt={
+                    isArtistCard
+                      ? item.username || item.title || "Artist profile"
+                      : item.title || section.title
+                  }
+                  className={`track-cover home-track-cover ${
+                    isArtistCard ? "home-profile-cover" : ""
+                  }`}
                   draggable={false}
                 />
                 <div
                   className="track-info clickable"
                   onClick={(event) => onInfoClick?.(event, item)}
                 >
-                  <div className="track-title">{item.title || "Untitled"}</div>
+                  <div className="track-title">
+                    {isArtistCard
+                      ? item.username || item.title || "Unknown Artist"
+                      : item.title || "Untitled"}
+                  </div>
                   <div
                     className="track-artist clickable"
                     onClick={(event) => {
@@ -376,7 +409,11 @@ export default function HomePage({
                       onArtistClick?.(item.user);
                     }}
                   >
-                    {getSubtitle(item)}
+                    {isArtistCard
+                      ? `${Number(
+                          item.followers_count ?? item.user?.followers_count ?? 0,
+                        ).toLocaleString()} followers`
+                      : getSubtitle(item)}
                   </div>
                   {item.kind === "track" && typeof item.id === "number" && (
                     <button

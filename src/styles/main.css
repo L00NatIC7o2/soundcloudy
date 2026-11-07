@@ -1504,10 +1504,8 @@ body.electron .main-area {
   z-index: 0;
 }
 
-.player-loading {
-  text-align: center;
-  color: rgba(255, 255, 255, 0.8);
-  padding: 16px;
+.player-container {
+  overflow: hidden;
 }
 
 .player-content {
@@ -1969,6 +1967,36 @@ body.electron .main-area {
 
 .player-btn-play {
   font-size: 20px;
+}
+
+.player-loading-spinner {
+  width: 24px;
+  height: 24px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  animation: player-loading-spin 0.8s linear infinite;
+}
+
+.player-loading-spinner-track {
+  opacity: 0.25;
+}
+
+.player-loading-spinner-head {
+  stroke-dasharray: 18 40;
+}
+
+@keyframes player-loading-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .player-loading-spinner {
+    animation-duration: 1.8s;
+  }
 }
 
 .player-btn-play:hover {
@@ -4059,6 +4087,10 @@ body.electron .main-area {
   text-align: center;
 }
 
+.homepage-container {
+  padding-bottom: 160px;
+}
+
 .homepage-section {
   margin-bottom: 40px;
 }
@@ -4134,6 +4166,20 @@ body.electron .main-area {
   max-height: var(--home-card-size);
   aspect-ratio: 1;
   object-fit: cover;
+}
+
+.home-profile-card {
+  text-align: center;
+}
+
+.home-profile-cover {
+  border-radius: 9999px;
+}
+
+.home-profile-card .track-info {
+  align-items: center;
+  padding-right: 0;
+  text-align: center;
 }
 
 .horizontal-scroll::-webkit-scrollbar {

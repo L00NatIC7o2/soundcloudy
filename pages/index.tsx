@@ -727,6 +727,10 @@ export default function Home() {
   };
   const handleInfoClick = (event: ReactMouseEvent, item: any) => {
     event.stopPropagation();
+    if (item?.kind === "user" || item?.kind === "artist") {
+      handleArtistClick(item);
+      return;
+    }
     const resolvedTrack = resolveTrackItem(item);
     if (isTrackItem(resolvedTrack)) {
       handleTrackPageOpen(resolvedTrack);
@@ -866,6 +870,7 @@ export default function Home() {
       setSectionLoading(true);
       setTracks([]);
       setPlaylistTracks([]);
+      forceScrollToTop();
     }
     try {
       const isSystemPlaylist =
@@ -1372,7 +1377,7 @@ export default function Home() {
     setIsFollowingArtist(false);
     setCheckingArtistFollow(false);
     if (!skipScroll) {
-      scrollToTop();
+      forceScrollToTop();
     }
 
     try {

@@ -208,8 +208,8 @@ export default async function handler(
           : null;
       })
       .filter(Boolean);
-    if (items.length && !sections.some((section) => section.title === "Recently Played")) {
-      sections.unshift({ title: "Recently Played", items });
+    if (items.length && !sections.some((section) => /recently played/i.test(section.title))) {
+      sections.unshift({ title: "Listening History", items });
     }
   } catch (error: any) {
     const details = getSafeUpstreamError(error);

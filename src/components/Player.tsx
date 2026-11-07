@@ -2017,7 +2017,6 @@ const Player = memo(function Player({
         onEnded={handleTrackEnd}
       />
       <div className="player-container player-desktop-shell" style={playerStyle}>
-        {loading && <div className="player-loading">Loading track...</div>}
         <div className="player-content">
           <div className="player-left">
             <div
@@ -2294,9 +2293,18 @@ const Player = memo(function Player({
                 className="player-btn player-btn-play"
                 onClick={togglePlayPause}
                 disabled={loading}
+                aria-label={loading ? "Loading track" : isPlaying ? "Pause" : "Play"}
               >
                 {loading ? (
-                  "?"
+                  <svg
+                    className="player-loading-spinner"
+                    viewBox="0 0 24 24"
+                    role="img"
+                    aria-label="Loading"
+                  >
+                    <circle className="player-loading-spinner-track" cx="12" cy="12" r="9" />
+                    <path className="player-loading-spinner-head" d="M21 12a9 9 0 0 0-9-9" />
+                  </svg>
                 ) : isPlaying ? (
                   <svg
                     width="24"
@@ -3123,8 +3131,19 @@ const Player = memo(function Player({
                     className="player-btn player-btn-play"
                     onClick={togglePlayPause}
                     disabled={loading}
+                    aria-label={loading ? "Loading track" : isPlaying ? "Pause" : "Play"}
                   >
-                    {isPlaying ? (
+                    {loading ? (
+                      <svg
+                        className="player-loading-spinner"
+                        viewBox="0 0 24 24"
+                        role="img"
+                        aria-label="Loading"
+                      >
+                        <circle className="player-loading-spinner-track" cx="12" cy="12" r="9" />
+                        <path className="player-loading-spinner-head" d="M21 12a9 9 0 0 0-9-9" />
+                      </svg>
+                    ) : isPlaying ? (
                       <svg
                         width="24"
                         height="24"
