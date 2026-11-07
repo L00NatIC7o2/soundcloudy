@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import Hls from "hls.js";
 import io from "socket.io-client";
 import { getClientAppBase, getClientSocketUrl } from "../src/lib/runtimeConfig";
 
@@ -56,6 +57,7 @@ function getTrackArtwork(track: any) {
 export default function MobilePage() {
   const socketRef = useRef<any>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
+  const hlsRef = useRef<Hls | null>(null);
   const pendingSeekRef = useRef<number | null>(null);
   const [roomId, setRoomId] = useState("");
   const [host, setHost] = useState("localhost");
@@ -76,6 +78,8 @@ export default function MobilePage() {
   const [localDuration, setLocalDuration] = useState(0);
   const [loadingTrack, setLoadingTrack] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
+
+  useEffect(() => () => hlsRef.current?.destroy(), []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -247,17 +251,44 @@ export default function MobilePage() {
 
   const loadLocalTrack = async (track: any, startAt = 0) => {
     if (!track || !audioRef.current) return;
+    hlsRef.current?.destroy();
+    hlsRef.current = null;
     setLocalTrack(track);
     setLoadingTrack(true);
     setLocalError(null);
     pendingSeekRef.current = startAt;
 
     try {
-      audioRef.current.src = `/api/stream?trackId=${track.id}&proxy=1`;
-      audioRef.current.load();
+      const response = await fetch(
+        `/api/stream?trackId=${encodeURIComponent(String(track.id))}`,
+      );
+      const streamData = await response.json();
+      if (!response.ok || !streamData.streamUrl) {
+        throw new Error(streamData.error || "SoundCloud did not return a stream URL");
+      }
+
+      if (Hls.isSupported()) {
+        const hls = new Hls();
+        hlsRef.current = hls;
+        hls.loadSource(streamData.streamUrl);
+        hls.attachMedia(audioRef.current);
+        await new Promise<void>((resolve, reject) => {
+          hls.once(Hls.Events.MANIFEST_PARSED, () => resolve());
+          hls.once(Hls.Events.ERROR, (_event, data) => {
+            if (data.fatal) reject(new Error(data.details || "HLS stream failed to load"));
+          });
+        });
+      } else if (audioRef.current.canPlayType("application/vnd.apple.mpegurl")) {
+        audioRef.current.src = streamData.streamUrl;
+        audioRef.current.load();
+      } else {
+        throw new Error("This device cannot play SoundCloud HLS streams");
+      }
       await audioRef.current.play();
       setLocalPlaying(true);
     } catch (error) {
+      hlsRef.current?.destroy();
+      hlsRef.current = null;
       setLocalPlaying(false);
       setLocalError(
         error instanceof Error

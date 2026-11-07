@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, memo, type CSSProperties, type MouseEvent as ReactMouseEvent } from "react";
 import { io, Socket } from "socket.io-client";
+import Hls from "hls.js";
 import PlaylistMenu from "./PlaylistMenu";
 import MobilePlaylistSheet from "./MobilePlaylistSheet";
 import {
@@ -103,6 +104,7 @@ const Player = memo(function Player({
     "/placeholder.png";
 
   const audioRef = useRef<HTMLAudioElement>(null);
+  const hlsRef = useRef<Hls | null>(null);
   const [syncRoomId, setSyncRoomId] = useState("");
   const deviceId =
     typeof window !== "undefined"
@@ -1152,6 +1154,9 @@ const Player = memo(function Player({
   }, [isPlaying]);
 
   useEffect(() => {
+    hlsRef.current?.destroy();
+    hlsRef.current = null;
+
     const loadTrack = async () => {
       if (!currentTrack || !audioRef.current) return;
 
@@ -1163,8 +1168,33 @@ const Player = memo(function Player({
           : null;
 
       try {
-        audioRef.current.src = `/api/stream?trackId=${currentTrack.id}&proxy=1`;
-        audioRef.current.load();
+        const response = await fetch(
+          `/api/stream?trackId=${encodeURIComponent(String(currentTrack.id))}`,
+        );
+        const streamData = await response.json();
+        if (!response.ok || !streamData.streamUrl) {
+          throw new Error(streamData.error || "SoundCloud did not return a stream URL");
+        }
+
+        if (Hls.isSupported()) {
+          const hls = new Hls();
+          hlsRef.current = hls;
+          hls.loadSource(streamData.streamUrl);
+          hls.attachMedia(audioRef.current);
+          await new Promise<void>((resolve, reject) => {
+            hls.once(Hls.Events.MANIFEST_PARSED, () => resolve());
+            hls.once(Hls.Events.ERROR, (_event, data) => {
+              if (data.fatal) reject(new Error(data.details || "HLS stream failed to load"));
+            });
+          });
+        } else if (
+          audioRef.current.canPlayType("application/vnd.apple.mpegurl")
+        ) {
+          audioRef.current.src = streamData.streamUrl;
+          audioRef.current.load();
+        } else {
+          throw new Error("This device cannot play SoundCloud HLS streams");
+        }
 
         if (shouldAutoPlay) {
           try {
@@ -1212,6 +1242,10 @@ const Player = memo(function Player({
     };
 
     loadTrack();
+    return () => {
+      hlsRef.current?.destroy();
+      hlsRef.current = null;
+    };
   }, [currentTrack]);
 
   useEffect(() => {
