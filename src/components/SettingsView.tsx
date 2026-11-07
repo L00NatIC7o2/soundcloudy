@@ -205,6 +205,8 @@ export default function SettingsView({
   equalizer,
   onEqualizerChange,
   spectrum,
+  animateAlbumArtWhenInactive,
+  onAnimateAlbumArtWhenInactiveChange,
 }: {
   autoplayNext: boolean;
   onAutoplayNextChange: (enabled: boolean) => void;
@@ -217,6 +219,8 @@ export default function SettingsView({
   equalizer: Equalizer;
   onEqualizerChange: (equalizer: Equalizer) => void;
   spectrum: number[];
+  animateAlbumArtWhenInactive: boolean;
+  onAnimateAlbumArtWhenInactiveChange: (enabled: boolean) => void;
 }) {
   return (
     <div className="settings-view">
@@ -285,6 +289,14 @@ export default function SettingsView({
             <option value="midnight">Midnight</option>
             <option value="light">Light</option>
           </select>
+        </label>
+        <label className="settings-toggle-row">
+          <span><strong>Animate album background when inactive</strong><small>Keep the cover background moving while the app is minimized or unfocused.</small></span>
+          <SettingsCheckbox
+            checked={animateAlbumArtWhenInactive}
+            onChange={onAnimateAlbumArtWhenInactiveChange}
+            label="Animate album background when inactive"
+          />
         </label>
       </section>
     </div>

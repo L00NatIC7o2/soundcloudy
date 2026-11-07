@@ -447,6 +447,15 @@ body.ios-standalone-app .app-shell {
   opacity: 0.12 !important;
 }
 
+.app-shell[data-ambient-paused="true"]::before,
+.app-shell[data-ambient-paused="true"]::after {
+  animation-play-state: paused !important;
+}
+
+.app-shell[data-ambient-paused="true"] .app-crossfade-background {
+  transition: none !important;
+}
+
 .app-page-hidden .mobile-player-sheet-panel,
 .app-page-hidden .mobile-player-collapsed,
 .app-page-hidden .sidebar,

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, memo, type CSSProperties, type MouseEvent as ReactMouseEvent } from "react";
+import { useEffect, useRef, useState, memo, type CSSProperties, type MouseEvent as ReactMouseEvent, type SyntheticEvent } from "react";
 import { io, Socket } from "socket.io-client";
 import Hls from "hls.js";
 import PlaylistMenu from "./PlaylistMenu";
@@ -52,6 +52,16 @@ interface PlayerProps {
 }
 
 type PlayerSidebarTab = "queue" | "friends" | "now-playing";
+
+let soundCloudPlayReportsDisabledUntil = 0;
+let soundCloudPlayReportsDisabledIndefinitely = false;
+
+const restoreAudioGain = (gain: AudioParam, value: number, time: number) => {
+  // A crossfade value curve can start before `time` and still be active at it.
+  // Cancel from the timeline origin so setTargetAtTime cannot overlap that curve.
+  gain.cancelScheduledValues(0);
+  gain.setTargetAtTime(value, time, 0.04);
+};
 
 type FriendActivity = {
   id: string;
@@ -182,6 +192,10 @@ const Player = memo(function Player({
     const trackId = String(currentTrack.id);
     if (lastScrobbledTrackIdRef.current === trackId) return;
     lastScrobbledTrackIdRef.current = trackId;
+    if (
+      soundCloudPlayReportsDisabledIndefinitely ||
+      Date.now() < soundCloudPlayReportsDisabledUntil
+    ) return;
 
     void fetch("/api/scrobble", {
       method: "POST",
@@ -190,6 +204,21 @@ const Player = memo(function Player({
     })
       .then(async (response) => {
         const result = await response.json().catch(() => ({}));
+        if (response.status === 429) {
+          const reset = Number(result?.reset ?? result?.rateLimit?.reset);
+          if (Number.isFinite(reset) && reset > 0) {
+            soundCloudPlayReportsDisabledUntil =
+              Math.max(Date.now(), reset * 1000) + 3000;
+          } else {
+            const retryAfter = Number(response.headers.get("Retry-After"));
+            if (Number.isFinite(retryAfter) && retryAfter > 0) {
+              soundCloudPlayReportsDisabledUntil =
+                Date.now() + retryAfter * 1000 + 3000;
+            } else {
+              soundCloudPlayReportsDisabledIndefinitely = true;
+            }
+          }
+        }
         if (!response.ok || !result.success) {
           console.warn("SoundCloud play report was not accepted:", result);
         }
@@ -1413,7 +1442,12 @@ const Player = memo(function Player({
         if (cancelled || !audioRef.current) return;
 
         if (Hls.isSupported()) {
-          const hls = new Hls();
+          const hls = new Hls({
+            maxBufferLength: 16,
+            maxMaxBufferLength: 22,
+            maxBufferSize: 12 * 1024 * 1024,
+            backBufferLength: 5,
+          });
           hlsRef.current = hls;
           hls.loadSource(streamData.streamUrl);
           hls.attachMedia(audioRef.current);
@@ -1551,7 +1585,16 @@ const Player = memo(function Player({
 
         let standbyHls: Hls | null = null;
         if (Hls.isSupported()) {
-          standbyHls = new Hls();
+          const standbyBufferSeconds = Math.min(
+            16,
+            Math.max(4, crossfadeDuration + 2),
+          );
+          standbyHls = new Hls({
+            maxBufferLength: standbyBufferSeconds,
+            maxMaxBufferLength: standbyBufferSeconds + 4,
+            maxBufferSize: 8 * 1024 * 1024,
+            backBufferLength: 0,
+          });
           standbyHlsRef.current = standbyHls;
           standbyHls.attachMedia(standbyAudio);
           standbyHls.loadSource(streamData.streamUrl);
@@ -1631,8 +1674,8 @@ const Player = memo(function Player({
         const standbyPipeline = audioPipelinesRef.current.get(standbyAudio);
         if (audioContextRef.current) {
           const now = audioContextRef.current.currentTime;
-          activePipeline?.gain.gain.setTargetAtTime(1, now, 0.04);
-          standbyPipeline?.gain.gain.setTargetAtTime(0, now, 0.04);
+          if (activePipeline) restoreAudioGain(activePipeline.gain.gain, 1, now);
+          if (standbyPipeline) restoreAudioGain(standbyPipeline.gain.gain, 0, now);
         }
         standbyAudio.pause();
       }
@@ -1653,6 +1696,7 @@ const Player = memo(function Player({
     currentQueueIndex,
     activeAudioSlot,
     isShuffle,
+    crossfadeDuration,
   ]);
 
   useEffect(() => {
@@ -2178,10 +2222,8 @@ const Player = memo(function Player({
         window.clearTimeout(crossfadeTimerRef.current);
         crossfadeTimerRef.current = null;
       }
-      currentGain.cancelScheduledValues(context.currentTime);
-      currentGain.setTargetAtTime(1, context.currentTime, 0.04);
-      nextGain.cancelScheduledValues(context.currentTime);
-      nextGain.setTargetAtTime(0, context.currentTime, 0.04);
+      restoreAudioGain(currentGain, 1, context.currentTime);
+      restoreAudioGain(nextGain, 0, context.currentTime);
       crossfadeStartedRef.current = false;
     });
 
@@ -2198,7 +2240,8 @@ const Player = memo(function Player({
     }, fadeSeconds * 1000);
   };
 
-  const handleTimeUpdate = () => {
+  const handleTimeUpdate = (event?: SyntheticEvent<HTMLAudioElement>) => {
+    if (event && event.currentTarget !== audioRef.current) return;
     if (audioRef.current) {
       setCurrentTime(audioRef.current.currentTime);
       setDuration(audioRef.current.duration || 0);
@@ -2388,8 +2431,8 @@ const Player = memo(function Player({
     const standbyPipeline = standbyAudio ? audioPipelinesRef.current.get(standbyAudio) : null;
     if (audioContextRef.current) {
       const now = audioContextRef.current.currentTime;
-      activePipeline?.gain.gain.setTargetAtTime(1, now, 0.04);
-      standbyPipeline?.gain.gain.setTargetAtTime(0, now, 0.04);
+      if (activePipeline) restoreAudioGain(activePipeline.gain.gain, 1, now);
+      if (standbyPipeline) restoreAudioGain(standbyPipeline.gain.gain, 0, now);
     }
     standbyAudio?.pause();
   };

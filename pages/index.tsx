@@ -103,6 +103,9 @@ export default function Home() {
   const [autoplayNext, setAutoplayNext] = useState(true);
   const [crossfadeEnabled, setCrossfadeEnabled] = useState(false);
   const [crossfadeDuration, setCrossfadeDuration] = useState(5);
+  const [animateAlbumArtWhenInactive, setAnimateAlbumArtWhenInactive] =
+    useState(false);
+  const [appWindowActive, setAppWindowActive] = useState(true);
   const [appTheme, setAppTheme] = useState<AppTheme>("default");
   const [equalizer, setEqualizer] = useState({
     enabled: false,
@@ -124,6 +127,9 @@ export default function Home() {
       }
       if (typeof stored.crossfadeEnabled === "boolean") {
         setCrossfadeEnabled(stored.crossfadeEnabled);
+      }
+      if (typeof stored.animateAlbumArtWhenInactive === "boolean") {
+        setAnimateAlbumArtWhenInactive(stored.animateAlbumArtWhenInactive);
       }
       if (Number.isFinite(stored.crossfadeDuration)) {
         setCrossfadeDuration(Math.max(1, Math.min(12, stored.crossfadeDuration)));
@@ -160,9 +166,26 @@ export default function Home() {
     if (!settingsLoaded) return;
     window.localStorage.setItem(
       "soundcloudy_settings",
-      JSON.stringify({ autoplayNext, crossfadeEnabled, crossfadeDuration, theme: appTheme, equalizer }),
+      JSON.stringify({ autoplayNext, crossfadeEnabled, crossfadeDuration, animateAlbumArtWhenInactive, theme: appTheme, equalizer }),
     );
-  }, [settingsLoaded, autoplayNext, crossfadeEnabled, crossfadeDuration, appTheme, equalizer]);
+  }, [settingsLoaded, autoplayNext, crossfadeEnabled, crossfadeDuration, animateAlbumArtWhenInactive, appTheme, equalizer]);
+  useEffect(() => {
+    const syncAppWindowActivity = () => {
+      setAppWindowActive(
+        document.visibilityState !== "hidden" &&
+          (typeof document.hasFocus !== "function" || document.hasFocus()),
+      );
+    };
+    syncAppWindowActivity();
+    window.addEventListener("focus", syncAppWindowActivity);
+    window.addEventListener("blur", syncAppWindowActivity);
+    document.addEventListener("visibilitychange", syncAppWindowActivity);
+    return () => {
+      window.removeEventListener("focus", syncAppWindowActivity);
+      window.removeEventListener("blur", syncAppWindowActivity);
+      document.removeEventListener("visibilitychange", syncAppWindowActivity);
+    };
+  }, []);
   const [viewingLibrary, setViewingLibrary] = useState(false);
   const [libraryPlaylists, setLibraryPlaylists] = useState<any[]>([]);
   const [libraryLoading, setLibraryLoading] = useState(false);
@@ -3855,6 +3878,7 @@ export default function Home() {
   return (
     <div
       className={`app-shell app-shell-reactive ${appBackgroundTransitioning ? "app-shell-transitioning" : ""} ${playerState.isPlaying ? "app-shell-playing" : ""}`}
+      data-ambient-paused={String(!appWindowActive && !animateAlbumArtWhenInactive)}
       style={appShellStyle}
       data-theme={appTheme}
     >
@@ -4454,6 +4478,8 @@ export default function Home() {
             equalizer={equalizer}
             onEqualizerChange={setEqualizer}
             spectrum={audioSpectrum}
+            animateAlbumArtWhenInactive={animateAlbumArtWhenInactive}
+            onAnimateAlbumArtWhenInactiveChange={setAnimateAlbumArtWhenInactive}
           />
         ) : viewingHomepage ? (
           <HomePage
