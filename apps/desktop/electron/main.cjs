@@ -404,6 +404,102 @@ const fetchPlayHistoryViaWebSession = async () => {
   }
 };
 
+const fetchDiscoverSelectionsViaWebSession = async () => {
+  const token = await getLocalAuthToken();
+  if (!token) return { error: "Not authenticated" };
+
+  const discoverWindow = new BrowserWindow({
+    width: 1100,
+    height: 800,
+    show: false,
+    autoHideMenuBar: true,
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+
+  try {
+    const session = discoverWindow.webContents.session;
+    const existingWebToken = await session.cookies.get({
+      name: "oauth_token",
+      domain: ".soundcloud.com",
+    });
+    const authToken = existingWebToken?.[0]?.value || token;
+    const cookie = {
+      name: "oauth_token",
+      value: authToken,
+      path: "/",
+      httpOnly: false,
+      secure: true,
+      sameSite: "no_restriction",
+      domain: ".soundcloud.com",
+    };
+
+    await session.cookies.set({ url: "https://soundcloud.com", ...cookie });
+    await session.cookies.set({ url: "https://api-v2.soundcloud.com", ...cookie });
+    await discoverWindow.loadURL("https://soundcloud.com/discover", {
+      userAgent:
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+    });
+
+    const result = await discoverWindow.webContents.executeJavaScript(
+      `(() => {
+        const token = ${JSON.stringify(authToken)};
+        const clientId = ${JSON.stringify(getPlayHistoryClientId())};
+        const appVersion = ${JSON.stringify(getPlayHistoryAppVersion())};
+        const appLocale = ${JSON.stringify(PLAY_HISTORY_APP_LOCALE)};
+        const resources = performance.getEntriesByType("resource").map((entry) => entry.name);
+        const observedUrl = resources.reverse().find((url) =>
+          url.includes("api-v2.soundcloud.com/mixed-selections")
+        );
+        const params = new URLSearchParams({
+          client_id: clientId,
+          app_version: appVersion,
+          app_locale: appLocale,
+          limit: "10",
+          linked_partitioning: "1",
+          oauth_token: token
+        });
+        const url = observedUrl ||
+          "https://api-v2.soundcloud.com/mixed-selections?" + params.toString();
+        return fetch(url, {
+          credentials: "include",
+          cache: "no-store",
+          headers: {
+            Accept: "application/json, text/plain, */*",
+            Authorization: "OAuth " + token,
+            "X-Client-Id": clientId
+          }
+        }).then(async (response) => {
+          const text = await response.text();
+          let data = null;
+          try { data = JSON.parse(text); } catch (_error) {}
+          if (!response.ok) {
+            return { error: "SoundCloud rejected Discover request", status: response.status };
+          }
+          const sections = (data?.collection || []).map((selection) => ({
+            title: selection.title || selection.name || "For You",
+            items: Array.isArray(selection.items?.collection)
+              ? selection.items.collection
+              : Array.isArray(selection.items) ? selection.items : []
+          })).filter((section) => section.items.length);
+          return { sections };
+        }).catch((error) => ({ error: error?.message || "Discover request failed" }));
+      })();`,
+      true,
+    );
+    return result && Array.isArray(result.sections)
+      ? result
+      : {
+          error: result?.error || "SoundCloud returned no Discover selections",
+          status: result?.status || null,
+        };
+  } finally {
+    discoverWindow.destroy();
+  }
+};
+
 const openHistoryLoginWindow = async () => {
   let loginWindow = null;
   let resolved = false;
@@ -1133,6 +1229,16 @@ ipcMain.handle("history-play-history", async () => {
     return await fetchPlayHistoryViaWebSession();
   } catch (error) {
     return { error: String(error) };
+  }
+});
+
+ipcMain.handle("discover-selections", async () => {
+  try {
+    return await fetchDiscoverSelectionsViaWebSession();
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message : String(error),
+    };
   }
 });
 

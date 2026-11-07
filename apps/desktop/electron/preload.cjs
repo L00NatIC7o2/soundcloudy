@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   captureHistorySession: () => ipcRenderer.invoke("history-capture"),
   scrapeHistoryUrls: () => ipcRenderer.invoke("history-scrape"),
   playHistoryViaWeb: () => ipcRenderer.invoke("history-play-history"),
+  fetchDiscoverSelections: () => ipcRenderer.invoke("discover-selections"),
   historyWebLogin: () => ipcRenderer.invoke("history-web-login"),
   windowControls: {
     minimize: () => ipcRenderer.invoke("window-minimize"),

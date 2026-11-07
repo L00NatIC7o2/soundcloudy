@@ -177,11 +177,31 @@ export default function HomePage({
   });
 
   useEffect(() => {
+    let cancelled = false;
     setLoading(true);
 
-    fetch("/api/discover", { cache: "no-store" })
-      .then((res) => res.json())
-      .then((data) => {
+    const loadDiscover = async () => {
+      try {
+        let data: any = null;
+        const electronAPI = (window as any).electronAPI;
+        if (typeof electronAPI?.fetchDiscoverSelections === "function") {
+          try {
+            const electronData = await electronAPI.fetchDiscoverSelections();
+            if (Array.isArray(electronData?.sections) && electronData.sections.length) {
+              data = electronData;
+            } else if (electronData?.error) {
+              console.warn("Electron Discover session request failed:", electronData.error);
+            }
+          } catch (error) {
+            console.warn("Electron Discover request failed:", error);
+          }
+        }
+
+        if (!data) {
+          const response = await fetch("/api/discover", { cache: "no-store" });
+          data = await response.json();
+        }
+
         if (data.sections && Array.isArray(data.sections)) {
           const normalizedSections = data.sections
             .map((section: any) => normalizeSection(section))
@@ -189,17 +209,22 @@ export default function HomePage({
               (section: DiscoverSection | null): section is DiscoverSection =>
                 Boolean(section),
             );
-          setDiscoverSections(normalizedSections);
+          if (!cancelled) setDiscoverSections(normalizedSections);
         } else {
-          setDiscoverSections([]);
+          if (!cancelled) setDiscoverSections([]);
         }
-      })
-      .catch((error) => {
+      } catch (error) {
         console.error("Error fetching discover data:", error);
-      })
-      .finally(() => {
-        setLoading(false);
-      });
+        if (!cancelled) setDiscoverSections([]);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    void loadDiscover();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const handleItemClick = (item: SectionItem, trackList: SectionItem[]) => {
