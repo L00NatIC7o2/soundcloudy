@@ -98,12 +98,12 @@ const normalizeSection = (section: any): DiscoverSection | null => {
         ? section.collection
         : [];
 
-  const normalizedItems = sourceItems
+  const normalizedItems: SectionItem[] = sourceItems
     .map((item: any) => normalizeItem(item))
-    .filter((item: SectionItem | null): item is SectionItem => Boolean(item));
+    .filter((item: SectionItem | null): item is SectionItem => item !== null);
   const isRecentlyPlayed = /recently played/i.test(section.title || section.name || "");
   const seenItems = new Set<string>();
-  const items = normalizedItems.filter((item) => {
+  const items = normalizedItems.filter((item: SectionItem) => {
     const id = isRecentlyPlayed ? item.id ?? item.urn : item.urn || item.id;
     if (id === undefined || id === null) return true;
     const key = isRecentlyPlayed
