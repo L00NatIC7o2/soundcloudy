@@ -414,6 +414,10 @@ export default async function handler(
       streamUrl = await getStreamUrl(trackId, auth);
     }
 
+    if (process.env.NODE_ENV === "development") {
+      console.info(`[SoundCloud] Resolved playback stream for track ${trackId}`);
+    }
+
     return res.status(200).json({
       streamUrl: makeMediaProxyUrl(streamUrl),
       contentType: "application/vnd.apple.mpegurl",

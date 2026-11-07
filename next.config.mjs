@@ -21,6 +21,11 @@ const allowedDevOrigins = Array.from(
 
 const nextConfig = {
   allowedDevOrigins,
+  logging: {
+    incomingRequests: {
+      ignore: [/\/api\/stream/],
+    },
+  },
   output: "standalone",
   serverExternalPackages: ["puppeteer"],
 };

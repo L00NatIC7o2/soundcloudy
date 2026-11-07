@@ -22,69 +22,62 @@ type DiscoverSection = {
 const normalizeItem = (item: any): SectionItem | null => {
   if (!item || typeof item !== "object") return null;
 
-  const permalinkUrl = String(item.permalink_url || item.permalink || "");
-  const permalinkLooksLikeTrack =
-    /^https?:\/\/soundcloud\.com\//i.test(permalinkUrl) &&
-    !/\/sets\//i.test(permalinkUrl);
-  const hasTrackPayload =
-    Boolean(item.media?.transcodings?.length) ||
-    Boolean(item.track_authorization) ||
-    (typeof item.duration === "number" &&
-      !Number.isFinite(item.track_count) &&
-      !Array.isArray(item.tracks)) ||
-    (item.kind === "playlist" &&
-      typeof item.duration === "number" &&
-      permalinkLooksLikeTrack);
-  if (item.kind === "track" || hasTrackPayload) {
-    return { ...item, kind: "track" };
-  }
-
-  if (item.track) {
+  // Mixed selections and history entries can wrap a track in a playlist-like
+  // recommendation object. Prefer the actual embedded resource before using
+  // the wrapper's kind, id, title, or duration.
+  if (item.track && typeof item.track === "object") {
     return normalizeItem({
       ...item.track,
-      played_at: item.played_at ?? item.created_at,
+      played_at: item.played_at ?? item.created_at ?? item.track.played_at,
     });
   }
-
-  if (item.playlist) {
+  if (item.origin && typeof item.origin === "object") {
+    return normalizeItem(item.origin);
+  }
+  if (item.item && typeof item.item === "object") {
+    return normalizeItem(item.item);
+  }
+  if (Array.isArray(item.collection) && item.collection.length > 0) {
+    return normalizeItem(item.collection[0]);
+  }
+  if (item.playlist && typeof item.playlist === "object") {
     return normalizeItem({
       ...item.playlist,
       kind: item.playlist.kind || "playlist",
     });
   }
-
-  if (item.system_playlist) {
+  if (item.system_playlist && typeof item.system_playlist === "object") {
     return normalizeItem({
       ...item.system_playlist,
       kind: item.system_playlist.kind || "system-playlist",
     });
   }
-
-  if (item.album) {
+  if (item.album && typeof item.album === "object") {
     return normalizeItem({
       ...item.album,
       kind: item.album.kind || "playlist",
       is_album: true,
     });
   }
-
-  if (item.station) {
+  if (item.station && typeof item.station === "object") {
     return normalizeItem({
       ...item.station,
       kind: item.station.kind || "system-playlist",
     });
   }
 
-  if (item.origin) {
-    return normalizeItem(item.origin);
-  }
-
-  if (item.item) {
-    return normalizeItem(item.item);
-  }
-
-  if (Array.isArray(item.collection) && item.collection.length > 0) {
-    return normalizeItem(item.collection[0]);
+  const collectionKind = ["playlist", "playlist-like", "system-playlist"].includes(
+    item.kind,
+  );
+  const hasTrackPayload =
+    Boolean(item.media?.transcodings?.length) ||
+    Boolean(item.track_authorization) ||
+    (!collectionKind &&
+      typeof item.duration === "number" &&
+      !Number.isFinite(item.track_count) &&
+      !Array.isArray(item.tracks));
+  if (item.kind === "track" || hasTrackPayload) {
+    return { ...item, kind: "track" };
   }
 
   if (item.kind && (item.title || item.user?.username || item.username)) {
@@ -197,13 +190,33 @@ export default function HomePage({
     return "/placeholder.png";
   };
 
-  const getCardCover = (item: SectionItem) => {
+  const getFirstPlaylistTrackArtwork = (item: SectionItem) => {
+    const tracks = Array.isArray(item.tracks)
+      ? item.tracks
+      : Array.isArray((item.tracks as any)?.collection)
+        ? (item.tracks as any).collection
+        : Array.isArray(item.items?.collection)
+          ? item.items.collection
+          : [];
+    const firstTrack = tracks[0]?.track || tracks[0]?.origin || tracks[0];
+    const artworkUrl = firstTrack?.artwork_url || firstTrack?.user?.avatar_url;
+    return artworkUrl ? artworkUrl.replace("-large", "-t500x500") : null;
+  };
+
+  const getCardCover = (item: SectionItem, sectionTitle: string) => {
     if (!item) return "/placeholder.png";
+    const useFirstTrackArtwork =
+      /^(more of what you like|trending by genre)\b/i.test(sectionTitle) &&
+      ["playlist", "playlist-like", "system-playlist"].includes(item.kind || "");
+    if (useFirstTrackArtwork) {
+      const firstTrackArtwork = getFirstPlaylistTrackArtwork(item);
+      if (firstTrackArtwork) return firstTrackArtwork;
+    }
     return getTrackArtwork(item);
   };
 
-  const getCardCoverStyle = (item: SectionItem) => ({
-    backgroundImage: `url(${getCardCover(item)})`,
+  const getCardCoverStyle = (item: SectionItem, sectionTitle: string) => ({
+    backgroundImage: `url(${getCardCover(item, sectionTitle)})`,
   });
 
   useEffect(() => {
@@ -317,7 +330,7 @@ export default function HomePage({
                   className={`card-play-btn ${
                     isItemPlaying?.(item) ? "pause" : "play"
                   }`}
-                  style={getCardCoverStyle(item)}
+                    style={getCardCoverStyle(item, section.title)}
                   onClick={(event) =>
                     onCardPlayClick?.(event, item, "search", section.items)
                   }
@@ -345,7 +358,7 @@ export default function HomePage({
                   )}
                 </button>
                 <img
-                  src={getCardCover(item)}
+                  src={getCardCover(item, section.title)}
                   alt={item.title || section.title}
                   className="track-cover home-track-cover"
                   draggable={false}

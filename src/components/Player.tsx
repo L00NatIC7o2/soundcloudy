@@ -105,6 +105,9 @@ const Player = memo(function Player({
 
   const audioRef = useRef<HTMLAudioElement>(null);
   const hlsRef = useRef<Hls | null>(null);
+  const streamLookupRequestsRef = useRef(
+    new Map<string, { promise: Promise<any>; expiresAt: number }>(),
+  );
   const [syncRoomId, setSyncRoomId] = useState("");
   const deviceId =
     typeof window !== "undefined"
@@ -1156,25 +1159,53 @@ const Player = memo(function Player({
   useEffect(() => {
     hlsRef.current?.destroy();
     hlsRef.current = null;
+    let cancelled = false;
 
     const loadTrack = async () => {
       if (!currentTrack || !audioRef.current) return;
+      const track = currentTrack;
 
       setLoading(true);
-      const shouldAutoPlay = currentTrack.remoteShouldPlay !== false;
+      const shouldAutoPlay = track.remoteShouldPlay !== false;
       pendingRemoteSeekRef.current =
-        typeof currentTrack.remoteStartPosition === "number"
-          ? currentTrack.remoteStartPosition
+        typeof track.remoteStartPosition === "number"
+          ? track.remoteStartPosition
           : null;
 
       try {
-        const response = await fetch(
-          `/api/stream?trackId=${encodeURIComponent(String(currentTrack.id))}`,
-        );
-        const streamData = await response.json();
-        if (!response.ok || !streamData.streamUrl) {
-          throw new Error(streamData.error || "SoundCloud did not return a stream URL");
+        const trackId = String(track.id);
+        let streamEntry = streamLookupRequestsRef.current.get(trackId);
+        if (streamEntry && streamEntry.expiresAt <= Date.now()) {
+          streamLookupRequestsRef.current.delete(trackId);
+          streamEntry = undefined;
         }
+        if (!streamEntry) {
+          const streamRequest = fetch(
+            `/api/stream?trackId=${encodeURIComponent(trackId)}`,
+          ).then(async (response) => {
+            const data = await response.json();
+            if (!response.ok || !data.streamUrl) {
+              throw new Error(data.error || "SoundCloud did not return a stream URL");
+            }
+            return data;
+          });
+          streamEntry = { promise: streamRequest, expiresAt: 0 };
+          streamLookupRequestsRef.current.set(trackId, streamEntry);
+          void streamRequest.then(
+            () => {
+              if (streamLookupRequestsRef.current.get(trackId) === streamEntry) {
+                streamEntry!.expiresAt = Date.now() + 30_000;
+              }
+            },
+            () => {
+              if (streamLookupRequestsRef.current.get(trackId) === streamEntry) {
+                streamLookupRequestsRef.current.delete(trackId);
+              }
+            },
+          );
+        }
+        const streamData = await streamEntry.promise;
+        if (cancelled || !audioRef.current) return;
 
         if (Hls.isSupported()) {
           const hls = new Hls();
@@ -1230,6 +1261,7 @@ const Player = memo(function Player({
           audioRef.current.pause();
         }
       } catch (error: any) {
+        if (cancelled) return;
         if (error?.name === "NotAllowedError") {
           console.warn("Autoplay blocked while loading track.");
           setIsPlaying(false);
@@ -1240,16 +1272,17 @@ const Player = memo(function Player({
           );
         }
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
 
     loadTrack();
     return () => {
+      cancelled = true;
       hlsRef.current?.destroy();
       hlsRef.current = null;
     };
-  }, [currentTrack]);
+  }, [currentTrack?.id, currentTrack?.remoteShouldPlay, currentTrack?.remoteStartPosition]);
 
   useEffect(() => {
     if (!currentTrack?.id) return;
