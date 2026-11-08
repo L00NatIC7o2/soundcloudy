@@ -1,5 +1,4 @@
 import type { NextApiRequest, NextApiResponse } from "next";
-import puppeteer, { type Browser, type Page } from "puppeteer";
 import axios from "axios";
 import {
   refreshSoundCloudAuth,
@@ -10,23 +9,31 @@ const artistCache = new Map<
   { expiresAt: number; payload: Record<string, unknown> }
 >();
 const CACHE_TTL_MS = 60_000;
-const BANNER_NAV_TIMEOUT_MS = 10_000;
-const BANNER_WAIT_TIMEOUT_MS = 3_000;
-let browserPromise: Promise<Browser> | null = null;
 
-const getBrowser = async () => {
-  if (!browserPromise) {
-    browserPromise = puppeteer.launch({
-      headless: true,
-      args: [
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-dev-shm-usage",
-        "--disable-gpu",
-      ],
-    });
+const extractBannerFromProfileHtml = (html: string) => {
+  const normalizeUrl = (value: string) =>
+    value
+      .replace(/\\u002F/gi, "/")
+      .replace(/\\\//g, "/")
+      .replace(/&amp;/g, "&")
+      .replace(/^['"]|['"]$/g, "");
+
+  const profileHeader = html.match(
+    /<[^>]*profileHeaderBackground__visual[^>]*>/i,
+  )?.[0];
+  const style = profileHeader?.match(/\sstyle=(["'])(.*?)\1/i)?.[2];
+  const backgroundUrl = style?.match(
+    /background-image\s*:\s*url\(\s*(['"]?)(.*?)\1\s*\)/i,
+  )?.[2];
+  if (backgroundUrl) return normalizeUrl(backgroundUrl);
+
+  const bannerFields = /"(?:banner_url|header_image_url|visual_url)"\s*:\s*"((?:\\.|[^"\\])+)"/gi;
+  for (const match of html.matchAll(bannerFields)) {
+    const url = normalizeUrl(match[1]);
+    if (/^https?:\/\//i.test(url)) return url;
   }
-  return browserPromise;
+
+  return null;
 };
 
 export default async function handler(
@@ -88,87 +95,36 @@ export default async function handler(
     // Use API verified flag (more reliable than scraping)
     const verified = Boolean(user.verified || user.badges?.verified);
     const fetchBanner = async () => {
-      let banner_url = null;
-      let page: Page | null = null;
+      const visuals = Array.isArray(user.visuals?.visuals)
+        ? user.visuals.visuals
+        : Array.isArray(user.visuals)
+          ? user.visuals
+          : [];
+      const apiBanner =
+        user.banner_url ||
+        user.header_image_url ||
+        user.visual_url ||
+        visuals.find((visual: any) => visual?.visual_url)?.visual_url ||
+        null;
+      if (apiBanner) return apiBanner;
+
       try {
-        const browser = await getBrowser();
-        page = await browser.newPage();
-        await page.setRequestInterception(true);
-        page.on("request", (request) => {
-          const resourceType = request.resourceType();
-          if (["image", "font", "media"].includes(resourceType)) {
-            request.abort();
-          } else {
-            request.continue();
-          }
+        if (typeof user.permalink !== "string" || !user.permalink) return null;
+        const profileUrl = `https://soundcloud.com/${encodeURIComponent(user.permalink)}`;
+        const response = await axios.get<string>(profileUrl, {
+          headers: {
+            "User-Agent":
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            Accept: "text/html,application/xhtml+xml",
+          },
+          responseType: "text",
+          timeout: 10000,
         });
-        page.setDefaultNavigationTimeout(BANNER_NAV_TIMEOUT_MS);
-        await page.setUserAgent(
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        );
-        await page.goto(`https://soundcloud.com/${user.permalink}`, {
-          waitUntil: "domcontentloaded",
-          timeout: BANNER_NAV_TIMEOUT_MS,
-        });
-
-        try {
-          await page.waitForSelector(".profileHeaderBackground__visual", {
-            timeout: BANNER_WAIT_TIMEOUT_MS,
-          });
-        } catch (error) {
-          // Continue to evaluate without selector if it never appears
-        }
-
-        const scrapedData = await page.evaluate(() => {
-          let banner = null;
-
-          const element = document.querySelector(
-            ".profileHeaderBackground__visual",
-          );
-
-          if (element) {
-            const style = element.getAttribute("style");
-            if (style) {
-              const match = style.match(/background-image:\s*url\(([^)]+)\)/);
-              if (match && match[1]) {
-                banner = match[1].replace(/^['"]|['"]$/g, "");
-              }
-            }
-          }
-
-          if (!banner) {
-            const scriptTexts = Array.from(document.scripts)
-              .map((script) => script.textContent || "")
-              .join("\n");
-
-            const patterns = [
-              /"visual_url":"([^"]+)"/,
-              /"banner_url":"([^"]+)"/,
-              /"header_image_url":"([^"]+)"/,
-            ];
-
-            for (const pattern of patterns) {
-              const match = scriptTexts.match(pattern);
-              if (match?.[1]) {
-                banner = match[1]
-                  .replace(/\\u002F/g, "/")
-                  .replace(/\\\//g, "/");
-                break;
-              }
-            }
-          }
-
-          return { banner };
-        });
-
-        banner_url = scrapedData.banner;
+        return extractBannerFromProfileHtml(response.data);
       } catch (error) {
-        console.error("Failed to scrape banner with Puppeteer:", error);
-      } finally {
-        if (page) await page.close();
+        console.error("Failed to fetch profile banner:", error);
+        return null;
       }
-
-      return banner_url;
     };
 
     const fetchPaginatedCollection = async (

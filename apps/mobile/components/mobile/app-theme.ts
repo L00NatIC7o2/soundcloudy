@@ -7,6 +7,6 @@ export const AppTheme = {
   textMuted: "#a29daa",
   textSoft: "#8f8b99",
   accent: "#ff5a1f",
-  accentSoft: "#ff8a45",
+  accentSoft: "#ffffff",
   input: "#0a0a0d",
 };

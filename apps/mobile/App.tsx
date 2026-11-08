@@ -345,7 +345,7 @@ export default function App() {
                 Results will appear here once you start typing.
               </Text>
             </View>
-          ) : null
+          ) : undefined
         }
       />
     </View>
@@ -456,7 +456,7 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255,255,255,0.06)",
   },
   eyebrow: {
-    color: "#ff8a45",
+    color: "#ffffff",
     fontSize: 12,
     fontWeight: "700",
     letterSpacing: 1,

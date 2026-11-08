@@ -9,6 +9,7 @@ node_modules
 
 # Dist files
 dist
+.puppeteer-cache
 
 # Environment files
 .env

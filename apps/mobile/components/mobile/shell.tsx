@@ -6,17 +6,25 @@ import { AppTheme } from "./app-theme";
 type MobileShellProps = {
   title: string;
   subtitle?: string;
+  showHeader?: boolean;
   children: React.ReactNode;
 };
 
-export function MobileShell({ title, subtitle, children }: MobileShellProps) {
+export function MobileShell({
+  title,
+  subtitle,
+  showHeader = true,
+  children,
+}: MobileShellProps) {
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
-        <View style={styles.header}>
-          <Text style={styles.title}>{title}</Text>
-          {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
-        </View>
+        {showHeader ? (
+          <View style={styles.header}>
+            <Text style={styles.title}>{title}</Text>
+            {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
+          </View>
+        ) : null}
         <View style={styles.content}>{children}</View>
       </View>
     </SafeAreaView>

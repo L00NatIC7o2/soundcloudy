@@ -127,7 +127,7 @@ export default function TrackDetailView({
       }
 
       return (
-        <span key={`${part}-${index}`} style={{ color: "#ff5500" }}>
+        <span key={`${part}-${index}`} style={{ color: "#fff" }}>
           {part}
         </span>
       );
@@ -329,7 +329,6 @@ export default function TrackDetailView({
     </section>
   );
 }
-
 
 
 

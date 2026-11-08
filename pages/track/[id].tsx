@@ -103,7 +103,7 @@ export default function TrackPage() {
           <Link
             key={i}
             href={`/artist/${username}`}
-            style={{ color: "#ff5500" }}
+            style={{ color: "#fff" }}
           >
             {part}
           </Link>
@@ -164,7 +164,7 @@ export default function TrackPage() {
                     width={32}
                     style={{ borderRadius: "50%", marginRight: 8 }}
                   />
-                  <span style={{ color: "#ff5500" }}>
+                  <span style={{ color: "#fff" }}>
                     {comment.user.username}
                   </span>
                 </Link>
@@ -199,12 +199,12 @@ export default function TrackPage() {
                     <Link
                       href={rt.artist.permalink_url}
                       target="_blank"
-                      style={{ color: "#ff5500" }}
+                      style={{ color: "#fff" }}
                     >
                       {rt.artist.username}
                     </Link>
                   ) : (
-                    <span style={{ color: "#ff5500" }}>{rt.artist.username}</span>
+                    <span style={{ color: "#fff" }}>{rt.artist.username}</span>
                   )}
                 </div>
               </div>

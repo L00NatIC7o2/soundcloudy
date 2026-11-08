@@ -9,7 +9,12 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "UIBackgroundModes": [
+          "audio"
+        ]
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -37,6 +42,16 @@
           "dark": {
             "backgroundColor": "#000000"
           }
+        }
+      ],
+      "expo-font",
+      "expo-web-browser",
+      [
+        "expo-audio",
+        {
+          "enableBackgroundPlayback": true,
+          "enableBackgroundRecording": false,
+          "microphonePermission": false
         }
       ]
     ],

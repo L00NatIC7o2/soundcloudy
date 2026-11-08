@@ -7,6 +7,8 @@ import {
   startTransition,
   type CSSProperties,
   type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import { useRouter } from "next/router";
 import Player from "../src/components/Player";
@@ -103,6 +105,9 @@ export default function Home() {
   const [autoplayNext, setAutoplayNext] = useState(true);
   const [crossfadeEnabled, setCrossfadeEnabled] = useState(false);
   const [crossfadeDuration, setCrossfadeDuration] = useState(5);
+  const [animateAlbumBackground, setAnimateAlbumBackground] = useState(true);
+  const [staticBackgroundColor, setStaticBackgroundColor] =
+    useState("#101014");
   const [animateAlbumArtWhenInactive, setAnimateAlbumArtWhenInactive] =
     useState(false);
   const [appWindowActive, setAppWindowActive] = useState(true);
@@ -130,6 +135,15 @@ export default function Home() {
       }
       if (typeof stored.animateAlbumArtWhenInactive === "boolean") {
         setAnimateAlbumArtWhenInactive(stored.animateAlbumArtWhenInactive);
+      }
+      if (typeof stored.animateAlbumBackground === "boolean") {
+        setAnimateAlbumBackground(stored.animateAlbumBackground);
+      }
+      if (
+        typeof stored.staticBackgroundColor === "string" &&
+        /^#[0-9a-fA-F]{6}$/.test(stored.staticBackgroundColor)
+      ) {
+        setStaticBackgroundColor(stored.staticBackgroundColor);
       }
       if (Number.isFinite(stored.crossfadeDuration)) {
         setCrossfadeDuration(Math.max(1, Math.min(12, stored.crossfadeDuration)));
@@ -166,9 +180,9 @@ export default function Home() {
     if (!settingsLoaded) return;
     window.localStorage.setItem(
       "soundcloudy_settings",
-      JSON.stringify({ autoplayNext, crossfadeEnabled, crossfadeDuration, animateAlbumArtWhenInactive, theme: appTheme, equalizer }),
+      JSON.stringify({ autoplayNext, crossfadeEnabled, crossfadeDuration, animateAlbumArtWhenInactive, animateAlbumBackground, staticBackgroundColor, theme: appTheme, equalizer }),
     );
-  }, [settingsLoaded, autoplayNext, crossfadeEnabled, crossfadeDuration, animateAlbumArtWhenInactive, appTheme, equalizer]);
+  }, [settingsLoaded, autoplayNext, crossfadeEnabled, crossfadeDuration, animateAlbumArtWhenInactive, animateAlbumBackground, staticBackgroundColor, appTheme, equalizer]);
   useEffect(() => {
     const syncAppWindowActivity = () => {
       setAppWindowActive(
@@ -286,6 +300,21 @@ export default function Home() {
   const searchBoxRef = useRef<HTMLDivElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const mainAreaRef = useRef<HTMLElement | null>(null);
+  const playlistHeaderRef = useRef<HTMLDivElement | null>(null);
+  const playlistBannerLayerRef = useRef<HTMLDivElement | null>(null);
+  const [mainPageScrollable, setMainPageScrollable] = useState(false);
+  const scrollbarRef = useRef<HTMLDivElement | null>(null);
+  const scrollbarThumbRef = useRef<HTMLDivElement | null>(null);
+  const scrollbarMetricsRef = useRef({
+    thumbHeight: 0,
+    thumbTop: 0,
+    scrollTop: 0,
+    maxScroll: 0,
+  });
+  const scrollbarDragRef = useRef<{
+    pointerY: number;
+    scrollTop: number;
+  } | null>(null);
   const pullRefreshStartYRef = useRef<number | null>(null);
   const pullRefreshTriggeredRef = useRef(false);
   const suggestTimeoutRef = useRef<number | null>(null);
@@ -393,6 +422,95 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const mainArea = mainAreaRef.current;
+    const scrollTarget =
+      document.body.classList.contains("ios-standalone-app") && mainArea
+        ? mainArea
+        : (document.scrollingElement as HTMLElement | null);
+    if (!scrollTarget) return;
+
+    let updateFrame = 0;
+    const updateScrollbar = () => {
+      updateFrame = 0;
+      const viewportHeight =
+        scrollTarget === document.scrollingElement
+          ? window.innerHeight
+          : scrollTarget.clientHeight;
+      const trackHeight = Math.max(0, window.innerHeight - 8);
+      const maxScroll = Math.max(0, scrollTarget.scrollHeight - viewportHeight);
+      const thumbHeight =
+        maxScroll > 0
+          ? Math.min(
+              trackHeight,
+              Math.max(
+                32,
+                (viewportHeight / scrollTarget.scrollHeight) * trackHeight,
+              ),
+            )
+          : trackHeight;
+      const scrollTop = Math.min(maxScroll, Math.max(0, scrollTarget.scrollTop));
+      const maxThumbTop = Math.max(0, trackHeight - thumbHeight);
+      const thumbTop =
+        maxScroll > 0 ? (scrollTop / maxScroll) * maxThumbTop : 0;
+
+      scrollbarMetricsRef.current = {
+        thumbHeight,
+        thumbTop,
+        scrollTop,
+        maxScroll,
+      };
+
+      const thumb = scrollbarThumbRef.current;
+      if (thumb) {
+        thumb.style.height = `${thumbHeight}px`;
+        thumb.style.transform = `translateY(${thumbTop}px)`;
+      }
+
+      scrollbarRef.current?.setAttribute(
+        "aria-valuenow",
+        String(maxScroll > 0 ? Math.round((scrollTop / maxScroll) * 100) : 0),
+      );
+      setMainPageScrollable((current) =>
+        current === (maxScroll > 0) ? current : maxScroll > 0,
+      );
+    };
+    const scheduleScrollbarUpdate = () => {
+      if (!updateFrame) {
+        updateFrame = window.requestAnimationFrame(updateScrollbar);
+      }
+    };
+
+    const resizeObserver = new ResizeObserver(scheduleScrollbarUpdate);
+    resizeObserver.observe(scrollTarget);
+    if (mainArea && mainArea !== scrollTarget) resizeObserver.observe(mainArea);
+
+    const mutationObserver = new MutationObserver(scheduleScrollbarUpdate);
+    if (mainArea) {
+      mutationObserver.observe(mainArea, { childList: true, subtree: true });
+    }
+
+    scrollTarget.addEventListener("scroll", scheduleScrollbarUpdate, {
+      passive: true,
+    });
+    window.addEventListener("scroll", scheduleScrollbarUpdate, {
+      passive: true,
+    });
+    window.addEventListener("resize", scheduleScrollbarUpdate);
+    scheduleScrollbarUpdate();
+
+    return () => {
+      resizeObserver.disconnect();
+      mutationObserver.disconnect();
+      scrollTarget.removeEventListener("scroll", scheduleScrollbarUpdate);
+      window.removeEventListener("scroll", scheduleScrollbarUpdate);
+      window.removeEventListener("resize", scheduleScrollbarUpdate);
+      if (updateFrame) window.cancelAnimationFrame(updateFrame);
+    };
+  }, [isAuthenticated]);
+
+  useEffect(() => {
     return () => {
       clearTrackPanelTimer();
       if (
@@ -490,6 +608,22 @@ export default function Home() {
   }, [currentTrack?.id, historyLimit]);
 
   useEffect(() => {
+    if (!animateAlbumBackground) {
+      if (appBackgroundTimerRef.current !== null) {
+        window.clearTimeout(appBackgroundTimerRef.current);
+        appBackgroundTimerRef.current = null;
+      }
+      if (appBackgroundCurrent || appBackgroundPrevious || appBackgroundTransitioning) {
+        setAppBackgroundCurrent("");
+        setAppBackgroundPrevious("");
+        setAppBackgroundTransitioning(false);
+      }
+      if (crossfadeBackground) {
+        setCrossfadeBackground(null);
+      }
+      return;
+    }
+
     const nextBackground =
       currentTrack?.artwork_url?.replace?.("-large", "-t500x500") ||
       currentTrack?.user?.avatar_url?.replace?.("-large", "-t500x500") ||
@@ -532,7 +666,15 @@ export default function Home() {
         appBackgroundTimerRef.current = null;
       }, 1200);
     }
-  }, [currentTrack?.id, appBackgroundCurrent, currentTrack, crossfadeBackground]);
+  }, [
+    animateAlbumBackground,
+    currentTrack?.id,
+    appBackgroundCurrent,
+    appBackgroundPrevious,
+    appBackgroundTransitioning,
+    currentTrack,
+    crossfadeBackground,
+  ]);
 
   useEffect(() => {
     if (!viewingTrack || !currentTrack?.id) return;
@@ -3528,6 +3670,29 @@ export default function Home() {
     : selectedPlaylist
       ? getPlaylistCover(selectedPlaylist)
       : undefined;
+
+  useEffect(() => {
+    const header = playlistHeaderRef.current;
+    const layer = playlistBannerLayerRef.current;
+    if (!header || !layer) return;
+
+    const setBannerHeight = () => {
+      const appShell = header.closest(".app-shell");
+      if (!appShell) return;
+      const headerBottom =
+        header.getBoundingClientRect().bottom -
+        appShell.getBoundingClientRect().top;
+      layer.style.height = `${Math.ceil(headerBottom + 48)}px`;
+    };
+
+    window.addEventListener("resize", setBannerHeight);
+    setBannerHeight();
+
+    return () => {
+      window.removeEventListener("resize", setBannerHeight);
+    };
+  }, [displayCover, sectionLoading, selectedPlaylist?.id, viewingLikes]);
+
   const activeProfileBanner = viewingProfile
     ? normalizeArtworkUrl(userProfile?.banner_url)
     : normalizeArtworkUrl(
@@ -3586,13 +3751,14 @@ export default function Home() {
     trackItems: any[],
     rowKeyPrefix: string,
     playlistContextId: number | null = null,
+    listVariant: "playlist" | null = null,
   ) => {
     const resolvedTrackItems = trackItems
       .map((item: any) => resolveTrackItem(item))
       .filter((item: any) => isTrackItem(item));
 
     return (
-      <div className="track-list">
+      <div className={`track-list${listVariant ? ` ${listVariant}-track-list` : ""}`}>
         {trackItems.map((track: any, index: number) => {
           const resolvedTrack = resolveTrackItem(track);
           if (!resolvedTrack) return null;
@@ -3866,6 +4032,98 @@ export default function Home() {
   if (!isAuthenticated) {
     return null;
   }
+
+  const getAppScrollTarget = () =>
+    document.body.classList.contains("ios-standalone-app") &&
+    mainAreaRef.current
+      ? mainAreaRef.current
+      : (document.scrollingElement as HTMLElement | null);
+  const scrollAppTo = (scrollTop: number) => {
+    const target = getAppScrollTarget();
+    if (target) {
+      target.scrollTop = Math.max(
+        0,
+        Math.min(scrollbarMetricsRef.current.maxScroll, scrollTop),
+      );
+    }
+  };
+  const handleScrollbarTrackPointerDown = (
+    event: ReactPointerEvent<HTMLDivElement>,
+  ) => {
+    if (event.target !== event.currentTarget) return;
+    const trackRect = event.currentTarget.getBoundingClientRect();
+    const metrics = scrollbarMetricsRef.current;
+    const maxThumbTop = Math.max(0, trackRect.height - metrics.thumbHeight);
+    const thumbTop = Math.max(
+      0,
+      Math.min(
+        maxThumbTop,
+        event.clientY - trackRect.top - metrics.thumbHeight / 2,
+      ),
+    );
+    scrollAppTo(
+      maxThumbTop > 0
+        ? (thumbTop / maxThumbTop) * metrics.maxScroll
+        : 0,
+    );
+  };
+  const handleScrollbarThumbPointerDown = (
+    event: ReactPointerEvent<HTMLDivElement>,
+  ) => {
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    scrollbarDragRef.current = {
+      pointerY: event.clientY,
+      scrollTop: scrollbarMetricsRef.current.scrollTop,
+    };
+  };
+  const handleScrollbarThumbPointerMove = (
+    event: ReactPointerEvent<HTMLDivElement>,
+  ) => {
+    const drag = scrollbarDragRef.current;
+    if (!drag) return;
+    const trackHeight =
+      event.currentTarget.parentElement?.getBoundingClientRect().height ?? 0;
+    const metrics = scrollbarMetricsRef.current;
+    const maxThumbTop = Math.max(0, trackHeight - metrics.thumbHeight);
+    if (maxThumbTop <= 0) return;
+    const scrollDelta =
+      ((event.clientY - drag.pointerY) / maxThumbTop) * metrics.maxScroll;
+    scrollAppTo(drag.scrollTop + scrollDelta);
+  };
+  const handleScrollbarThumbPointerUp = (
+    event: ReactPointerEvent<HTMLDivElement>,
+  ) => {
+    scrollbarDragRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  };
+  const handleScrollbarKeyDown = (
+    event: ReactKeyboardEvent<HTMLDivElement>,
+  ) => {
+    const target = getAppScrollTarget();
+    if (!target) return;
+
+    const pageStep = target.clientHeight * 0.9;
+    const scrollByKey: Record<string, number> = {
+      ArrowDown: 40,
+      ArrowUp: -40,
+      PageDown: pageStep,
+      PageUp: -pageStep,
+    };
+    if (event.key === "Home") {
+      event.preventDefault();
+      scrollAppTo(0);
+    } else if (event.key === "End") {
+      event.preventDefault();
+      scrollAppTo(scrollbarMetricsRef.current.maxScroll);
+    } else if (scrollByKey[event.key] !== undefined) {
+      event.preventDefault();
+      scrollAppTo(target.scrollTop + scrollByKey[event.key]);
+    }
+  };
+
   const appShellStyle = {
     "--app-bg-current": appBackgroundCurrent
       ? `url("${appBackgroundCurrent}")`
@@ -3873,15 +4131,50 @@ export default function Home() {
     "--app-bg-previous": appBackgroundPrevious
       ? `url("${appBackgroundPrevious}")`
       : "none",
+    "--app-static-background": staticBackgroundColor,
   } as CSSProperties;
 
   return (
     <div
       className={`app-shell app-shell-reactive ${appBackgroundTransitioning ? "app-shell-transitioning" : ""} ${playerState.isPlaying ? "app-shell-playing" : ""}`}
       data-ambient-paused={String(!appWindowActive && !animateAlbumArtWhenInactive)}
+      data-ambient-animated={String(animateAlbumBackground)}
       style={appShellStyle}
       data-theme={appTheme}
     >
+      {displayCover && (selectedPlaylist || viewingLikes) && (
+        <div
+          ref={playlistBannerLayerRef}
+          aria-hidden="true"
+          className="playlist-banner-viewport"
+          style={{
+            "--playlist-banner-image": `url("${displayCover}")`,
+          } as CSSProperties}
+        />
+      )}
+      <div
+        ref={scrollbarRef}
+        className={`app-scrollbar${mainPageScrollable ? " scrollable" : ""}`}
+        role="scrollbar"
+        aria-label="Page scroll position"
+        aria-controls="main-area-scroll"
+        aria-orientation="vertical"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={0}
+        tabIndex={mainPageScrollable ? 0 : -1}
+        onKeyDown={handleScrollbarKeyDown}
+        onPointerDown={handleScrollbarTrackPointerDown}
+      >
+        <div
+          ref={scrollbarThumbRef}
+          className="app-scrollbar-thumb"
+          onPointerDown={handleScrollbarThumbPointerDown}
+          onPointerMove={handleScrollbarThumbPointerMove}
+          onPointerUp={handleScrollbarThumbPointerUp}
+          onPointerCancel={handleScrollbarThumbPointerUp}
+        />
+      </div>
       <div
         aria-hidden="true"
         className={`app-crossfade-background ${crossfadeBackground ? "active" : ""}`}
@@ -4464,7 +4757,7 @@ export default function Home() {
         </div>
       </div>
 
-      <main className="main-area" ref={mainAreaRef}>
+      <main className="main-area" id="main-area-scroll" ref={mainAreaRef}>
         {viewingSettings ? (
           <SettingsView
             autoplayNext={autoplayNext}
@@ -4478,6 +4771,10 @@ export default function Home() {
             equalizer={equalizer}
             onEqualizerChange={setEqualizer}
             spectrum={audioSpectrum}
+            animateAlbumBackground={animateAlbumBackground}
+            onAnimateAlbumBackgroundChange={setAnimateAlbumBackground}
+            staticBackgroundColor={staticBackgroundColor}
+            onStaticBackgroundColorChange={setStaticBackgroundColor}
             animateAlbumArtWhenInactive={animateAlbumArtWhenInactive}
             onAnimateAlbumArtWhenInactiveChange={setAnimateAlbumArtWhenInactive}
           />
@@ -4634,12 +4931,10 @@ export default function Home() {
                       }
                     }}
                     style={{
-                      backgroundImage: activeProfileBanner
-                        ? `url(${activeProfileBanner})`
+                      "--profile-banner-image": activeProfileBanner
+                        ? `url("${activeProfileBanner}")`
                         : "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-                      backgroundSize: "cover",
-                      backgroundPosition: "center",
-                    }}
+                    } as CSSProperties}
                   >
                     <div className="profile-header-left">
                       <img
@@ -4857,6 +5152,7 @@ export default function Home() {
                 ) : (
                   <div
                     className="playlist-header-sticky"
+                    ref={playlistHeaderRef}
                     style={
                       {
                         "--playlist-banner-image": displayCover
@@ -5351,6 +5647,7 @@ export default function Home() {
                     visiblePlaylistTracks,
                     "playlist-track",
                     currentPlaylistId,
+                    "playlist",
                   )}
                 {viewingLikes && likesHasMore && (
                   <div
@@ -6172,9 +6469,11 @@ export default function Home() {
         crossfadeDuration={crossfadeDuration}
         onCrossfadeNext={handleCrossfadeNext}
         onCrossfadeVisualChange={(artwork, durationSeconds = 0.2) => {
-          setCrossfadeBackground(
-            artwork ? { artwork, durationSeconds } : null,
-          );
+          if (animateAlbumBackground) {
+            setCrossfadeBackground(
+              artwork ? { artwork, durationSeconds } : null,
+            );
+          }
         }}
         onAudioSpectrum={viewingSettings ? setAudioSpectrum : undefined}
       />

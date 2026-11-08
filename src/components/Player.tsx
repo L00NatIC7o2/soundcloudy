@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, memo, type CSSProperties, type MouseEvent as ReactMouseEvent, type SyntheticEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, memo, type CSSProperties, type MouseEvent as ReactMouseEvent, type SyntheticEvent } from "react";
+import { createPortal } from "react-dom";
 import { io, Socket } from "socket.io-client";
 import Hls from "hls.js";
 import PlaylistMenu from "./PlaylistMenu";
@@ -135,6 +136,7 @@ const Player = memo(function Player({
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const primaryAudioRef = useRef<HTMLAudioElement | null>(null);
   const secondaryAudioRef = useRef<HTMLAudioElement | null>(null);
+  const lastAudioSpectrumRef = useRef<number[]>([]);
   const [activeAudioSlot, setActiveAudioSlot] = useState<0 | 1>(0);
   const [crossfadeArtwork, setCrossfadeArtwork] = useState<string | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -176,6 +178,13 @@ const Player = memo(function Player({
   const [playbackOwnerDeviceId, setPlaybackOwnerDeviceId] = useState<string | null>(null);
   const [availableDevices, setAvailableDevices] = useState<any[]>([]);
   const [isDeviceMenuOpen, setIsDeviceMenuOpen] = useState(false);
+  const [deviceMenuPosition, setDeviceMenuPosition] = useState<{
+    top: number;
+    left: number;
+    ready: boolean;
+  }>({ top: 0, left: 0, ready: false });
+  const deviceButtonRef = useRef<HTMLButtonElement | null>(null);
+  const deviceMenuRef = useRef<HTMLDivElement | null>(null);
   const [isMobileDeviceSheetOpen, setIsMobileDeviceSheetOpen] = useState(false);
   const currentTrackRef = useRef<any>(null);
   const lastScrobbledTrackIdRef = useRef<string | null>(null);
@@ -186,6 +195,76 @@ const Player = memo(function Player({
   useEffect(() => {
     currentTrackRef.current = currentTrack;
   }, [currentTrack]);
+
+  useLayoutEffect(() => {
+    if (!isDeviceMenuOpen) return;
+
+    const updatePosition = () => {
+      const button = deviceButtonRef.current;
+      const menu = deviceMenuRef.current;
+      if (!button || !menu) return;
+
+      const buttonRect = button.getBoundingClientRect();
+      const menuRect = menu.getBoundingClientRect();
+      const left = Math.max(
+        12,
+        Math.min(
+          buttonRect.right - menuRect.width,
+          window.innerWidth - menuRect.width - 12,
+        ),
+      );
+      const aboveTop = buttonRect.top - menuRect.height - 12;
+      const top =
+        aboveTop >= 12
+          ? aboveTop
+          : Math.max(
+              12,
+              Math.min(
+                buttonRect.bottom + 12,
+                window.innerHeight - menuRect.height - 12,
+              ),
+            );
+
+      setDeviceMenuPosition((current) =>
+        current.top === top && current.left === left && current.ready
+          ? current
+          : { top, left, ready: true },
+      );
+    };
+
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [availableDevices.length, isDeviceMenuOpen]);
+
+  useEffect(() => {
+    if (!isDeviceMenuOpen) return;
+
+    const dismissOnOutsideClick = (event: PointerEvent) => {
+      const target = event.target;
+      if (
+        target instanceof Node &&
+        !deviceMenuRef.current?.contains(target) &&
+        !deviceButtonRef.current?.contains(target)
+      ) {
+        setIsDeviceMenuOpen(false);
+      }
+    };
+    const dismissOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setIsDeviceMenuOpen(false);
+    };
+
+    document.addEventListener("pointerdown", dismissOnOutsideClick);
+    document.addEventListener("keydown", dismissOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", dismissOnOutsideClick);
+      document.removeEventListener("keydown", dismissOnEscape);
+    };
+  }, [isDeviceMenuOpen]);
 
   useEffect(() => {
     if (!currentTrack?.id) return;
@@ -397,25 +476,27 @@ const Player = memo(function Player({
     });
 
     s.on("devices-update", (payload) => {
-      setAvailableDevices(Array.isArray(payload?.devices) ? payload.devices : []);
+      const devices = Array.isArray(payload?.devices) ? payload.devices : [];
+      setAvailableDevices((previous) => {
+        const unchanged =
+          previous.length === devices.length &&
+          previous.every((device, index) => {
+            const next = devices[index];
+            return (
+              device?.deviceId === next?.deviceId &&
+              device?.socketId === next?.socketId &&
+              device?.kind === next?.kind &&
+              device?.platform === next?.platform
+            );
+          });
+        return unchanged ? previous : devices;
+      });
       if (typeof payload?.activeDeviceId === "string") {
         setPlaybackOwnerDeviceId(payload.activeDeviceId);
       }
-      console.log("[player-sync] received devices-update", {
-        roomId: syncRoomId,
-        deviceId,
-        activeDeviceId: payload?.activeDeviceId || null,
-        count: Array.isArray(payload?.devices) ? payload.devices.length : 0,
-      });
     });
 
     s.on("playback-update", (remoteState) => {
-      console.log("[player-sync] received playback-update", {
-        roomId: syncRoomId,
-        deviceId,
-        trackId: remoteState?.trackId || null,
-        playing: remoteState?.playing ?? null,
-      });
       syncRemotePlayback(remoteState);
     });
 
@@ -578,8 +659,24 @@ const Player = memo(function Player({
     const analyser = audioRef.current
       ? audioPipelinesRef.current.get(audioRef.current)?.analyser
       : null;
-    if (!onAudioSpectrum || !analyser) {
-      onAudioSpectrum?.([]);
+    if (!onAudioSpectrum) {
+      return;
+    }
+
+    const publishSpectrum = (spectrum: number[]) => {
+      const previous = lastAudioSpectrumRef.current;
+      if (
+        previous.length === spectrum.length &&
+        previous.every((level, index) => level === spectrum[index])
+      ) {
+        return;
+      }
+      lastAudioSpectrumRef.current = spectrum;
+      onAudioSpectrum(spectrum);
+    };
+
+    if (!analyser || !isPlaying) {
+      publishSpectrum([]);
       return;
     }
 
@@ -590,7 +687,7 @@ const Player = memo(function Player({
     let lastUpdate = 0;
     const readSpectrum = (timestamp: number) => {
       frame = window.requestAnimationFrame(readSpectrum);
-      if (timestamp - lastUpdate < 45) return;
+      if (timestamp - lastUpdate < 100) return;
       lastUpdate = timestamp;
       analyser.getByteFrequencyData(samples);
       const spectrum = Array.from({ length: bucketCount }, (_, index) => {
@@ -602,11 +699,11 @@ const Player = memo(function Player({
         for (let bin = firstBin; bin <= lastBin; bin += 1) peak = Math.max(peak, samples[bin]);
         return Math.min(1, peak / 210);
       });
-      onAudioSpectrum(spectrum);
+      publishSpectrum(spectrum);
     };
     frame = window.requestAnimationFrame(readSpectrum);
     return () => window.cancelAnimationFrame(frame);
-  }, [onAudioSpectrum, activeAudioSlot, Boolean(currentTrack)]);
+  }, [onAudioSpectrum, activeAudioSlot, Boolean(currentTrack), isPlaying]);
   useEffect(() => {
     const gains = equalizer.enabled
       ? [equalizer.low, equalizer.lowMid, equalizer.mid, equalizer.highMid, equalizer.high]
@@ -2072,15 +2169,6 @@ const Player = memo(function Player({
     lastEmittedPlaybackRef.current = nextSnapshot;
     setPlaybackOwnerDeviceId(deviceId);
 
-    console.log("[player-sync] emit playback-update", {
-      roomId: syncRoomId,
-      deviceId,
-      trackId: currentTrack.id,
-      playing: isPlaying,
-      force,
-      position: Math.round(currentPosition),
-    });
-
     socket.emit("playback-update", {
       userId: syncRoomId,
       deviceId,
@@ -2356,7 +2444,7 @@ const Player = memo(function Player({
       }
 
       return (
-        <span key={`${part}-${index}`} style={{ color: "#ff5500" }}>
+        <span key={`${part}-${index}`} style={{ color: "#fff" }}>
           {part}
         </span>
       );
@@ -2625,7 +2713,7 @@ const Player = memo(function Player({
                     href={`/track/${currentTrack.id}`}
                     className="player-title-link"
                     style={{
-                      color: "#ff5500",
+                      color: "#fff",
                       textDecoration: "underline",
                       cursor: "pointer",
                     }}
@@ -2669,10 +2757,19 @@ const Player = memo(function Player({
                 </button>
                 <button
                   type="button"
+                  ref={deviceButtonRef}
                   className={`player-device-btn ${isDeviceMenuOpen ? "open" : ""}`}
-                  onClick={() => setIsDeviceMenuOpen((open) => !open)}
+                  onClick={() => {
+                    setDeviceMenuPosition((position) => ({
+                      ...position,
+                      ready: false,
+                    }));
+                    setIsDeviceMenuOpen((open) => !open);
+                  }}
                   title="Choose listening device"
                   aria-label="Choose listening device"
+                  aria-haspopup="menu"
+                  aria-expanded={isDeviceMenuOpen}
                 >
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <rect x="3" y="5" width="13" height="10" rx="2" />
@@ -2786,30 +2883,6 @@ const Player = memo(function Player({
                 playlistsWithTrack={playlistsWithTrack}
               />
             </div>
-            {isDeviceMenuOpen ? (
-              <div className="player-device-menu">
-                <div className="player-device-menu-title">Listen On</div>
-                <div className="player-device-menu-list">
-                  {availableDevices.map((device) => {
-                    const isActive = device?.deviceId === playbackOwnerDeviceId;
-                    const isCurrentDevice = device?.deviceId === deviceId;
-                    return (
-                      <button
-                        key={device?.socketId || device?.deviceId}
-                        type="button"
-                        className={`player-device-menu-item ${isActive ? "active" : ""}`}
-                        onClick={() => claimPlaybackOutput(device.deviceId)}
-                      >
-                        <span>{describeDevice(device)}</span>
-                        <span className="player-device-menu-meta">
-                          {isActive ? (isCurrentDevice ? "Listening here" : "Listening there") : isCurrentDevice ? "This device" : "Available"}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            ) : null}
           </div>
 
           <div className="player-center">
@@ -2977,6 +3050,124 @@ const Player = memo(function Player({
         </div>
       </div>
       </div>
+      {isDeviceMenuOpen && typeof document !== "undefined"
+        ? createPortal(
+            <div
+              ref={deviceMenuRef}
+              className="player-device-menu"
+              role="menu"
+              style={{
+                ...playerStyle,
+                top: deviceMenuPosition.top,
+                left: deviceMenuPosition.left,
+                visibility: deviceMenuPosition.ready ? "visible" : "hidden",
+              }}
+            >
+              <div className="player-device-menu-title">
+                <span className="player-device-menu-title-icon" aria-hidden="true">
+                  <svg
+                    width="15"
+                    height="15"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <rect x="3" y="5" width="13" height="10" rx="2" />
+                    <path d="M8 19h12a1 1 0 0 0 1-1v-7" />
+                    <path d="M8 19l-2 2" />
+                  </svg>
+                </span>
+                <span>Listen on</span>
+              </div>
+              <div className="player-device-menu-list">
+                {availableDevices.map((device) => {
+                  const isActive = device?.deviceId === playbackOwnerDeviceId;
+                  const isCurrentDevice = device?.deviceId === deviceId;
+                  const deviceType =
+                    device?.kind === "mobile"
+                      ? "mobile"
+                      : device?.kind === "desktop"
+                        ? "desktop"
+                        : "web";
+                  return (
+                    <button
+                      key={device?.socketId || device?.deviceId}
+                      type="button"
+                      role="menuitem"
+                      className={`player-device-menu-item ${isActive ? "active" : ""}`}
+                      onClick={() => claimPlaybackOutput(device.deviceId)}
+                    >
+                      <span className={`player-device-menu-icon ${deviceType}`} aria-hidden="true">
+                        <svg
+                          width="17"
+                          height="17"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.8"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          {deviceType === "mobile" ? (
+                            <>
+                              <rect x="7" y="2.75" width="10" height="18.5" rx="2.2" />
+                              <path d="M11 18h2" />
+                            </>
+                          ) : deviceType === "desktop" ? (
+                            <>
+                              <rect x="3" y="4" width="18" height="13" rx="2" />
+                              <path d="M12 17v4M8 21h8" />
+                            </>
+                          ) : (
+                            <>
+                              <circle cx="12" cy="12" r="9" />
+                              <path d="M3.5 9h17M3.5 15h17M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18" />
+                            </>
+                          )}
+                        </svg>
+                      </span>
+                      <span className="player-device-menu-copy">
+                        <span className="player-device-menu-name">{describeDevice(device)}</span>
+                        <span className="player-device-menu-meta">
+                          {isActive
+                            ? isCurrentDevice
+                              ? "Playing here"
+                              : "Currently playing"
+                            : isCurrentDevice
+                              ? "This device"
+                              : "Available"}
+                        </span>
+                      </span>
+                      <span
+                        className={`player-device-menu-state ${isActive ? "active" : ""}`}
+                        aria-hidden="true"
+                      >
+                        {isActive ? (
+                          <svg
+                            width="14"
+                            height="14"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2.5"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <path d="m5 12 4 4L19 6" />
+                          </svg>
+                        ) : null}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
       <aside
         className={`player-queue-panel ${isQueuePanelOpen ? "open" : ""} ${isQueueResizing ? "resizing" : ""}`}
         style={{ width: `${queuePanelWidth}px` }}
@@ -3927,14 +4118,6 @@ const Player = memo(function Player({
 });
 
 export default Player;
-
-
-
-
-
-
-
-
 
 
 

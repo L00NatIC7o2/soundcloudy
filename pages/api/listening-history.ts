@@ -152,15 +152,25 @@ const resolveRequestWebCredentials = async (
 
 const normalizePlayHistoryItem = (item: any) => {
   const track =
-    item?.track || item?.played_track || item?.item || item?.sound || item;
-  if (!track || track.kind !== "track") return null;
+    item?.track ||
+    item?.played_track ||
+    item?.origin ||
+    item?.item ||
+    item?.sound ||
+    item?.entity ||
+    item;
+  if (!track || (track.kind && track.kind !== "track")) return null;
+  if (!track.id || !track.title) return null;
   return {
     ...track,
+    kind: "track",
     played_at:
       item?.played_at ||
       item?.playedAt ||
       item?.played_at_utc ||
       item?.playback_timestamp ||
+      item?.created_at ||
+      track?.played_at ||
       null,
   };
 };
@@ -184,7 +194,6 @@ const fetchPlayHistory = async (
     app_locale: webCredentials.appLocale,
     oauth_token: token,
   };
-  let response;
   const headers = {
     Authorization: `OAuth ${token}`,
     Accept: "application/json, text/plain, */*",
@@ -196,72 +205,67 @@ const fetchPlayHistory = async (
     "User-Agent":
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
   };
+  const candidates = [
+    { url: PLAY_HISTORY_URL, version: 2 },
+    { url: PLAY_HISTORY_URL_LEGACY, version: 2 },
+    { url: "https://api-v2.soundcloud.com/me/track_history", version: 2 },
+    { url: "https://api-v2.soundcloud.com/me/activities", version: 2 },
+    { url: "https://api-v2.soundcloud.com/stream", version: 2 },
+    { url: "https://api.soundcloud.com/me/activities", version: 1 },
+  ];
 
-  try {
-    response = await axios.get(PLAY_HISTORY_URL, {
-      params,
-      headers,
-      timeout: 10000,
-    });
-  } catch (error: any) {
-    const status = error?.response?.status;
-    if (status === 401 || status === 403) {
-      // Try with explicit oauth_token parameter first
+  const fetchCandidates = async (accessToken: string) => {
+    let lastError: unknown;
+    let successfulEmptyResponse: { tracks: any[]; rawCount: number } | null =
+      null;
+
+    for (const candidate of candidates) {
       try {
-        response = await axios.get(PLAY_HISTORY_URL, {
-          params: {
-            ...params,
-            oauth_token: token,
+        const response = await axios.get(candidate.url, {
+          params:
+            candidate.version === 2
+              ? { ...params, oauth_token: accessToken }
+              : { limit },
+          headers: {
+            ...headers,
+            Authorization: `OAuth ${accessToken}`,
+            ...(candidate.version === 2
+              ? { "X-Client-Id": clientId }
+              : {}),
           },
-          headers,
           timeout: 10000,
         });
-      } catch (retryError: any) {
-        // Refresh through the shared auth flow so rotated credentials are
-        // persisted to the session and response cookies.
-        if (
-          (retryError?.response?.status === 401 ||
-            retryError?.response?.status === 403)
-        ) {
-          const refreshedToken = await refreshAuth();
-          if (refreshedToken) {
-            // Retry with new token
-            const newHeaders = {
-              ...headers,
-              Authorization: `OAuth ${refreshedToken}`,
-              "X-Client-Id": getV2ClientId(),
-            };
-            response = await axios.get(PLAY_HISTORY_URL, {
-              params: {
-                ...params,
-                oauth_token: refreshedToken,
-              },
-              headers: newHeaders,
-              timeout: 10000,
-            });
-          } else {
-            throw retryError;
-          }
-        } else {
-          throw retryError;
+        const items = Array.isArray(response.data)
+          ? response.data
+          : Array.isArray(response.data?.collection)
+            ? response.data.collection
+            : [];
+        const tracks = items
+          .map(normalizePlayHistoryItem)
+          .filter((track: any) => track && track.id)
+          .slice(0, limit);
+        if (tracks.length) return { tracks, rawCount: items.length };
+        successfulEmptyResponse = { tracks: [], rawCount: items.length };
+      } catch (error: any) {
+        lastError = error;
+        if (![401, 403, 404, 405].includes(error?.response?.status)) {
+          throw error;
         }
       }
-    } else if (status === 404) {
-      response = await axios.get(PLAY_HISTORY_URL_LEGACY, {
-        params,
-        headers,
-        timeout: 10000,
-      });
-    } else {
-      throw error;
     }
-  }
 
-  const items = response?.data?.collection || [];
-  const tracks = items
-    .map(normalizePlayHistoryItem)
-    .filter((track: any) => track && track.id);
-  return { tracks, rawCount: items.length };
+    if (successfulEmptyResponse) return successfulEmptyResponse;
+    throw lastError || new Error("SoundCloud returned no play history.");
+  };
+
+  try {
+    return await fetchCandidates(token);
+  } catch (error: any) {
+    if (![401, 403].includes(error?.response?.status)) throw error;
+    const refreshedToken = await refreshAuth();
+    if (!refreshedToken || refreshedToken === token) throw error;
+    return fetchCandidates(refreshedToken);
+  }
 };
 
 const delay = (ms: number) =>
@@ -594,7 +598,19 @@ const getListeningHistoryInternal = async (
     }
   }
 
-  const browser = await getBrowser();
+  let browser: Browser;
+  try {
+    browser = await getBrowser();
+  } catch (error) {
+    const launchError: any = new Error(
+      "The listening-history browser fallback is unavailable. Rebuild the service to install Puppeteer's Chrome binary.",
+    );
+    launchError.status = 503;
+    launchError.details = {
+      message: error instanceof Error ? error.message : String(error),
+    };
+    throw launchError;
+  }
   let page: Page | null = null;
   try {
     page = await browser.newPage();

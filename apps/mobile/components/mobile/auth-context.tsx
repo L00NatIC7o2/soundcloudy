@@ -1,5 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { Alert } from "react-native";
 import * as WebBrowser from "expo-web-browser";
 
@@ -19,7 +19,7 @@ type AuthState = {
   authenticated: boolean;
   loading: boolean;
   label: string;
-  refresh: () => Promise<void>;
+  refresh: () => Promise<boolean>;
   login: () => Promise<void>;
   logout: () => Promise<void>;
   authHeaders: Record<string, string>;
@@ -43,6 +43,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [label, setLabel] = useState("Checking session...");
   const [tokens, setTokens] = useState<StoredTokens | null>(null);
+  const authHeaders = useMemo(() => buildAuthHeaders(tokens), [tokens]);
 
   const refresh = async () => {
     setLoading(true);
@@ -190,7 +191,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         refresh,
         login,
         logout,
-        authHeaders: buildAuthHeaders(tokens),
+        authHeaders,
       }}
     >
       {children}

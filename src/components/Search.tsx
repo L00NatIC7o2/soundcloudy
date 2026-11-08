@@ -115,7 +115,7 @@ export default function Search() {
                 router.push(`/track/${track.id}`);
               }}
               style={{
-                color: "#ff5500",
+                color: "#fff",
                 textDecoration: "underline",
                 cursor: "pointer",
               }}

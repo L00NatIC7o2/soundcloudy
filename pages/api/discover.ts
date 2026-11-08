@@ -14,9 +14,6 @@ import { getSoundCloudWebClientId } from "../../src/server/soundcloud/webClientI
 const DISCOVER_CACHE_TTL_MS = 15 * 60 * 1000;
 const FALLBACK_CLIENT_ID = "BecG5WJDDxYMffAfWcjJleNqrGyJyZhI";
 const FALLBACK_APP_VERSION = "1770366292";
-const SOUNDcloud_USER_AGENT =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:128.0) Gecko/20100101 Firefox/128.0";
-
 const fetchPersonalizedV2 = async (
   endpoint: string,
   token: string,
@@ -75,7 +72,133 @@ const fetchPersonalizedV2 = async (
 };
 
 const getCollection = (data: any) =>
-  Array.isArray(data?.collection) ? data.collection : [];
+  Array.isArray(data)
+    ? data
+    : Array.isArray(data?.collection)
+      ? data.collection
+      : [];
+
+const normalizeHistoryEntry = (entry: any) => {
+  const track = entry?.track || entry?.origin || entry?.item || entry;
+  return track?.id
+    ? {
+        ...track,
+        kind: track.kind || "track",
+        played_at: entry?.played_at || entry?.created_at || track?.played_at,
+      }
+    : null;
+};
+
+const fetchRecentHistory = async (
+  token: string,
+  clientId: string,
+  appVersion: string | null,
+  appLocale: string,
+) => {
+  const endpoints = [
+    "https://api-v2.soundcloud.com/me/play-history/tracks",
+    "https://api-v2.soundcloud.com/me/track_history",
+    "https://api-v2.soundcloud.com/me/activities",
+    "https://api-v2.soundcloud.com/stream",
+    "https://api.soundcloud.com/me/activities",
+  ];
+
+  for (const endpoint of endpoints) {
+    try {
+      const isV2 = endpoint.includes("api-v2.soundcloud.com");
+      const response = await axios.get(endpoint, {
+        params: {
+          ...(isV2
+            ? {
+                client_id: clientId,
+                app_version: appVersion || undefined,
+                app_locale: appLocale,
+                oauth_token: token,
+                linked_partitioning: 1,
+              }
+            : {}),
+          limit: 20,
+        },
+        headers: {
+          Authorization: `OAuth ${token}`,
+          Accept: "application/json, text/plain, */*",
+          ...(isV2 ? { "X-Client-Id": clientId } : {}),
+        },
+        timeout: 10000,
+      });
+      const items = getCollection(response.data)
+        .map(normalizeHistoryEntry)
+        .filter(Boolean);
+      if (items.length) return items;
+    } catch (error: any) {
+      if (![401, 403, 404, 405].includes(error?.response?.status)) {
+        console.warn("SoundCloud Discover history fallback failed:", {
+          endpoint,
+          status: error?.response?.status || null,
+          message: error?.message,
+        });
+      }
+    }
+  }
+
+  return [];
+};
+
+const fetchUserFallbackSections = async (
+  token: string,
+  userId: string | number | undefined,
+) => {
+  if (!userId) return [];
+  const userEndpoint = `https://api.soundcloud.com/users/${encodeURIComponent(
+    String(userId),
+  )}`;
+  const fallbacks = [
+    {
+      title: "From your likes",
+      url: `${userEndpoint}/likes/tracks`,
+      kind: "track",
+    },
+    {
+      title: "Your uploads",
+      url: `${userEndpoint}/tracks`,
+      kind: "track",
+    },
+    {
+      title: "Your playlists",
+      url: `${userEndpoint}/playlists`,
+      kind: "playlist",
+    },
+  ];
+
+  const results = await Promise.all(
+    fallbacks.map(async (fallback) => {
+      try {
+        const response = await axios.get(fallback.url, {
+          params: { limit: 10, linked_partitioning: 1, access: "playable" },
+          headers: { Authorization: `OAuth ${token}` },
+          timeout: 10000,
+        });
+        const items = getCollection(response.data)
+          .map((entry: any) => {
+            const item = entry?.track || entry;
+            return item?.id
+              ? { ...item, kind: item.kind || fallback.kind }
+              : null;
+          })
+          .filter(Boolean);
+        return items.length ? { title: fallback.title, items } : null;
+      } catch (error: any) {
+        console.warn("SoundCloud Discover fallback failed:", {
+          source: fallback.title,
+          status: error?.response?.status || null,
+          message: error?.message,
+        });
+        return null;
+      }
+    }),
+  );
+  return results.filter(Boolean);
+};
 
 const getSafeUpstreamError = (error: any) => {
   const data = error?.response?.data;
@@ -168,58 +291,20 @@ export default async function handler(
     });
   }
 
-  // Recent listening history is useful even when SoundCloud returns no mixed
-  // selections. Do not request scrape mode here; it launches Puppeteer when
-  // the API history call fails, which can interfere with Electron sign-in.
-  try {
-    const response = await axios.get(
-      "https://api-v2.soundcloud.com/me/play-history/tracks",
-      {
-        params: {
-          client_id: clientId,
-          app_version: appVersion,
-          app_locale: appLocale,
-          oauth_token: token,
-          limit: 20,
-        },
-        headers: {
-          Authorization: `OAuth ${token}`,
-          Accept: "application/json, text/plain, */*",
-          "Accept-Language": "en-US,en;q=0.9",
-          "Device-Locale": "en-US",
-          "X-Client-Id": clientId,
-          Origin: "https://soundcloud.com",
-          Referer: "https://soundcloud.com/you/history",
-          Cookie: `oauth_token=${encodeURIComponent(token)}`,
-          "User-Agent": SOUNDcloud_USER_AGENT,
-        },
-        timeout: 12000,
-      },
-    );
-    const items = getCollection(response.data)
-      .map((entry: any) => {
-        const track = entry?.track || entry?.item || entry;
-        return track?.id
-          ? {
-              ...track,
-              kind: track.kind || "track",
-              played_at: entry?.played_at || entry?.created_at || null,
-            }
-          : null;
-      })
-      .filter(Boolean);
-    if (items.length && !sections.some((section) => /recently played/i.test(section.title))) {
+  const items = await fetchRecentHistory(token, clientId, appVersion, appLocale);
+  if (items.length) {
+    if (!sections.some((section) => /recently played/i.test(section.title))) {
       sections.unshift({ title: "Listening History", items });
     }
-  } catch (error: any) {
-    const details = getSafeUpstreamError(error);
-    issues.push({
-      source: "play-history",
-      ...details,
-    });
-    console.warn("SoundCloud Discover listening history request failed:", {
-      ...details,
-    });
+  }
+
+  if (!sections.length) {
+    sections.push(
+      ...(await fetchUserFallbackSections(
+        token,
+        sessionState?.session?.userId || sessionState?.tokens?.userId,
+      )),
+    );
   }
 
   const result = { sections };

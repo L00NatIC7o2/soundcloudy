@@ -159,11 +159,19 @@ const requestDiscoverSections = async (): Promise<DiscoverSection[]> => {
     if (!response.ok) throw new Error(data?.error || "Could not load Discover.");
   }
 
-  return Array.isArray(data?.sections)
+  const sections = Array.isArray(data?.sections)
     ? data.sections
         .map((section: any) => normalizeSection(section))
         .filter((section: DiscoverSection | null): section is DiscoverSection => Boolean(section))
     : [];
+  if (!sections.length) {
+    const firstIssue = Array.isArray(data?.issues) ? data.issues[0] : null;
+    throw new Error(
+      firstIssue?.message ||
+        "SoundCloud returned no Discover sections. Try again in a moment.",
+    );
+  }
+  return sections;
 };
 
 const getDiscoverSections = (userKey: string) => {
@@ -242,6 +250,8 @@ export default function HomePage({
 }) {
   const [discoverSections, setDiscoverSections] = useState<DiscoverSection[]>([]);
   const [loading, setLoading] = useState(false);
+  const [discoverError, setDiscoverError] = useState("");
+  const [retryCount, setRetryCount] = useState(0);
 
   const getTrackArtwork = (item: SectionItem) => {
     const artworkUrl = item.artwork_url;
@@ -302,6 +312,7 @@ export default function HomePage({
     const cached = userKey ? discoverClientCache.get(userKey) : undefined;
     if (cached) setDiscoverSections(cached.sections);
     setLoading(!cached);
+    setDiscoverError("");
 
     if (cached && cached.expiresAt > Date.now()) {
       setLoading(false);
@@ -317,6 +328,11 @@ export default function HomePage({
       })
       .catch((error) => {
         console.error("Error fetching discover data:", error);
+        if (!cancelled) {
+          setDiscoverError(
+            error instanceof Error ? error.message : "Could not load Discover.",
+          );
+        }
         if (!cancelled && !cached) setDiscoverSections([]);
       })
       .finally(() => {
@@ -326,7 +342,7 @@ export default function HomePage({
     return () => {
       cancelled = true;
     };
-  }, [userId]);
+  }, [retryCount, userId]);
 
   const handleItemClick = (item: SectionItem, trackList: SectionItem[]) => {
     if (item.kind === "track") {
@@ -491,11 +507,20 @@ export default function HomePage({
       {!loading && discoverSections.length === 0 && (
         <div className="homepage-empty">
           <p>
-            Loading your personalized content...
-            <br />
-            If this persists, check the browser console for errors or try
-            refreshing.
+            {discoverError || "No Discover content is available right now."}
           </p>
+          <button
+            type="button"
+            className="homepage-retry"
+            onClick={() => {
+              const userKey =
+                userId === undefined || userId === null ? null : String(userId);
+              if (userKey) discoverClientCache.delete(userKey);
+              setRetryCount((count) => count + 1);
+            }}
+          >
+            Try again
+          </button>
         </div>
       )}
       {discoverSections.map((section) => renderSection(section))}

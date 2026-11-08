@@ -182,7 +182,7 @@ export function SearchScreen() {
                   Results will appear here once you start typing.
                 </Text>
               </View>
-            ) : null
+            ) : undefined
           }
         />
       </View>
@@ -259,5 +259,4 @@ const styles = StyleSheet.create({
     paddingBottom: 10,
   },
 });
-
 

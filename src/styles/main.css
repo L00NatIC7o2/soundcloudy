@@ -80,7 +80,7 @@ html.ios-standalone-app,
 body.ios-standalone-app,
 body.ios-standalone-app #__next {
   height: 100dvh;
-  overflow: hidden;
+  overflow: visible;
 }
 
 body.ios-standalone-app {
@@ -159,15 +159,14 @@ body.electron .titlebar-drag {
   background: rgba(235, 87, 87, 0.7);
 }
 
-/* Scrollbars hidden until hover */
+/* Keep scrollbar thumbs visible without rendering a track. */
 * {
   scrollbar-width: thin;
-  -ms-overflow-style: none;
-  scrollbar-color: transparent transparent;
+  scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
 }
 
 *:hover {
-  scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
+  scrollbar-color: rgba(255, 255, 255, 0.55) transparent;
 }
 
 *::-webkit-scrollbar {
@@ -193,16 +192,19 @@ body.electron .titlebar-drag {
   background: transparent;
 }
 
-html::-webkit-scrollbar,
-body::-webkit-scrollbar {
-  width: 0;
-  height: 0;
-  background: transparent;
-}
-
 html,
 body {
   scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+html::-webkit-scrollbar,
+html:hover::-webkit-scrollbar,
+body::-webkit-scrollbar,
+body:hover::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 body {
@@ -218,12 +220,12 @@ body::-webkit-scrollbar-track-piece {
 }
 
 *::-webkit-scrollbar-thumb {
-  background: transparent;
+  background: rgba(255, 255, 255, 0.3);
   border-radius: 999px;
 }
 
 *::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.55);
 }
 
 /* Login Page */
@@ -294,7 +296,7 @@ body::-webkit-scrollbar-track-piece {
   box-shadow: inset 0 0 0 9999px rgba(0, 0, 0, 0.36);
   color: #fff;
   isolation: isolate;
-  overflow: hidden;
+  overflow: visible;
 }
 
 body.ios-standalone-app .app-shell {
@@ -470,6 +472,92 @@ body.ios-standalone-app .app-shell {
   z-index: 1;
 }
 
+.app-shell > .playlist-banner-viewport {
+  position: absolute;
+  z-index: 0;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 0;
+  overflow: hidden;
+  background-image:
+    radial-gradient(
+      circle at 16% 24%,
+      rgba(255, 255, 255, 0.14),
+      transparent 30%
+    ),
+    radial-gradient(
+      circle at 84% 18%,
+      rgba(255, 120, 70, 0.18),
+      transparent 28%
+    ),
+    var(--playlist-banner-image);
+  background-size: 140% 140%, 132% 132%, cover;
+  background-position: 18% 24%, 82% 18%, center;
+  filter: blur(18px) saturate(150%);
+  opacity: 0.78;
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    #000 0%,
+    #000 calc(100% - 48px),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    #000 0%,
+    #000 calc(100% - 48px),
+    transparent 100%
+  );
+  pointer-events: none;
+}
+
+.app-shell > .app-scrollbar {
+  position: fixed;
+  z-index: 3003;
+  top: 4px;
+  right: 0;
+  bottom: 4px;
+  width: 14px;
+  display: flex;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 160ms ease;
+}
+
+.app-shell:hover > .app-scrollbar.scrollable,
+.app-shell > .app-scrollbar.scrollable:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.app-scrollbar-thumb {
+  width: 5px;
+  min-height: 32px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.3);
+  box-shadow: 0 0 8px rgba(0, 0, 0, 0.28);
+  cursor: grab;
+  touch-action: none;
+  transition:
+    width 120ms ease,
+    background-color 120ms ease;
+}
+
+.app-scrollbar:hover .app-scrollbar-thumb,
+.app-scrollbar:focus-visible .app-scrollbar-thumb {
+  width: 8px;
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.app-scrollbar-thumb:active {
+  cursor: grabbing;
+}
+
+.app-scrollbar:focus-visible {
+  outline: none;
+}
+
 /* Sidebar - Fixed position with dark blur effect */
 .sidebar {
   position: fixed;
@@ -486,14 +574,8 @@ body.ios-standalone-app .app-shell {
   overflow-x: hidden;
   box-shadow: 2px 0 12px rgba(0, 0, 0, 0.15);
   padding: 16px 0;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
   /* Prevent scroll from propagating to main page */
   overscroll-behavior: contain;
-}
-
-.sidebar::-webkit-scrollbar {
-  display: none;
 }
 
 .sidebar.collapsed {
@@ -582,14 +664,8 @@ body.ios-standalone-app .app-shell {
   padding: 0 12px;
   flex: 1;
   overflow-y: auto;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
   /* Prevent scroll from propagating */
   overscroll-behavior: contain;
-}
-
-.sidebar-playlists::-webkit-scrollbar {
-  display: none;
 }
 
 .section-title {
@@ -826,6 +902,8 @@ body.electron .top-bar {
   padding-top: 96px;
   padding-bottom: 140px;
   min-height: 100vh;
+  --banner-left-bleed: calc(var(--sidebar-collapsed) + 24px);
+  --banner-right-bleed: 48px;
   transition: margin-left 0.3s;
   overscroll-behavior: contain;
 }
@@ -834,8 +912,16 @@ body.ios-standalone-app .main-area {
   min-height: 100dvh;
   height: 100dvh;
   overflow-y: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
   overscroll-behavior-y: contain;
   -webkit-overflow-scrolling: touch;
+}
+
+body.ios-standalone-app .main-area::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 body.electron .main-area {
@@ -844,6 +930,7 @@ body.electron .main-area {
 
 .app-shell:has(.sidebar.expanded) .main-area {
   margin-left: var(--sidebar-expanded);
+  --banner-left-bleed: calc(var(--sidebar-expanded) + 24px);
 }
 
 .tracks-grid {
@@ -874,6 +961,41 @@ body.electron .main-area {
   aspect-ratio: 1;
   object-fit: cover;
   border-radius: 8px;
+}
+
+.track-card .track-cover:not(.home-profile-cover) {
+  -webkit-mask-image:
+    linear-gradient(
+      to right,
+      rgba(0, 0, 0, 0.35),
+      #000 14%,
+      #000 86%,
+      rgba(0, 0, 0, 0.35)
+    ),
+    linear-gradient(
+      to bottom,
+      rgba(0, 0, 0, 0.35),
+      #000 14%,
+      #000 86%,
+      rgba(0, 0, 0, 0.35)
+    );
+  -webkit-mask-composite: source-in;
+  mask-image:
+    linear-gradient(
+      to right,
+      rgba(0, 0, 0, 0.35),
+      #000 14%,
+      #000 86%,
+      rgba(0, 0, 0, 0.35)
+    ),
+    linear-gradient(
+      to bottom,
+      rgba(0, 0, 0, 0.35),
+      #000 14%,
+      #000 86%,
+      rgba(0, 0, 0, 0.35)
+    );
+  mask-composite: intersect;
 }
 
 .track-info {
@@ -913,8 +1035,8 @@ body.electron .main-area {
 
 /* Update playlist header with will-change for better performance */
 .playlist-header-sticky:not(.track-panel-header) {
-  position: sticky;
-  top: 72px;
+  position: relative;
+  top: auto;
   background: rgba(7, 7, 8, 0.86);
   backdrop-filter: blur(22px) saturate(140%);
   z-index: 98;
@@ -936,76 +1058,27 @@ body.electron .main-area {
 
 /* Playlist header with dynamic sizing */
 .playlist-header-sticky:not(.track-panel-header) {
-  position: sticky;
-  top: 72px;
-  background: rgba(8, 8, 10, 0.82);
-  backdrop-filter: blur(22px) saturate(145%);
+  position: relative;
+  top: auto;
+  background: transparent;
+  backdrop-filter: none;
   z-index: 98;
-  --header-padding-y: calc(24px - (12px * var(--scroll-progress)));
+  --header-padding-y: 24px;
   --header-padding-x: 24px;
-  --header-gap: calc(24px - (8px * var(--scroll-progress)));
+  --header-gap: 24px;
   --playlist-search-space: min(380px, 38vw);
   padding: var(--header-padding-y) var(--header-padding-x);
   display: flex;
   align-items: center;
   gap: var(--header-gap);
-  border-radius: 0 0 16px 16px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  border-radius: 0;
+  box-shadow: none;
   margin-bottom: 24px;
   will-change: height, padding, gap;
   contain: layout style;
-  --playlist-max-height: 248px;
-  --playlist-min-height: 168px;
-  height: calc(
-    var(--playlist-max-height) -
-      (var(--playlist-max-height) - var(--playlist-min-height)) *
-      var(--scroll-progress)
-  );
-  min-height: var(--playlist-min-height);
-}
-
-.playlist-header-sticky:not(.track-panel-header)::before {
-  content: "";
-  position: absolute;
-  inset: -10%;
-  background-image:
-    radial-gradient(
-      circle at 16% 24%,
-      rgba(255, 255, 255, 0.14),
-      transparent 30%
-    ),
-    radial-gradient(
-      circle at 84% 18%,
-      rgba(255, 120, 70, 0.18),
-      transparent 28%
-    ),
-    var(--playlist-banner-image);
-  background-size:
-    140% 140%,
-    132% 132%,
-    cover;
-  background-position:
-    18% 24%,
-    82% 18%,
-    center;
-  filter: blur(36px) saturate(175%);
-  transform: scale(1.14);
-  opacity: 0.88;
-  z-index: 0;
-  pointer-events: none;
-}
-
-.playlist-header-sticky:not(.track-panel-header)::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    180deg,
-    rgba(0, 0, 0, 0.22) 0%,
-    rgba(0, 0, 0, 0.52) 100%
-  );
-  z-index: 0;
-  pointer-events: none;
+  overflow: visible;
+  height: 348px;
+  min-height: 348px;
 }
 
 .playlist-header-sticky:not(.track-panel-header) > * {
@@ -1015,9 +1088,11 @@ body.electron .main-area {
 
 /* Profile/Artist Header */
 .profile-header {
-  position: sticky;
-  top: 0;
+  position: relative;
+  top: auto;
   z-index: 10;
+  isolation: isolate;
+  background: transparent;
   --profile-max-height: 280px;
   --profile-min-height: 168px;
   --profile-padding-y: calc(40px - (20px * var(--scroll-progress)));
@@ -1165,24 +1240,74 @@ body.electron .main-area {
 .profile-header::before {
   content: "";
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
+  top: calc(-1 * var(--banner-top-bleed, 96px));
+  right: calc(-1 * var(--banner-right-bleed, 48px));
   bottom: 0;
-  background: linear-gradient(
-    135deg,
-    rgba(0, 0, 0, 0.4) 0%,
-    rgba(0, 0, 0, 0.5) 100%
+  left: calc(-1 * var(--banner-left-bleed, 24px));
+  background-image: var(--profile-banner-image);
+  background-size: cover;
+  background-position: center;
+  filter: saturate(145%);
+  clip-path: inset(0);
+  opacity: 0.82;
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    #000 0%,
+    #000 calc(100% - 56px),
+    transparent 100%
   );
+  mask-image: linear-gradient(
+    to bottom,
+    #000 0%,
+    #000 calc(100% - 56px),
+    transparent 100%
+  );
+  z-index: 0;
   pointer-events: none;
-  border-radius: 0 0 16px 16px;
+}
+
+.profile-header::after {
+  content: "";
+  position: absolute;
+  top: calc(-1 * var(--banner-top-bleed, 96px));
+  right: calc(-1 * var(--banner-right-bleed, 48px));
+  bottom: 0;
+  left: calc(-1 * var(--banner-left-bleed, 24px));
+  background: linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 0.2),
+    transparent 34%,
+    transparent 68%,
+    rgba(0, 0, 0, 0.38) calc(100% - 56px),
+    transparent 100%
+  );
+  backdrop-filter: blur(12px);
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    #000 0%,
+    transparent 34%,
+    transparent 68%,
+    #000 calc(100% - 56px),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    #000 0%,
+    transparent 34%,
+    transparent 68%,
+    #000 calc(100% - 56px),
+    transparent 100%
+  );
+  clip-path: inset(0);
+  z-index: 0;
+  pointer-events: none;
 }
 
 .profile-header-avatar {
   --profile-avatar-size: calc(200px - (120px * var(--scroll-progress)));
   width: var(--profile-avatar-size);
   height: var(--profile-avatar-size);
-  border-radius: 12px;
+  border-radius: 50%;
   object-fit: cover;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
   flex-shrink: 0;
@@ -1222,7 +1347,7 @@ body.electron .main-area {
 }
 
 .playlist-header-cover {
-  --cover-size: calc(200px - (144px * var(--scroll-progress)));
+  --cover-size: 300px;
   width: var(--cover-size);
   height: var(--cover-size);
   will-change: width, height;
@@ -1233,7 +1358,7 @@ body.electron .main-area {
 }
 
 .playlist-header-title {
-  --title-size: calc(48px - (24px * var(--scroll-progress)));
+  --title-size: 48px;
   font-size: var(--title-size);
   font-weight: 700;
   margin: 0;
@@ -1283,6 +1408,48 @@ body.electron .main-area {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.playlist-track-list {
+  gap: 6px;
+}
+
+.playlist-track-list .track-row:nth-child(odd) {
+  box-sizing: border-box;
+  padding: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.075);
+  border-radius: 12px;
+  box-shadow: 0 5px 16px rgba(0, 0, 0, 0.12);
+  background: linear-gradient(
+    105deg,
+    rgba(255, 255, 255, 0.035),
+    rgba(255, 255, 255, 0.015)
+  );
+}
+
+.playlist-track-list .track-row:nth-child(even) {
+  border: 1px solid transparent;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 6px;
+  background: transparent;
+}
+
+.playlist-track-list .track-row:hover {
+  border-color: rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  background: linear-gradient(
+    105deg,
+    rgba(255, 85, 0, 0.14),
+    rgba(255, 255, 255, 0.09)
+  );
+}
+
+.playlist-track-list .track-row:nth-child(even):hover {
+  border-color: transparent;
+  border-radius: 0;
+  box-shadow: none;
+  background: rgba(255, 85, 0, 0.07);
 }
 
 .playlist-track-search {
@@ -1610,11 +1777,26 @@ body.electron .main-area {
   color: #fff;
 }
 
+.settings-color-input {
+  width: 52px;
+  height: 36px;
+  padding: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 9px;
+  background: #242426;
+  cursor: pointer;
+}
+
+.settings-color-input:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
 .settings-external-link {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  color: #ff8653;
+  color: #fff;
   font-weight: 600;
   text-decoration: none;
 }
@@ -1633,10 +1815,29 @@ body.electron .main-area {
   color: #20242a;
 }
 
+.app-shell[data-ambient-animated="false"]::before,
+.app-shell[data-ambient-animated="false"]::after {
+  animation: none !important;
+  background-image: none !important;
+  filter: none !important;
+  opacity: 0 !important;
+  transform: none !important;
+  transition: none !important;
+  will-change: auto !important;
+}
+
+.app-shell[data-ambient-animated="false"] .app-crossfade-background {
+  display: none;
+}
+
 .app-shell[data-theme="light"]::before,
 .app-shell[data-theme="light"]::after {
   opacity: 0;
   animation: none;
+}
+
+.app-shell[data-ambient-animated="false"] {
+  background: var(--app-static-background, #101014);
 }
 
 .app-shell[data-theme="light"] .main-area {
@@ -1735,7 +1936,7 @@ body.electron .main-area {
 }
 
 .playlist-track-search input:focus {
-  border-color: rgba(255, 85, 0, 0.55);
+  border-color: rgba(255, 255, 255, 0.55);
   background: rgba(255, 255, 255, 0.12);
 }
 
@@ -2251,13 +2452,7 @@ body.electron .main-area {
   flex: 1;
   overflow-y: auto;
   padding: 0;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
   overscroll-behavior: contain;
-}
-
-.playlist-menu-list::-webkit-scrollbar {
-  display: none;
 }
 
 .playlist-menu-loading,
@@ -2665,8 +2860,6 @@ body.electron .main-area {
   pointer-events: none;
   overflow-y: hidden;
   overflow-x: hidden;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
   overscroll-behavior: contain;
   transform: translateX(100%);
   transition: transform 0.3s;
@@ -2742,10 +2935,6 @@ body.electron .main-area {
 .player-queue-panel.resizing {
   transition: none;
   user-select: none;
-}
-
-.player-queue-panel::-webkit-scrollbar {
-  display: none;
 }
 
 .player-queue-panel-resizer {
@@ -2829,13 +3018,7 @@ body.electron .main-area {
   flex-direction: column;
   gap: 22px;
   padding: 0 12px;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
   overscroll-behavior: contain;
-}
-
-.player-queue-list::-webkit-scrollbar {
-  display: none;
 }
 
 .player-queue-section {
@@ -3017,7 +3200,7 @@ body.electron .main-area {
 
 .player-friend-status.offline {
   background: rgba(255, 184, 77, 0.16);
-  color: #ffd27c;
+  color: #fff;
 }
 
 .player-friend-time,
@@ -3416,7 +3599,7 @@ body.electron .main-area {
 
 .player-now-playing-follow-btn.following {
   background: rgba(240, 240, 240, 0.562);
-  color: #ffd2bf;
+  color: #fff;
 }
 
 .player-volume-slider-vertical {
@@ -3513,7 +3696,7 @@ body.electron .main-area {
 
   .main-area {
     margin-left: var(--sidebar-collapsed);
-    padding: 92px 16px 144px;
+    padding: 92px 0 144px 16px;
   }
 
   .player-bar {
@@ -4519,12 +4702,27 @@ body.electron .main-area {
 
 .homepage-empty {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   padding: 60px 24px;
   color: #666;
   font-size: 16px;
   text-align: center;
+}
+
+.homepage-retry {
+  margin-top: 12px;
+  padding: 8px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  cursor: pointer;
+}
+
+.homepage-retry:hover {
+  background: rgba(255, 255, 255, 0.14);
 }
 
 .homepage-container {
@@ -4549,6 +4747,7 @@ body.electron .main-area {
   align-items: flex-start;
   overflow-x: auto;
   overflow-y: hidden;
+  scrollbar-width: thin;
   padding: 8px 4px 16px 4px;
   scroll-behavior: smooth;
   -webkit-overflow-scrolling: touch;
@@ -4627,7 +4826,7 @@ body.electron .main-area {
 }
 
 .horizontal-scroll::-webkit-scrollbar-track {
-  background: rgba(255, 255, 255, 0.05);
+  background: transparent;
   border-radius: 4px;
 }
 
@@ -5167,7 +5366,7 @@ body.electron .main-area {
 /* Final responsive overrides */
 @media (max-width: 1280px) {
   .main-area {
-    padding-right: 20px;
+    padding-right: 0;
   }
 
   .search-box {
@@ -5206,11 +5405,13 @@ body.electron .main-area {
 
   .app-shell:has(.sidebar.expanded) .main-area {
     margin-left: 200px;
+    --banner-left-bleed: 216px;
   }
 
   .main-area {
+    --banner-left-bleed: calc(var(--sidebar-collapsed) + 16px);
     padding-left: 16px;
-    padding-right: 16px;
+    padding-right: 0;
     padding-bottom: 150px;
   }
 
@@ -5319,7 +5520,8 @@ body.electron .main-area {
 
   .main-area {
     margin-left: 0 !important;
-    padding: 88px 14px 170px;
+    --banner-left-bleed: 14px;
+    padding: 88px 0 170px 14px;
   }
 
   .sidebar {
@@ -5386,8 +5588,10 @@ body.electron .main-area {
 
   .playlist-header-sticky:not(.track-panel-header),
   .profile-header {
+    --banner-top-bleed: 88px;
     position: relative;
-    top: 0;
+    top: auto;
+    z-index: 98;
     height: auto;
     min-height: clamp(180px, 34vw, 240px);
     width: 100%;
@@ -5395,6 +5599,10 @@ body.electron .main-area {
     box-sizing: border-box;
     border-radius: 18px;
     margin-bottom: 18px;
+  }
+
+  .playlist-header-sticky:not(.track-panel-header) {
+    border-radius: 0;
   }
 
   .profile-header,
@@ -5412,15 +5620,15 @@ body.electron .main-area {
 
   .playlist-header-sticky:not(.track-panel-header) {
     display: grid;
-    grid-template-columns: clamp(88px, 16vw, 132px) minmax(0, 1fr);
+    grid-template-columns: clamp(132px, 24vw, 198px) minmax(0, 1fr);
     align-items: center;
     padding: clamp(16px, 3.5vw, 22px);
     padding-right: clamp(220px, 30vw, 320px);
   }
 
   .playlist-header-cover {
-    width: clamp(88px, 16vw, 132px);
-    height: clamp(88px, 16vw, 132px);
+    width: clamp(132px, 24vw, 198px);
+    height: clamp(132px, 24vw, 198px);
     align-self: center;
   }
 
@@ -5607,13 +5815,15 @@ body.electron .main-area {
 @media (max-width: 640px) {
   .playlist-header-sticky:not(.track-panel-header) {
     display: grid;
-    grid-template-columns: 72px minmax(0, 1fr);
+    grid-template-columns: 108px minmax(0, 1fr);
     align-items: center;
     padding-right: min(164px, 44vw);
+    top: auto;
   }
 
   .playlist-header-sticky:not(.track-panel-header),
   .profile-header {
+    --banner-top-bleed: calc(122px + env(safe-area-inset-top));
     min-height: clamp(160px, 42vw, 220px);
     padding: 14px 12px;
     gap: 14px;
@@ -5626,8 +5836,8 @@ body.electron .main-area {
   }
 
   .playlist-header-cover {
-    width: 72px;
-    height: 72px;
+    width: 108px;
+    height: 108px;
   }
 
   .playlist-header-main,
@@ -5701,7 +5911,8 @@ body.electron .main-area {
   }
 
   .main-area {
-    padding: 76px 12px 174px;
+    --banner-left-bleed: 12px;
+    padding: 76px 0 174px 12px;
   }
 }
 
@@ -5726,7 +5937,8 @@ body.electron .main-area {
   }
 
   .main-area {
-    padding: calc(122px + env(safe-area-inset-top)) 12px 174px;
+    --banner-left-bleed: 12px;
+    padding: calc(122px + env(safe-area-inset-top)) 0 174px 12px;
   }
 
   .playlist-header-sticky:not(.track-panel-header),
@@ -5833,8 +6045,8 @@ body.electron .main-area {
   }
 
   .track-panel-header .playlist-header-cover {
-    width: 72px;
-    height: 72px;
+    width: 108px;
+    height: 108px;
   }
 
   .player-bar {
@@ -6595,7 +6807,7 @@ body.electron .main-area {
 }
 
 .mobile-playlist-sheet-item-status.in-playlist {
-  color: #ff8a57;
+  color: #fff;
 }
 
 @media (max-width: 1000px) {
@@ -6660,56 +6872,176 @@ body.electron .main-area {
 }
 
 .player-device-menu {
-  position: absolute;
-  bottom: calc(100% + 12px);
-  right: 46px;
+  position: fixed;
   min-width: 240px;
-  padding: 12px;
+  width: max-content;
+  max-width: calc(100vw - 24px);
+  max-height: min(65vh, calc(100dvh - 24px));
+  overflow-y: auto;
+  box-sizing: border-box;
+  padding: 8px;
   border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 20px;
-  background: linear-gradient(180deg, rgba(24, 26, 31, 0.86), rgba(15, 17, 21, 0.94));
-  backdrop-filter: blur(18px);
-  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.3);
-  z-index: 40;
+  border-radius: 16px;
+  background: rgba(14, 15, 19, 0.94);
+  backdrop-filter: blur(24px) saturate(150%);
+  box-shadow:
+    0 18px 48px rgba(0, 0, 0, 0.48),
+    0 0 0 1px rgba(255, 255, 255, 0.035),
+    0 6px 24px rgba(255, 85, 0, 0.08);
+  z-index: 10000;
+  isolation: isolate;
+  animation: player-device-menu-in 140ms ease-out;
+}
+
+.player-device-menu::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background-image:
+    linear-gradient(rgba(9, 10, 13, 0.78), rgba(9, 10, 13, 0.9)),
+    radial-gradient(circle at 85% 0, rgba(255, 105, 52, 0.2), transparent 58%),
+    var(--player-artwork);
+  background-size: cover;
+  background-position: center;
+  filter: blur(18px) saturate(145%);
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+@keyframes player-device-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(5px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .player-device-menu-title {
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0 8px 7px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.075);
+  margin-bottom: 6px;
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.64);
-  margin-bottom: 8px;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.player-device-menu-title-icon {
+  display: grid;
+  width: 25px;
+  height: 25px;
+  place-items: center;
+  color: #fff;
+  border-radius: 8px;
+  background: rgba(255, 85, 0, 0.12);
 }
 
 .player-device-menu-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 3px;
 }
 
 .player-device-menu-item {
   width: 100%;
-  border: 0;
-  border-radius: 16px;
-  padding: 12px 14px;
-  background: rgba(255, 255, 255, 0.04);
+  min-height: 54px;
+  border: 1px solid transparent;
+  border-radius: 11px;
+  padding: 7px 9px;
+  background: rgba(255, 255, 255, 0.025);
   color: #fff;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  gap: 10px;
   cursor: pointer;
   text-align: left;
+  transition:
+    background 150ms ease,
+    border-color 150ms ease,
+    transform 150ms ease;
+}
+
+.player-device-menu-item:hover {
+  background: rgba(255, 255, 255, 0.075);
+  border-color: rgba(255, 255, 255, 0.07);
+}
+
+.player-device-menu-item:active {
+  transform: scale(0.985);
 }
 
 .player-device-menu-item.active {
-  background: rgba(255, 85, 0, 0.16);
+  border-color: rgba(255, 255, 255, 0.22);
+  background: linear-gradient(100deg, rgba(255, 85, 0, 0.17), rgba(255, 85, 0, 0.07));
+}
+
+.player-device-menu-item.active:hover {
+  background: linear-gradient(100deg, rgba(255, 85, 0, 0.23), rgba(255, 85, 0, 0.1));
+}
+
+.player-device-menu-icon {
+  display: grid;
+  flex: 0 0 34px;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  color: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.075);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.player-device-menu-item.active .player-device-menu-icon {
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 85, 0, 0.1);
+}
+
+.player-device-menu-copy {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.player-device-menu-name {
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.95);
+  font-size: 12px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .player-device-menu-meta {
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.58);
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.player-device-menu-state {
+  display: grid;
+  flex: 0 0 20px;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  color: #fff;
+  border-radius: 50%;
+}
+
+.player-device-menu-state.active {
+  background: rgba(255, 85, 0, 0.16);
 }
 
 .mobile-device-sheet {
@@ -6946,5 +7278,3 @@ body.electron .main-area {
     font-weight: 600;
   }
 }
-
-

@@ -1,6 +1,7 @@
 import React, {
   createContext,
   useContext,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -15,6 +16,9 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import { Image } from "expo-image";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppTheme } from "./app-theme";
 
@@ -24,6 +28,16 @@ export type MobilePlayerTrack = {
   artist: string;
   artworkUrl?: string | null;
   context?: string;
+  userId?: number;
+  isLiked?: boolean;
+};
+
+type PlayerControls = {
+  togglePlayback: () => void;
+  playNext: () => void;
+  playPrevious: () => void;
+  switchOutput?: () => void;
+  toggleLike?: () => void;
 };
 
 type PlayerState = {
@@ -33,6 +47,13 @@ type PlayerState = {
   isPlaying: boolean;
   sheetOpen: boolean;
   playTrack: (track: MobilePlayerTrack, queue?: MobilePlayerTrack[]) => void;
+  syncPlayback: (
+    track: MobilePlayerTrack | null,
+    isPlaying: boolean,
+    queue?: MobilePlayerTrack[],
+    currentIndex?: number,
+  ) => void;
+  registerControls: (controls: PlayerControls | null) => void;
   togglePlayback: () => void;
   playNext: () => void;
   playPrevious: () => void;
@@ -41,27 +62,6 @@ type PlayerState = {
 };
 
 const PlayerContext = createContext<PlayerState | null>(null);
-
-const DEFAULT_QUEUE: MobilePlayerTrack[] = [
-  {
-    id: 101,
-    title: "Night Corridor",
-    artist: "Soundcloudy",
-    context: "Featured",
-  },
-  {
-    id: 102,
-    title: "Static Hearts",
-    artist: "Soundcloudy",
-    context: "Featured",
-  },
-  {
-    id: 103,
-    title: "Late Reply",
-    artist: "Soundcloudy",
-    context: "Featured",
-  },
-];
 
 function PlayerChrome({
   currentTrack,
@@ -74,6 +74,8 @@ function PlayerChrome({
   onTogglePlayback,
   onPrevious,
   onNext,
+  onSwitchOutput,
+  onToggleLike,
 }: {
   currentTrack: MobilePlayerTrack | null;
   queue: MobilePlayerTrack[];
@@ -85,9 +87,12 @@ function PlayerChrome({
   onTogglePlayback: () => void;
   onPrevious: () => void;
   onNext: () => void;
+  onSwitchOutput: () => void;
+  onToggleLike: () => void;
 }) {
-  const collapsedHeight = 72;
-  const navHeight = 66;
+  const collapsedHeight = 60;
+  const insets = useSafeAreaInsets();
+  const navHeight = 62 + insets.bottom;
   const topInset = 0;
   const sheetBottomInset = navHeight + 6;
   const { height } = useWindowDimensions();
@@ -96,8 +101,13 @@ function PlayerChrome({
     collapsedHeight,
   );
   const collapsedTranslate = Math.max(availableHeight - collapsedHeight, 0);
-  const translateY = useRef(new Animated.Value(collapsedTranslate)).current;
-  const dragStartRef = useRef(collapsedTranslate);
+  const [translateY] = useState(
+    () => new Animated.Value(collapsedTranslate),
+  );
+  const dragStart = useMemo(
+    () => ({ value: collapsedTranslate }),
+    [collapsedTranslate],
+  );
 
   useEffect(() => {
     if (!currentTrack) {
@@ -107,21 +117,24 @@ function PlayerChrome({
     translateY.setValue(sheetOpen ? 0 : collapsedTranslate);
   }, [collapsedTranslate, currentTrack, sheetOpen, translateY]);
 
-  const animateTo = (open: boolean) => {
-    Animated.spring(translateY, {
-      toValue: open ? 0 : collapsedTranslate,
-      useNativeDriver: true,
-      tension: 80,
-      friction: 14,
-    }).start();
+  const animateTo = useCallback(
+    (open: boolean) => {
+      Animated.spring(translateY, {
+        toValue: open ? 0 : collapsedTranslate,
+        useNativeDriver: true,
+        tension: 80,
+        friction: 14,
+      }).start();
 
-    if (open) {
-      onOpenSheet();
-      return;
-    }
+      if (open) {
+        onOpenSheet();
+        return;
+      }
 
-    onCloseSheet();
-  };
+      onCloseSheet();
+    },
+    [collapsedTranslate, onCloseSheet, onOpenSheet, translateY],
+  );
 
   const panResponder = useMemo(
     () =>
@@ -130,18 +143,18 @@ function PlayerChrome({
           Math.abs(gestureState.dy) > 8,
         onPanResponderGrant: () => {
           translateY.stopAnimation((value) => {
-            dragStartRef.current = value;
+            dragStart.value = value;
           });
         },
         onPanResponderMove: (_event, gestureState) => {
           const nextValue = Math.max(
             0,
-            Math.min(collapsedTranslate, dragStartRef.current + gestureState.dy),
+            Math.min(collapsedTranslate, dragStart.value + gestureState.dy),
           );
           translateY.setValue(nextValue);
         },
         onPanResponderRelease: (_event, gestureState) => {
-          const projected = dragStartRef.current + gestureState.dy;
+          const projected = dragStart.value + gestureState.dy;
           const shouldOpen =
             gestureState.dy < -32 ||
             (gestureState.vy < -0.4 && projected < collapsedTranslate * 0.85) ||
@@ -153,7 +166,7 @@ function PlayerChrome({
           animateTo(sheetOpen);
         },
       }),
-    [collapsedTranslate, sheetOpen, translateY],
+    [animateTo, collapsedTranslate, dragStart, sheetOpen, translateY],
   );
 
   if (!currentTrack) {
@@ -173,13 +186,19 @@ function PlayerChrome({
     >
       <View style={styles.sheetCard}>
         <View style={styles.dragArea} {...panResponder.panHandlers}>
-          <View style={styles.sheetHandle} />
+          {sheetOpen ? <View style={styles.sheetHandle} /> : null}
           <Pressable style={styles.collapsedTopRow} onPress={() => animateTo(true)}>
-            <View style={styles.collapsedArtwork}>
-              <Text style={styles.collapsedArtworkText}>
-                {currentTrack.title.slice(0, 1).toUpperCase()}
-              </Text>
-            </View>
+            {currentTrack.artworkUrl ? (
+              <Image
+                source={{ uri: currentTrack.artworkUrl }}
+                style={styles.collapsedArtwork}
+                contentFit="cover"
+              />
+            ) : (
+              <View style={[styles.collapsedArtwork, styles.artworkFallback]}>
+                <Text style={styles.collapsedArtworkText}>♪</Text>
+              </View>
+            )}
             <View style={styles.collapsedMeta}>
               <Text style={styles.collapsedTitle} numberOfLines={1}>
                 {currentTrack.title}
@@ -187,6 +206,42 @@ function PlayerChrome({
               <Text style={styles.collapsedArtist} numberOfLines={1}>
                 {currentTrack.artist}
               </Text>
+            </View>
+            <View style={styles.collapsedActions}>
+              <Pressable
+                hitSlop={8}
+                style={styles.iconButton}
+                onPress={(event) => {
+                  event.stopPropagation();
+                  onSwitchOutput();
+                }}
+                accessibilityLabel="Switch playback device"
+              >
+                <Ionicons
+                  name={
+                    currentTrack.context?.includes("desktop")
+                      ? "phone-portrait-outline"
+                      : "tv-outline"
+                  }
+                  size={19}
+                  color={AppTheme.textSoft}
+                />
+              </Pressable>
+              <Pressable
+                hitSlop={8}
+                style={styles.iconButton}
+                onPress={(event) => {
+                  event.stopPropagation();
+                  onToggleLike();
+                }}
+                accessibilityLabel={currentTrack.isLiked ? "Unlike track" : "Like track"}
+              >
+                <Ionicons
+                  name={currentTrack.isLiked ? "heart" : "heart-outline"}
+                  size={20}
+                  color={currentTrack.isLiked ? "#ff5a6e" : AppTheme.textSoft}
+                />
+              </Pressable>
             </View>
             <Pressable
               hitSlop={10}
@@ -196,17 +251,27 @@ function PlayerChrome({
                 onTogglePlayback();
               }}
             >
-              <Text style={styles.transportText}>{isPlaying ? "Pause" : "Play"}</Text>
+              <Ionicons
+                name={isPlaying ? "pause" : "play"}
+                size={23}
+                color={AppTheme.text}
+              />
             </Pressable>
           </Pressable>
         </View>
 
         <View style={styles.expandedContent}>
-          <View style={styles.sheetArtwork}>
-            <Text style={styles.sheetArtworkText}>
-              {currentTrack.title.slice(0, 1).toUpperCase()}
-            </Text>
-          </View>
+          {currentTrack.artworkUrl ? (
+            <Image
+              source={{ uri: currentTrack.artworkUrl }}
+              style={styles.sheetArtwork}
+              contentFit="cover"
+            />
+          ) : (
+            <View style={[styles.sheetArtwork, styles.artworkFallback]}>
+              <Text style={styles.sheetArtworkText}>♪</Text>
+            </View>
+          )}
           <Text style={styles.sheetTitle} numberOfLines={2}>
             {currentTrack.title}
           </Text>
@@ -219,18 +284,20 @@ function PlayerChrome({
 
           <View style={styles.transportRow}>
             <Pressable style={styles.sheetTransport} onPress={onPrevious}>
-              <Text style={styles.sheetTransportText}>Prev</Text>
+              <Ionicons name="play-skip-back" size={23} color={AppTheme.text} />
             </Pressable>
             <Pressable
               style={styles.sheetTransportPrimary}
               onPress={onTogglePlayback}
             >
-              <Text style={styles.sheetTransportPrimaryText}>
-                {isPlaying ? "Pause" : "Play"}
-              </Text>
+              <Ionicons
+                name={isPlaying ? "pause" : "play"}
+                size={25}
+                color="#fff"
+              />
             </Pressable>
             <Pressable style={styles.sheetTransport} onPress={onNext}>
-              <Text style={styles.sheetTransportText}>Next</Text>
+              <Ionicons name="play-skip-forward" size={23} color={AppTheme.text} />
             </Pressable>
           </View>
 
@@ -266,12 +333,55 @@ function PlayerChrome({
 }
 
 export function PlayerProvider({ children }: { children: React.ReactNode }) {
-  const [queue, setQueue] = useState<MobilePlayerTrack[]>(DEFAULT_QUEUE);
+  const [queue, setQueue] = useState<MobilePlayerTrack[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
+  const controlsRef = useRef<PlayerControls | null>(null);
 
   const currentTrack = queue[currentIndex] || null;
+
+  const syncPlayback = useCallback(
+    (
+      track: MobilePlayerTrack | null,
+      playing: boolean,
+      nextQueue?: MobilePlayerTrack[],
+      index = 0,
+    ) => {
+      if (!track) {
+        setQueue([]);
+        setCurrentIndex(0);
+        setIsPlaying(false);
+        return;
+      }
+
+      const resolvedQueue = nextQueue?.length ? nextQueue : [track];
+      const safeIndex = Math.max(0, Math.min(index, resolvedQueue.length - 1));
+      const selectedQueue = resolvedQueue.map((item, itemIndex) =>
+        itemIndex === safeIndex ? track : item,
+      );
+      setQueue((current) => {
+        const unchanged =
+          current.length === selectedQueue.length &&
+          current.every(
+            (item, itemIndex) =>
+              item.id === selectedQueue[itemIndex]?.id &&
+              item.title === selectedQueue[itemIndex]?.title &&
+              item.artist === selectedQueue[itemIndex]?.artist &&
+              item.artworkUrl === selectedQueue[itemIndex]?.artworkUrl &&
+              item.isLiked === selectedQueue[itemIndex]?.isLiked &&
+              item.context === selectedQueue[itemIndex]?.context,
+          );
+        return unchanged ? current : selectedQueue;
+      });
+      setCurrentIndex((current) => (current === safeIndex ? current : safeIndex));
+      setIsPlaying((current) => (current === playing ? current : playing));
+    },
+    [],
+  );
+  const registerControls = useCallback((controls: PlayerControls | null) => {
+    controlsRef.current = controls;
+  }, []);
 
   const value = useMemo<PlayerState>(
     () => ({
@@ -287,16 +397,30 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         setCurrentIndex(nextIndex >= 0 ? nextIndex : 0);
         setIsPlaying(true);
       },
+      syncPlayback,
+      registerControls,
       togglePlayback: () => {
+        if (controlsRef.current) {
+          controlsRef.current.togglePlayback();
+          return;
+        }
         setIsPlaying((current) => !current);
       },
       playNext: () => {
+        if (controlsRef.current) {
+          controlsRef.current.playNext();
+          return;
+        }
         setCurrentIndex((current) =>
           current + 1 >= queue.length ? 0 : current + 1,
         );
         setIsPlaying(true);
       },
       playPrevious: () => {
+        if (controlsRef.current) {
+          controlsRef.current.playPrevious();
+          return;
+        }
         setCurrentIndex((current) =>
           current - 1 < 0 ? Math.max(queue.length - 1, 0) : current - 1,
         );
@@ -305,7 +429,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       openSheet: () => setSheetOpen(true),
       closeSheet: () => setSheetOpen(false),
     }),
-    [currentTrack, currentIndex, isPlaying, queue, sheetOpen],
+    [currentTrack, currentIndex, isPlaying, queue, registerControls, sheetOpen, syncPlayback],
   );
 
   return (
@@ -319,18 +443,44 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         sheetOpen={sheetOpen}
         onOpenSheet={() => setSheetOpen(true)}
         onCloseSheet={() => setSheetOpen(false)}
-        onTogglePlayback={() => setIsPlaying((current) => !current)}
+        onTogglePlayback={() => {
+          if (controlsRef.current) {
+            controlsRef.current.togglePlayback();
+            return;
+          }
+          setIsPlaying((current) => !current);
+        }}
         onPrevious={() => {
+          if (controlsRef.current) {
+            controlsRef.current.playPrevious();
+            return;
+          }
           setCurrentIndex((current) =>
             current - 1 < 0 ? Math.max(queue.length - 1, 0) : current - 1,
           );
           setIsPlaying(true);
         }}
         onNext={() => {
+          if (controlsRef.current) {
+            controlsRef.current.playNext();
+            return;
+          }
           setCurrentIndex((current) =>
             current + 1 >= queue.length ? 0 : current + 1,
           );
           setIsPlaying(true);
+        }}
+        onSwitchOutput={() => {
+          if (controlsRef.current?.switchOutput) {
+            controlsRef.current.switchOutput();
+          } else {
+            setSheetOpen(true);
+          }
+        }}
+        onToggleLike={() => {
+          if (controlsRef.current?.toggleLike) {
+            controlsRef.current.toggleLike();
+          }
         }}
       />
     </PlayerContext.Provider>
@@ -367,10 +517,10 @@ const styles = StyleSheet.create({
     elevation: 20,
   },
   dragArea: {
-    paddingTop: 8,
-    paddingHorizontal: 10,
-    paddingBottom: 6,
-    backgroundColor: "#0b0b10",
+    paddingTop: 2,
+    paddingHorizontal: 8,
+    paddingBottom: 2,
+    backgroundColor: "rgba(12,12,15,0.98)",
   },
   sheetHandle: {
     width: 44,
@@ -381,18 +531,18 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   collapsedTopRow: {
-    height: 62,
-    borderRadius: 20,
-    backgroundColor: "#111117",
+    height: 56,
+    borderRadius: 12,
+    backgroundColor: "#0d0d10",
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 12,
-    gap: 12,
+    paddingHorizontal: 2,
+    gap: 9,
   },
   collapsedArtwork: {
-    width: 42,
-    height: 42,
-    borderRadius: 14,
+    width: 40,
+    height: 40,
+    borderRadius: 9,
     backgroundColor: "#1d1d23",
     alignItems: "center",
     justifyContent: "center",
@@ -415,18 +565,28 @@ const styles = StyleSheet.create({
     color: AppTheme.textSoft,
     fontSize: 12,
   },
+  artworkFallback: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  collapsedActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 1,
+  },
+  iconButton: {
+    width: 30,
+    height: 34,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   transportButton: {
-    minWidth: 58,
-    height: 36,
+    minWidth: 38,
+    height: 38,
     borderRadius: 999,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(255,255,255,0.06)",
-  },
-  transportText: {
-    color: AppTheme.text,
-    fontSize: 12,
-    fontWeight: "800",
+    backgroundColor: "transparent",
   },
   expandedContent: {
     flex: 1,
@@ -491,16 +651,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: AppTheme.accent,
-  },
-  sheetTransportText: {
-    color: AppTheme.text,
-    fontSize: 14,
-    fontWeight: "700",
-  },
-  sheetTransportPrimaryText: {
-    color: AppTheme.text,
-    fontSize: 15,
-    fontWeight: "800",
   },
   queueBlock: {
     marginTop: 24,

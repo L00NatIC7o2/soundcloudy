@@ -1,4 +1,10 @@
-import { useMemo, useState, type PointerEvent as ReactPointerEvent } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 
 export type AppTheme = "default" | "midnight" | "light";
 type Equalizer = {
@@ -205,6 +211,10 @@ export default function SettingsView({
   equalizer,
   onEqualizerChange,
   spectrum,
+  animateAlbumBackground,
+  onAnimateAlbumBackgroundChange,
+  staticBackgroundColor,
+  onStaticBackgroundColorChange,
   animateAlbumArtWhenInactive,
   onAnimateAlbumArtWhenInactiveChange,
 }: {
@@ -219,9 +229,25 @@ export default function SettingsView({
   equalizer: Equalizer;
   onEqualizerChange: (equalizer: Equalizer) => void;
   spectrum: number[];
+  animateAlbumBackground: boolean;
+  onAnimateAlbumBackgroundChange: (enabled: boolean) => void;
+  staticBackgroundColor: string;
+  onStaticBackgroundColorChange: (color: string) => void;
   animateAlbumArtWhenInactive: boolean;
   onAnimateAlbumArtWhenInactiveChange: (enabled: boolean) => void;
 }) {
+  const staticBackgroundCommitTimer = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  useEffect(
+    () => () => {
+      if (staticBackgroundCommitTimer.current) {
+        clearTimeout(staticBackgroundCommitTimer.current);
+      }
+    },
+    [],
+  );
+
   return (
     <div className="settings-view">
       <header className="settings-header">
@@ -280,7 +306,7 @@ export default function SettingsView({
       <section className="settings-card">
         <div className="settings-card-heading">
           <h2>Appearance</h2>
-          <p>Choose the color theme for Soundcloudy.</p>
+          <p>Choose the color theme and background style for Soundcloudy.</p>
         </div>
         <label className="settings-select-row" htmlFor="settings-theme">
           <span><strong>Theme</strong></span>
@@ -289,6 +315,45 @@ export default function SettingsView({
             <option value="midnight">Midnight</option>
             <option value="light">Light</option>
           </select>
+        </label>
+        <label className="settings-toggle-row">
+          <span><strong>Animated album-art background</strong><small>Use the current track artwork as a moving background.</small></span>
+          <SettingsCheckbox
+            checked={animateAlbumBackground}
+            onChange={onAnimateAlbumBackgroundChange}
+            label="Animated album-art background"
+          />
+        </label>
+        <label className="settings-select-row" htmlFor="settings-static-background-color">
+          <span><strong>Static background color</strong><small>Used when the animated background is off.</small></span>
+          <input
+            id="settings-static-background-color"
+            className="settings-color-input"
+            type="color"
+            defaultValue={staticBackgroundColor}
+            disabled={animateAlbumBackground}
+            onChange={(event) => {
+              const color = event.currentTarget.value;
+              if (staticBackgroundCommitTimer.current) {
+                clearTimeout(staticBackgroundCommitTimer.current);
+              }
+              staticBackgroundCommitTimer.current = setTimeout(() => {
+                onStaticBackgroundColorChange(color);
+                staticBackgroundCommitTimer.current = null;
+              }, 400);
+            }}
+            onBlur={(event) => {
+              if (staticBackgroundCommitTimer.current) {
+                clearTimeout(staticBackgroundCommitTimer.current);
+                staticBackgroundCommitTimer.current = null;
+              }
+              const color = event.currentTarget.value;
+              if (color !== staticBackgroundColor) {
+                onStaticBackgroundColorChange(color);
+              }
+            }}
+            aria-label="Static background color"
+          />
         </label>
         <label className="settings-toggle-row">
           <span><strong>Animate album background when inactive</strong><small>Keep the cover background moving while the app is minimized or unfocused.</small></span>
