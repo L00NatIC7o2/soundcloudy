@@ -1,7 +1,7 @@
 {
   "type": "module",
   "name": "soundcloudy",
-  "version": "0.3.1",
+  "version": "0.5.0",
   "description": "A SoundCloud music player",
   "author": "Soundcloudy",
   "main": "apps/desktop/electron/main.cjs",
@@ -12,7 +12,7 @@
     "dev:all": "concurrently \"npm run dev:host\" \"npm run socket:start\"",
     "tunnel:web": "ngrok http 3000",
     "tunnel:socket": "ngrok http 3001",
-    "build": "next build",
+    "build": "npx puppeteer browsers install chrome && next build",
     "start": "node server/index.cjs",
     "cap:sync": "cap sync",
     "cap:copy": "cap copy",
@@ -102,6 +102,12 @@
     "asar": true,
     "win": {
       "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowElevation": false,
+      "deleteAppDataOnUninstall": false
     },
     "publish": [
       {

@@ -215,6 +215,14 @@ export default function SettingsView({
   onAnimateAlbumBackgroundChange,
   staticBackgroundColor,
   onStaticBackgroundColorChange,
+  checkUpdatesOnStartup,
+  onCheckUpdatesOnStartupChange,
+  automaticUpdates,
+  onAutomaticUpdatesChange,
+  updateStatus,
+  onCheckForUpdates,
+  onDownloadUpdate,
+  onInstallUpdate,
   animateAlbumArtWhenInactive,
   onAnimateAlbumArtWhenInactiveChange,
 }: {
@@ -233,6 +241,14 @@ export default function SettingsView({
   onAnimateAlbumBackgroundChange: (enabled: boolean) => void;
   staticBackgroundColor: string;
   onStaticBackgroundColorChange: (color: string) => void;
+  checkUpdatesOnStartup: boolean;
+  onCheckUpdatesOnStartupChange: (enabled: boolean) => void;
+  automaticUpdates: boolean;
+  onAutomaticUpdatesChange: (enabled: boolean) => void;
+  updateStatus: string;
+  onCheckForUpdates: () => void;
+  onDownloadUpdate: () => void;
+  onInstallUpdate: () => void;
   animateAlbumArtWhenInactive: boolean;
   onAnimateAlbumArtWhenInactiveChange: (enabled: boolean) => void;
 }) {
@@ -363,6 +379,52 @@ export default function SettingsView({
             label="Animate album background when inactive"
           />
         </label>
+      </section>
+
+      <section className="settings-card">
+        <div className="settings-card-heading">
+          <h2>Updates</h2>
+          <p>Choose how Soundcloudy checks for and installs desktop updates.</p>
+        </div>
+        <label className="settings-toggle-row">
+          <span><strong>Check for updates on startup</strong><small>Check automatically when the desktop app opens.</small></span>
+          <SettingsCheckbox
+            checked={checkUpdatesOnStartup}
+            onChange={onCheckUpdatesOnStartupChange}
+            label="Check for updates on startup"
+          />
+        </label>
+        <label className="settings-toggle-row">
+          <span><strong>Automatically download updates</strong><small>Download new versions in the background and notify you when they are ready.</small></span>
+          <SettingsCheckbox
+            checked={automaticUpdates}
+            onChange={onAutomaticUpdatesChange}
+            label="Automatically download updates"
+          />
+        </label>
+        <div className="settings-update-actions">
+          <span className="settings-update-status" role="status">{updateStatus}</span>
+          <div className="settings-update-buttons">
+            <button
+              type="button"
+              className="settings-action-button"
+              onClick={onCheckForUpdates}
+              disabled={updateStatus.startsWith("Checking")}
+            >
+              Check for updates
+            </button>
+            {!automaticUpdates && updateStatus.startsWith("Update available") && (
+              <button type="button" className="settings-action-button" onClick={onDownloadUpdate}>
+                Download
+              </button>
+            )}
+            {updateStatus.startsWith("Update ready") && (
+              <button type="button" className="settings-action-button" onClick={onInstallUpdate}>
+                Install and restart
+              </button>
+            )}
+          </div>
+        </div>
       </section>
     </div>
   );

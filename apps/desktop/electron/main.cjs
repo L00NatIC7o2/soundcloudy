@@ -20,9 +20,13 @@ let mainWindow = null;
 let tray = null;
 let isQuitting = false;
 let serverProcess = null;
-let updateDownloadNotified = false;
+let updatePreferences = { checkOnStartup: true, automaticUpdates: true };
+let latestUpdateEvent = { status: "idle" };
+let updateCheckSource = "startup";
+let availableUpdateInfo = null;
 const PROTOCOL = "soundcloudy";
 const HISTORY_COOKIE_FILENAME = "soundcloud-history-cookies.json";
+const UPDATE_PREFERENCES_FILENAME = "update-preferences.json";
 
 const PORT = 3000;
 const DEV_URL = "http://localhost:3000";
@@ -1126,57 +1130,93 @@ const setupShortcuts = () => {
   });
 };
 
+const readUpdatePreferences = () => {
+  const preferencesPath = path.join(
+    app.getPath("userData"),
+    UPDATE_PREFERENCES_FILENAME,
+  );
+  try {
+    const stored = JSON.parse(fs.readFileSync(preferencesPath, "utf8"));
+    return {
+      checkOnStartup:
+        typeof stored.checkOnStartup === "boolean"
+          ? stored.checkOnStartup
+          : true,
+      automaticUpdates:
+        typeof stored.automaticUpdates === "boolean"
+          ? stored.automaticUpdates
+          : true,
+    };
+  } catch (error) {
+    if (error.code !== "ENOENT") {
+      console.error("[updater] failed to read preferences", error);
+    }
+    return { checkOnStartup: true, automaticUpdates: true };
+  }
+};
+
+const publishUpdateEvent = (event) => {
+  latestUpdateEvent = event;
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send("updates:event", event);
+  }
+};
+
 const setupAutoUpdater = () => {
-  autoUpdater.autoDownload = true;
+  autoUpdater.autoDownload = updatePreferences.automaticUpdates;
   autoUpdater.autoInstallOnAppQuit = true;
 
   autoUpdater.on("checking-for-update", () => {
-    updateDownloadNotified = false;
     console.log("[updater] checking for update");
+    publishUpdateEvent({ status: "checking", source: updateCheckSource });
   });
 
   autoUpdater.on("update-available", (info) => {
     console.log("[updater] update available", info?.version || null);
+    availableUpdateInfo = info;
+    publishUpdateEvent({
+      status: "available",
+      version: info?.version || "",
+      source: updateCheckSource,
+    });
+    updateCheckSource = "startup";
   });
 
-  autoUpdater.on("update-not-available", () => {
+  autoUpdater.on("update-not-available", (info) => {
     console.log("[updater] update not available");
+    availableUpdateInfo = null;
+    publishUpdateEvent({
+      status: "not-available",
+      version: info?.version || app.getVersion(),
+      source: updateCheckSource,
+    });
+    updateCheckSource = "startup";
   });
 
   autoUpdater.on("error", (error) => {
     console.error("[updater] error", error?.message || error);
+    publishUpdateEvent({
+      status: "error",
+      message: error?.message || "Update check failed.",
+      source: updateCheckSource,
+    });
+    updateCheckSource = "startup";
   });
 
   autoUpdater.on("download-progress", (progress) => {
-    console.log(
-      "[updater] download progress",
-      `${Math.round(progress?.percent || 0)}%`,
-    );
+    publishUpdateEvent({
+      status: "downloading",
+      percent: Math.round(progress?.percent || 0),
+    });
   });
 
-  autoUpdater.on("update-downloaded", async (info) => {
+  autoUpdater.on("update-downloaded", (info) => {
     console.log("[updater] update downloaded", info?.version || null);
-    if (updateDownloadNotified) return;
-    updateDownloadNotified = true;
-
-    try {
-      const result = await dialog.showMessageBox(mainWindow || undefined, {
-        type: "info",
-        buttons: ["Install Now", "Later"],
-        defaultId: 0,
-        cancelId: 1,
-        title: "Update Ready",
-        message: `Soundcloudy ${info?.version || ""} is ready to install.`,
-        detail:
-          "The update has finished downloading. Install now to restart the app and apply it.",
-      });
-
-      if (result.response === 0) {
-        autoUpdater.quitAndInstall();
-      }
-    } catch (error) {
-      console.error("[updater] failed to show install prompt", error);
-    }
+    availableUpdateInfo = null;
+    publishUpdateEvent({
+      status: "downloaded",
+      version: info?.version || "",
+    });
   });
 };
 
@@ -1198,14 +1238,75 @@ app.on("open-url", (event, url) => {
 
 app.on("ready", async () => {
   registerProtocol();
+  updatePreferences = readUpdatePreferences();
   await createWindow();
   setupTray();
   setupShortcuts();
   setupAutoUpdater();
 
-  if (app.isPackaged) {
-    autoUpdater.checkForUpdatesAndNotify();
+  if (app.isPackaged && updatePreferences.checkOnStartup) {
+    updateCheckSource = "startup";
+    autoUpdater.checkForUpdates().catch((error) => {
+      console.error("[updater] startup check failed", error);
+    });
   }
+});
+
+ipcMain.handle("updates:get-state", () => ({
+  preferences: updatePreferences,
+  latestEvent: latestUpdateEvent,
+}));
+
+ipcMain.handle("updates:set-preferences", async (_event, preferences) => {
+  if (
+    !preferences ||
+    typeof preferences.checkOnStartup !== "boolean" ||
+    typeof preferences.automaticUpdates !== "boolean"
+  ) {
+    throw new TypeError("Invalid update preferences.");
+  }
+  const shouldStartDownload =
+    preferences.automaticUpdates &&
+    !updatePreferences.automaticUpdates &&
+    Boolean(availableUpdateInfo);
+  updatePreferences = {
+    checkOnStartup: preferences.checkOnStartup,
+    automaticUpdates: preferences.automaticUpdates,
+  };
+  autoUpdater.autoDownload = updatePreferences.automaticUpdates;
+  fs.writeFileSync(
+    path.join(app.getPath("userData"), UPDATE_PREFERENCES_FILENAME),
+    JSON.stringify(updatePreferences, null, 2),
+    "utf8",
+  );
+  if (shouldStartDownload) {
+    await autoUpdater.downloadUpdate();
+  }
+  return updatePreferences;
+});
+
+ipcMain.handle("updates:check", async () => {
+  if (!app.isPackaged) {
+    return {
+      status: "unavailable",
+      message: "Update checks are available in the installed desktop app.",
+    };
+  }
+  updateCheckSource = "manual";
+  await autoUpdater.checkForUpdates();
+  return { status: "checking" };
+});
+
+ipcMain.handle("updates:download", async () => {
+  if (!app.isPackaged) return { status: "unavailable" };
+  await autoUpdater.downloadUpdate();
+  return { status: "downloading" };
+});
+
+ipcMain.handle("updates:install", () => {
+  if (!app.isPackaged) return false;
+  autoUpdater.quitAndInstall();
+  return true;
 });
 
 ipcMain.handle("history-capture", async () => {
@@ -1313,4 +1414,3 @@ ipcMain.handle("get-local-network-url", () => {
   }
   return "http://localhost:3000";
 });
-

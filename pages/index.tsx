@@ -23,6 +23,30 @@ import GirlfriendLogin from "./girlfriend";
 
 const HomePage = dynamic(() => import("./homepage"), { ssr: false });
 
+type UpdateEvent = {
+  status:
+    | "idle"
+    | "checking"
+    | "available"
+    | "not-available"
+    | "downloading"
+    | "downloaded"
+    | "error"
+    | "unavailable";
+  version?: string;
+  percent?: number;
+  source?: string;
+  message?: string;
+};
+
+type AppNotification = {
+  id: string;
+  title: string;
+  message: string;
+  createdAt: number;
+  read: boolean;
+};
+
 export default function Home() {
   const router = useRouter();
   const renderHeartIcon = (filled: boolean) => (
@@ -110,6 +134,14 @@ export default function Home() {
     useState("#101014");
   const [animateAlbumArtWhenInactive, setAnimateAlbumArtWhenInactive] =
     useState(false);
+  const [checkUpdatesOnStartup, setCheckUpdatesOnStartup] = useState(true);
+  const [automaticUpdates, setAutomaticUpdates] = useState(true);
+  const [updateEvent, setUpdateEvent] = useState<UpdateEvent>({
+    status: "idle",
+  });
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [updaterApiReady, setUpdaterApiReady] = useState(false);
   const [appWindowActive, setAppWindowActive] = useState(true);
   const [appTheme, setAppTheme] = useState<AppTheme>("default");
   const [equalizer, setEqualizer] = useState({
@@ -138,6 +170,12 @@ export default function Home() {
       }
       if (typeof stored.animateAlbumBackground === "boolean") {
         setAnimateAlbumBackground(stored.animateAlbumBackground);
+      }
+      if (typeof stored.checkUpdatesOnStartup === "boolean") {
+        setCheckUpdatesOnStartup(stored.checkUpdatesOnStartup);
+      }
+      if (typeof stored.automaticUpdates === "boolean") {
+        setAutomaticUpdates(stored.automaticUpdates);
       }
       if (
         typeof stored.staticBackgroundColor === "string" &&
@@ -180,9 +218,193 @@ export default function Home() {
     if (!settingsLoaded) return;
     window.localStorage.setItem(
       "soundcloudy_settings",
-      JSON.stringify({ autoplayNext, crossfadeEnabled, crossfadeDuration, animateAlbumArtWhenInactive, animateAlbumBackground, staticBackgroundColor, theme: appTheme, equalizer }),
+      JSON.stringify({ autoplayNext, crossfadeEnabled, crossfadeDuration, animateAlbumArtWhenInactive, animateAlbumBackground, staticBackgroundColor, checkUpdatesOnStartup, automaticUpdates, theme: appTheme, equalizer }),
     );
-  }, [settingsLoaded, autoplayNext, crossfadeEnabled, crossfadeDuration, animateAlbumArtWhenInactive, animateAlbumBackground, staticBackgroundColor, appTheme, equalizer]);
+  }, [settingsLoaded, autoplayNext, crossfadeEnabled, crossfadeDuration, animateAlbumArtWhenInactive, animateAlbumBackground, staticBackgroundColor, checkUpdatesOnStartup, automaticUpdates, appTheme, equalizer]);
+  const addNotification = useCallback(
+    (notification: Omit<AppNotification, "createdAt" | "read">) => {
+      setNotifications((previous) => [
+        { ...notification, createdAt: Date.now(), read: false },
+        ...previous.filter((item) => item.id !== notification.id),
+      ].slice(0, 30));
+    },
+    [],
+  );
+  const handleUpdateEvent = useCallback(
+    (event: UpdateEvent) => {
+      if (!event || typeof event.status !== "string") return;
+      setUpdateEvent(event);
+      const versionLabel = event.version ? ` ${event.version}` : "";
+      if (event.status === "available") {
+        addNotification({
+          id: `update-available-${event.version || "latest"}`,
+          title: "Update available",
+          message: `Soundcloudy${versionLabel} is available. It will download in the background when automatic updates are enabled.`,
+        });
+      } else if (event.status === "downloaded") {
+        addNotification({
+          id: `update-downloaded-${event.version || "latest"}`,
+          title: "Update ready to install",
+          message: `Soundcloudy${versionLabel} has finished downloading. Restart to install it.`,
+        });
+      } else if (event.status === "error") {
+        addNotification({
+          id: `update-error-${event.message || "unknown"}`,
+          title: "Update check failed",
+          message: event.message || "The update service returned an unknown error.",
+        });
+      } else if (
+        event.status === "not-available" &&
+        event.source === "manual"
+      ) {
+        addNotification({
+          id: `update-current-${event.version || "latest"}`,
+          title: "Soundcloudy is up to date",
+          message: `You're using the latest version${versionLabel}.`,
+        });
+      }
+    },
+    [addNotification],
+  );
+  useEffect(() => {
+    const updatesApi = (window as any).electronAPI?.updates;
+    if (!updatesApi) {
+      setUpdaterApiReady(true);
+      return;
+    }
+
+    let active = true;
+    const unsubscribe = updatesApi.onEvent(handleUpdateEvent);
+    updatesApi
+      .getState()
+      .then((state: {
+        preferences?: {
+          checkOnStartup?: boolean;
+          automaticUpdates?: boolean;
+        };
+        latestEvent?: UpdateEvent;
+      }) => {
+        if (!active) return;
+        if (typeof state?.preferences?.checkOnStartup === "boolean") {
+          setCheckUpdatesOnStartup(state.preferences.checkOnStartup);
+        }
+        if (typeof state?.preferences?.automaticUpdates === "boolean") {
+          setAutomaticUpdates(state.preferences.automaticUpdates);
+        }
+        if (state?.latestEvent?.status && state.latestEvent.status !== "idle") {
+          handleUpdateEvent(state.latestEvent);
+        }
+        setUpdaterApiReady(true);
+      })
+      .catch((error: unknown) => {
+        if (!active) return;
+        addNotification({
+          id: "update-preferences-error",
+          title: "Update settings unavailable",
+          message:
+            error instanceof Error
+              ? error.message
+              : "Could not load update preferences.",
+        });
+        setUpdaterApiReady(true);
+      });
+
+    return () => {
+      active = false;
+      if (typeof unsubscribe === "function") unsubscribe();
+    };
+  }, [addNotification, handleUpdateEvent]);
+  useEffect(() => {
+    if (!settingsLoaded || !updaterApiReady) return;
+    const updatesApi = (window as any).electronAPI?.updates;
+    if (!updatesApi) return;
+    updatesApi
+      .setPreferences({ checkOnStartup: checkUpdatesOnStartup, automaticUpdates })
+      .catch((error: unknown) => {
+        addNotification({
+          id: "update-preferences-save-error",
+          title: "Could not save update settings",
+          message:
+            error instanceof Error
+              ? error.message
+              : "Update preferences could not be saved.",
+        });
+      });
+  }, [
+    settingsLoaded,
+    updaterApiReady,
+    checkUpdatesOnStartup,
+    automaticUpdates,
+    addNotification,
+  ]);
+  const checkForUpdates = async () => {
+    const updatesApi = (window as any).electronAPI?.updates;
+    if (!updatesApi) {
+      handleUpdateEvent({
+        status: "unavailable",
+        message: "Update checks are available in the installed desktop app.",
+      });
+      return;
+    }
+    try {
+      const result = await updatesApi.check();
+      if (result?.status === "unavailable") {
+        handleUpdateEvent({
+          status: "unavailable",
+          message: result.message,
+        });
+      }
+    } catch (error) {
+      handleUpdateEvent({
+        status: "error",
+        source: "manual",
+        message:
+          error instanceof Error ? error.message : "Update check failed.",
+      });
+    }
+  };
+  const downloadUpdate = async () => {
+    try {
+      await (window as any).electronAPI?.updates?.download();
+    } catch (error) {
+      handleUpdateEvent({
+        status: "error",
+        message:
+          error instanceof Error ? error.message : "Update download failed.",
+      });
+    }
+  };
+  const installUpdate = async () => {
+    try {
+      await (window as any).electronAPI?.updates?.install();
+    } catch (error) {
+      handleUpdateEvent({
+        status: "error",
+        message:
+          error instanceof Error ? error.message : "Update install failed.",
+      });
+    }
+  };
+  const updateStatusText = (() => {
+    switch (updateEvent.status) {
+      case "checking":
+        return "Checking for updates...";
+      case "available":
+        return `Update available${updateEvent.version ? ` - ${updateEvent.version}` : ""}`;
+      case "downloading":
+        return `Downloading update - ${updateEvent.percent ?? 0}%`;
+      case "downloaded":
+        return `Update ready${updateEvent.version ? ` - ${updateEvent.version}` : ""}`;
+      case "not-available":
+        return `You're up to date${updateEvent.version ? ` - ${updateEvent.version}` : ""}`;
+      case "error":
+        return `Update check failed - ${updateEvent.message || "Unknown error"}`;
+      case "unavailable":
+        return updateEvent.message || "Update checks require the installed desktop app.";
+      default:
+        return "Ready to check for updates.";
+    }
+  })();
   useEffect(() => {
     const syncAppWindowActivity = () => {
       setAppWindowActive(
@@ -4755,6 +4977,91 @@ export default function Home() {
             </div>
           )}
         </div>
+        <div className="notification-center">
+          <button
+            type="button"
+            className="notification-center-toggle"
+            aria-label={
+              notifications.some((item) => !item.read)
+                ? `Notifications, ${notifications.filter((item) => !item.read).length} unread`
+                : "Notifications"
+            }
+            aria-expanded={notificationsOpen}
+            onClick={() => {
+              const nextOpen = !notificationsOpen;
+              setNotificationsOpen(nextOpen);
+              if (nextOpen) {
+                setNotifications((items) =>
+                  items.map((item) => ({ ...item, read: true })),
+                );
+              }
+            }}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M10 21h4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+            </svg>
+            {notifications.some((item) => !item.read) && (
+              <span className="notification-center-badge">
+                {notifications.filter((item) => !item.read).length}
+              </span>
+            )}
+          </button>
+          {notificationsOpen && (
+            <section className="notification-center-panel" aria-label="Notifications">
+              <header className="notification-center-heading">
+                <strong>Notifications</strong>
+                {notifications.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setNotifications([])}
+                  >
+                    Clear
+                  </button>
+                )}
+              </header>
+              {notifications.length === 0 ? (
+                <p className="notification-center-empty">You're all caught up.</p>
+              ) : (
+                <div className="notification-center-list">
+                  {notifications.map((item) => (
+                    <article
+                      key={item.id}
+                      className={`notification-center-item${item.read ? "" : " unread"}`}
+                    >
+                      <strong>{item.title}</strong>
+                      <p>{item.message}</p>
+                      <time dateTime={new Date(item.createdAt).toISOString()}>
+                        {new Date(item.createdAt).toLocaleTimeString([], {
+                          hour: "numeric",
+                          minute: "2-digit",
+                        })}
+                      </time>
+                    </article>
+                  ))}
+                </div>
+              )}
+              {updateEvent.status === "available" && !automaticUpdates && (
+                <button
+                  type="button"
+                  className="notification-center-action"
+                  onClick={downloadUpdate}
+                >
+                  Download update
+                </button>
+              )}
+              {updateEvent.status === "downloaded" && (
+                <button
+                  type="button"
+                  className="notification-center-action"
+                  onClick={installUpdate}
+                >
+                  Install and restart
+                </button>
+              )}
+            </section>
+          )}
+        </div>
       </div>
 
       <main className="main-area" id="main-area-scroll" ref={mainAreaRef}>
@@ -4775,6 +5082,14 @@ export default function Home() {
             onAnimateAlbumBackgroundChange={setAnimateAlbumBackground}
             staticBackgroundColor={staticBackgroundColor}
             onStaticBackgroundColorChange={setStaticBackgroundColor}
+            checkUpdatesOnStartup={checkUpdatesOnStartup}
+            onCheckUpdatesOnStartupChange={setCheckUpdatesOnStartup}
+            automaticUpdates={automaticUpdates}
+            onAutomaticUpdatesChange={setAutomaticUpdates}
+            updateStatus={updateStatusText}
+            onCheckForUpdates={checkForUpdates}
+            onDownloadUpdate={downloadUpdate}
+            onInstallUpdate={installUpdate}
             animateAlbumArtWhenInactive={animateAlbumArtWhenInactive}
             onAnimateAlbumArtWhenInactiveChange={setAnimateAlbumArtWhenInactive}
           />

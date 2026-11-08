@@ -895,6 +895,134 @@ body.electron .top-bar {
   transform: scale(1.05);
 }
 
+.notification-center {
+  position: absolute;
+  top: 50%;
+  right: 36px;
+  transform: translateY(-50%);
+  pointer-events: auto;
+}
+
+.notification-center-toggle {
+  position: relative;
+  display: inline-flex;
+  width: 40px;
+  height: 40px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 50%;
+  background: rgba(24, 24, 28, 0.84);
+  color: #fff;
+  cursor: pointer;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.notification-center-toggle:hover {
+  background: rgba(55, 55, 60, 0.92);
+}
+
+.notification-center-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  display: grid;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  place-items: center;
+  border: 2px solid #111;
+  border-radius: 12px;
+  background: #e74848;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.notification-center-panel {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  width: min(360px, calc(100vw - 24px));
+  max-height: min(480px, 70vh);
+  overflow: auto;
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 14px;
+  background: rgba(18, 18, 21, 0.97);
+  color: #fff;
+  box-shadow: 0 14px 42px rgba(0, 0, 0, 0.42);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+}
+
+.notification-center-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.notification-center-heading button {
+  border: 0;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.7);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+}
+
+.notification-center-list {
+  display: grid;
+  gap: 8px;
+}
+
+.notification-center-item {
+  padding: 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.notification-center-item.unread {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.notification-center-item strong {
+  display: block;
+  font-size: 13px;
+}
+
+.notification-center-item p,
+.notification-center-empty {
+  margin: 5px 0 0;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.notification-center-item time {
+  display: block;
+  margin-top: 6px;
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 10px;
+}
+
+.notification-center-action {
+  width: 100%;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+}
+
 /* Main Area - Remove white bar at top */
 .main-area {
   margin-left: var(--sidebar-collapsed);
@@ -1777,6 +1905,51 @@ body.electron .main-area {
   color: #fff;
 }
 
+.settings-update-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.settings-update-status {
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.settings-update-buttons {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.settings-action-button {
+  padding: 9px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.1);
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.settings-action-button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.settings-action-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
 .settings-color-input {
   width: 52px;
   height: 36px;
@@ -1872,8 +2045,45 @@ body.electron .main-area {
 .app-shell[data-theme="light"] .settings-toggle-row small,
 .app-shell[data-theme="light"] .settings-disabled-row small,
 .app-shell[data-theme="light"] .settings-crossfade-duration small,
+.app-shell[data-theme="light"] .settings-update-status,
 .app-shell[data-theme="light"] .settings-eyebrow {
   color: rgba(32, 36, 42, 0.65);
+}
+
+.app-shell[data-theme="light"] .settings-action-button {
+  border-color: rgba(24, 32, 44, 0.2);
+  background: rgba(24, 32, 44, 0.06);
+  color: #20242a;
+}
+
+.app-shell[data-theme="light"] .notification-center-toggle {
+  border-color: rgba(24, 32, 44, 0.18);
+  background: rgba(249, 250, 252, 0.94);
+  color: #20242a;
+}
+
+.app-shell[data-theme="light"] .notification-center-panel {
+  border-color: rgba(24, 32, 44, 0.16);
+  background: rgba(249, 250, 252, 0.98);
+  color: #20242a;
+}
+
+.app-shell[data-theme="light"] .notification-center-heading button,
+.app-shell[data-theme="light"] .notification-center-item p,
+.app-shell[data-theme="light"] .notification-center-empty,
+.app-shell[data-theme="light"] .notification-center-item time {
+  color: rgba(32, 36, 42, 0.68);
+}
+
+.app-shell[data-theme="light"] .notification-center-item,
+.app-shell[data-theme="light"] .notification-center-item.unread {
+  background: rgba(24, 32, 44, 0.06);
+}
+
+.app-shell[data-theme="light"] .notification-center-action {
+  border-color: rgba(24, 32, 44, 0.2);
+  background: rgba(24, 32, 44, 0.08);
+  color: #20242a;
 }
 
 .app-shell[data-theme="light"] .settings-eq-graph {
@@ -5479,8 +5689,17 @@ body.electron .main-area {
     flex-wrap: nowrap;
     align-items: center;
     gap: 8px;
-    width: min(100%, calc(100vw - 32px));
+    width: min(100%, calc(100vw - 84px));
     max-width: none;
+  }
+
+  .notification-center {
+    right: 12px;
+  }
+
+  .notification-center-toggle {
+    width: 38px;
+    height: 38px;
   }
 
   .search-input-wrap {

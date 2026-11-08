@@ -9,6 +9,19 @@ contextBridge.exposeInMainWorld("electronAPI", {
   playHistoryViaWeb: () => ipcRenderer.invoke("history-play-history"),
   fetchDiscoverSelections: () => ipcRenderer.invoke("discover-selections"),
   historyWebLogin: () => ipcRenderer.invoke("history-web-login"),
+  updates: {
+    getState: () => ipcRenderer.invoke("updates:get-state"),
+    setPreferences: (preferences) =>
+      ipcRenderer.invoke("updates:set-preferences", preferences),
+    check: () => ipcRenderer.invoke("updates:check"),
+    download: () => ipcRenderer.invoke("updates:download"),
+    install: () => ipcRenderer.invoke("updates:install"),
+    onEvent: (callback) => {
+      const handler = (_event, updateEvent) => callback(updateEvent);
+      ipcRenderer.on("updates:event", handler);
+      return () => ipcRenderer.removeListener("updates:event", handler);
+    },
+  },
   windowControls: {
     minimize: () => ipcRenderer.invoke("window-minimize"),
     maximizeToggle: () => ipcRenderer.invoke("window-maximize-toggle"),
