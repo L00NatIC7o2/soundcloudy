@@ -99,6 +99,7 @@
         ]
       }
     ],
+    "artifactName": "Soundcloudy-v2-Setup-${version}.${ext}",
     "asar": true,
     "win": {
       "target": "nsis"
