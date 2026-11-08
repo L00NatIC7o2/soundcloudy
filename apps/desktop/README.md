@@ -17,6 +17,8 @@ app for its renderer.
   happens when the user chooses to restart.
 - The updater is available only in packaged desktop builds. Development builds
   do not apply self-updates.
+- Friend requests, relationships, and privacy preferences are stored in the
+  current user's Electron data directory and are not included in the installer.
 
 Increment `version` in the root `package.json` before creating a release so
 electron-updater can distinguish each release.

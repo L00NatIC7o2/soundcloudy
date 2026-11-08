@@ -647,6 +647,7 @@ const startNextServer = () => {
       HOSTNAME: "127.0.0.1",
       NEXT_PUBLIC_API_URL: REMOTE_API_URL,
       NEXT_PUBLIC_SOCKET_URL: REMOTE_SOCKET_URL,
+      SOUNDCLOUDY_DATA_DIR: path.join(app.getPath("userData"), "data"),
       SOUNDCLOUD_HISTORY_COOKIE_PATH: getHistoryCookiePath(),
       ELECTRON_RUN_AS_NODE: "1",
     },

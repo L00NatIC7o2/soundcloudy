@@ -47,7 +47,8 @@ export type FriendPresenceState = {
   updatedAt: number;
 };
 
-const DATA_DIR = path.join(process.cwd(), "data");
+const DATA_DIR =
+  process.env.SOUNDCLOUDY_DATA_DIR || path.join(process.cwd(), "data");
 const STORE_PATH = path.join(DATA_DIR, "friends.json");
 
 const defaultStore = (): FriendStoreShape => ({
@@ -287,5 +288,4 @@ export function getFriendPresence(userId: number) {
 
   return state;
 }
-
 

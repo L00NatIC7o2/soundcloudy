@@ -27,6 +27,9 @@ const nextConfig = {
     },
   },
   output: "standalone",
+  outputFileTracingExcludes: {
+    "/*": ["./data/friends.json"],
+  },
   serverExternalPackages: ["puppeteer"],
 };
 
